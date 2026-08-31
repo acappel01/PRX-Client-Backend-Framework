@@ -139,10 +139,19 @@ class ProductForm
                                         TextInput::make('sale_price')
                                             ->numeric()->prefix('$')->step(0.01)
                                             ->hintIcon(Heroicon::InformationCircle, 'Active sale price. If set, this is the price displayed to customers.'),
+                                        // SAME WRONG EXAMPLE THE PACKAGE FORM CARRIED. This
+                                        // price is what a single purchase costs, and a card
+                                        // shows it whenever it is the cheapest way in — so
+                                        // "/mo" here makes a card read "As low as $149.00/mo"
+                                        // for something the cart books once. Nothing validates
+                                        // the value, so the form's example is the only guard,
+                                        // and four products carried this mistake. Recurring
+                                        // wording belongs on the product's Plans, where
+                                        // BillingPeriod fills the suffix in.
                                         TextInput::make('price_suffix')
                                             ->maxLength(32)
-                                            ->placeholder('e.g. /mo, /vial')
-                                            ->hintIcon(Heroicon::InformationCircle, 'Optional copy appended after the price.'),
+                                            ->placeholder('usually blank — e.g. /vial')
+                                            ->hintIcon(Heroicon::InformationCircle, 'Usually leave this BLANK. This price is a single purchase and is what cards show when it is the cheapest way in, so a per-period suffix like "/mo" advertises a subscription for something billed once. Use it only for a genuine per-unit price such as "/vial". Monthly and prepaid wording belongs on this product\'s Plans.'),
                                         TextInput::make('cost')
                                             ->numeric()->prefix('$')->step(0.01)->minValue(0)
                                             ->hintIcon(Heroicon::InformationCircle, 'Internal unit cost — what the company pays. Used for reporting and P&L only; never shown on the storefront or public API.'),

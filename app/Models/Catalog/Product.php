@@ -4,6 +4,7 @@ namespace App\Models\Catalog;
 
 use App\Enums\CatalogStatus;
 use App\Enums\InventoryStatus;
+use App\Models\Concerns\HasCardPriceExpression;
 use App\Models\Concerns\HasCatalogRelations;
 use App\Models\Concerns\HasCategories;
 use App\Models\Concerns\HasFaqs;
@@ -28,7 +29,7 @@ use Spatie\Sluggable\SlugOptions;
 
 class Product extends Model implements Sortable
 {
-    use HasCatalogRelations, HasCategories, HasFactory, HasFaqs, HasFulfillmentCenter, HasItemSections, HasReviews, HasSlug, HasTags, SoftDeletes, SortableTrait;
+    use HasCardPriceExpression, HasCatalogRelations, HasCategories, HasFactory, HasFaqs, HasFulfillmentCenter, HasItemSections, HasReviews, HasSlug, HasTags, SoftDeletes, SortableTrait;
 
     public function getSlugOptions(): SlugOptions
     {
@@ -86,6 +87,20 @@ class Product extends Model implements Sortable
         'order_column_name' => 'position',
         'sort_when_creating' => true,
     ];
+
+    /**
+     * The card figure as SQL — see `HasCardPriceExpression`.
+     *
+     * A product's own price is its figure today, because no product carries a
+     * monthly plan to undercut it — so this changes nothing visible. It exists
+     * so that when one does, the filter, the sort and the facet bounds follow
+     * the cards instead of quietly disagreeing with them, which is exactly the
+     * defect packages had on /stacks.
+     */
+    public static function priceFromAmountSql(): string
+    {
+        return static::cardPriceExpression('products', 'product_id');
+    }
 
     protected function casts(): array
     {

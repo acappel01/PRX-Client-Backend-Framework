@@ -462,6 +462,26 @@ distinguishes them against an unfiltered baseline because the frontend cannot.
 **Zero matches is a designed outcome, not an error.** The eligibility gate means some visitors
 legitimately match nothing.
 
+### 5d. Quiz option prices — `price_from`, not a range
+
+An option whose `price_source` names part of the catalog carries
+`price_from: {amount, currency}` — the **cheapest way into that set**, computed live when the
+quiz is served and never authored. Render it as **"as low as $X"**, the same wording as a
+catalog card, and render **nothing** when it is null: an absent figure is meaningful, and "$0"
+reads as free.
+
+**It replaced a min/max range, and the reason generalises.** The two ends came from different
+billing units — on one install the "full stack" option served `{from: 725, to: 6050}`, where
+725 is an entry price and 6050 a six-month prepay TOTAL, so the card read "$725 – $6,050" and
+invited the visitor to read the upper number as a recurring cost. That is the same mixed-unit
+problem `price_range` carries on a package, and it is why a card may never show a range. The
+range also queried plans ALONE, so an item's own price — the way most of a catalog is actually
+bought — could not appear in the figure at all.
+
+An option points at a SET rather than an item, and "as low as" is still the honest reading of
+that: the cheapest way into any product, or any package, or any package of one tier. A range
+across a set would need both ends in the same unit to mean anything, and they are not.
+
 ## 6. Commerce flow
 
 The active checkout path comes from `GET /config` → `checkout.path` (`prx` | `local`). Branch the whole flow on it — never assume one.

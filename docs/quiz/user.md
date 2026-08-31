@@ -16,13 +16,16 @@ anyone holding the link can see that plan.
 **You do not choose what is recommended here.** The matches come from the ingredient and health
 goal mappings in the catalog. What you control on this page is what the visitor is *told*.
 
-**Both products and packages add straight to the cart from this page.** A package is added on
-the plan its card quotes — the "from" figure — so the price the visitor was shown is the price
-they are charged; if the package's own one-time price is the figure quoted, it is added with no
-plan and no recurring billing. They can still open the package's own page from the card if they
-want a different term. A storefront may deliberately do this differently elsewhere, sending a
-visitor to the package page to pick a plan first; the report is the end of the funnel, so it
-does not put another page in the way.
+**A product adds straight to the cart from this page; a package sends the visitor to its own
+page to choose a term.** The card quotes "as low as $X", and for a package that figure is
+usually a monthly plan the visitor has not agreed to — adding it for them would start a
+recurring charge they did not choose, and adding the package without it would charge more than
+the card said. Neither is acceptable, so picking a term happens where the terms are visible. A
+product has no term to pick, so it still adds in one tap and several can go in the bag without
+leaving the page.
+
+This is an interim: the intended design is a plan picker on this page, so a package can be
+added without losing the report.
 
 **How it looks follows your theme**, not this page — see **Settings → Theme** for colours,
 fonts and the colour palette. There are no per-section layout controls here, because the plan

@@ -1810,7 +1810,7 @@
                     {
                         "name": "price_min",
                         "in": "query",
-                        "description": "Filter products with an effective price at or above this amount (USD).",
+                        "description": "Filter by the figure a card shows (`price_from.amount`, the \"as low as\" price) at or above this amount (USD).",
                         "schema": {
                             "type": "number"
                         },
@@ -1819,7 +1819,7 @@
                     {
                         "name": "price_max",
                         "in": "query",
-                        "description": "Filter products with an effective price at or below this amount (USD).",
+                        "description": "Filter by the figure a card shows (`price_from.amount`, the \"as low as\" price) at or below this amount (USD).",
                         "schema": {
                             "type": "number"
                         },
@@ -4617,7 +4617,7 @@
                                                                                             "is_exclusive": {
                                                                                                 "type": "boolean"
                                                                                             },
-                                                                                            "price_range": {
+                                                                                            "price_from": {
                                                                                                 "type": "null"
                                                                                             },
                                                                                             "image_url": {
@@ -4630,7 +4630,7 @@
                                                                                             "description",
                                                                                             "icon",
                                                                                             "is_exclusive",
-                                                                                            "price_range",
+                                                                                            "price_from",
                                                                                             "image_url"
                                                                                         ]
                                                                                     }
@@ -4661,16 +4661,13 @@
                                                                                             "is_exclusive": {
                                                                                                 "type": "boolean"
                                                                                             },
-                                                                                            "price_range": {
+                                                                                            "price_from": {
                                                                                                 "type": [
                                                                                                     "object",
                                                                                                     "null"
                                                                                                 ],
                                                                                                 "properties": {
-                                                                                                    "from": {
-                                                                                                        "type": "number"
-                                                                                                    },
-                                                                                                    "to": {
+                                                                                                    "amount": {
                                                                                                         "type": "number"
                                                                                                     },
                                                                                                     "currency": {
@@ -4679,8 +4676,7 @@
                                                                                                     }
                                                                                                 },
                                                                                                 "required": [
-                                                                                                    "from",
-                                                                                                    "to",
+                                                                                                    "amount",
                                                                                                     "currency"
                                                                                                 ]
                                                                                             },
@@ -4694,7 +4690,7 @@
                                                                                             "description",
                                                                                             "icon",
                                                                                             "is_exclusive",
-                                                                                            "price_range",
+                                                                                            "price_from",
                                                                                             "image_url"
                                                                                         ]
                                                                                     }

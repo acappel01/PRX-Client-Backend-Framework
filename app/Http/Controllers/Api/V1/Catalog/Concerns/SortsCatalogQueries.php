@@ -15,28 +15,25 @@ use Illuminate\Database\Eloquent\Builder;
  * whose own columns are NULL, sorts to the very top of "price ascending" in
  * MySQL regardless of what its plans cost.
  *
- * The default keeps products on their own columns; PackageController passes
- * `Package::priceFromAmountSql()` so the order matches the figures on screen.
- *
- * THE DEFAULT IS RIGHT FOR PRODUCTS ONLY WHILE NO PRODUCT CARRIES A MONTHLY
- * PLAN, and that is a coincidence rather than a rule. A product card renders
- * `price_from` now, exactly as a package card does; it merely equals the
- * product's own effective price today, because no product has a monthly plan
- * to undercut it. The day one does, a product's filter, sort and facet bounds
- * diverge from its cards in precisely the way this parameter exists to have
- * fixed for packages — the fix is the same shape (a product-side expression
- * correlating on `plans.product_id`), and it is not built. Do not read the
- * default as a statement that products are different in kind.
+ * BOTH callers pass `priceFromAmountSql()` for their own kind, so the order
+ * always matches the figures on screen. Products were briefly left on their own
+ * columns on the grounds that a product's own price IS its card figure — true
+ * only while no product carries a monthly plan, which is a coincidence rather
+ * than a rule, and precisely the shape of the defect this parameter exists to
+ * have fixed for packages.
  */
 trait SortsCatalogQueries
 {
-    private const OWN_EFFECTIVE_PRICE = 'COALESCE(sale_price, retail_price)';
-
-    private function applyCatalogSort(Builder $query, ?string $sort, ?string $priceExpression = null): Builder
+    private function applyCatalogSort(Builder $query, ?string $sort, string $priceExpression): Builder
     {
+        // REQUIRED, not defaulted. Both callers pass an expression now, so a
+        // fallback would be dead code carrying an opinion about "the" price —
+        // and the opinion it carried (a row's own effective price) is exactly
+        // the one that made a listing disagree with its cards.
+        //
         // `+ 0` coerces a TEXT-bound decimal to a number so SQLite compares it
         // numerically rather than lexically ("100" < "99").
-        $price = ($priceExpression ?? self::OWN_EFFECTIVE_PRICE).' + 0';
+        $price = $priceExpression.' + 0';
 
         return match ($sort) {
             'name' => $query->orderBy('name'),

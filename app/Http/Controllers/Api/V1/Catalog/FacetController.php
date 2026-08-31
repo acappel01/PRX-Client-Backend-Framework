@@ -61,19 +61,22 @@ class FacetController extends ApiController
                 'count' => $row->products_count,
             ])->values()->all();
 
+        // Both blocks measure the figure their cards show, via the one shared
+        // expression — so a slider's ends, the rows it keeps and the order they
+        // appear in cannot disagree with each other or with the cards.
         $priceBounds = Product::query()
             ->where('status', CatalogStatus::Published)
-            ->selectRaw('MIN(COALESCE(sale_price, retail_price) + 0) as min_price, MAX(COALESCE(sale_price, retail_price) + 0) as max_price')
+            ->selectRaw(
+                'MIN('.Product::priceFromAmountSql().' + 0) as min_price, '
+                .'MAX('.Product::priceFromAmountSql().' + 0) as max_price'
+            )
             ->first();
 
-        // PACKAGES NEED THEIR OWN BOUNDS, over the figure their cards actually
-        // show — not the products'. One endpoint serves both listings, and the
-        // package listing was reading `price` above: a slider labelled with the
-        // product range, filtering package figures. A stack priced outside the
-        // product range was unreachable by the control meant to find it.
-        //
-        // Same expression the filter and the sort use, so the slider's ends,
-        // the packages it keeps, and the order they appear in cannot disagree.
+        // PACKAGES NEED THEIR OWN BOUNDS, not the products'. One endpoint
+        // serves both listings, and the package listing was reading `price`
+        // above: a slider labelled with the product range, filtering package
+        // figures. A stack priced outside the product range was unreachable by
+        // the control meant to find it.
         $packagePriceBounds = Package::query()
             ->where('status', CatalogStatus::Published)
             ->selectRaw(

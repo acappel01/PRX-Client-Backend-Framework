@@ -7,6 +7,7 @@ use App\Enums\CatalogStatus;
 use App\Enums\Quiz\QuizQuestionKind;
 use App\Models\Catalog\Package;
 use App\Models\Catalog\Plan;
+use App\Models\Catalog\Product;
 use App\Models\Kb\HealthGoal;
 use App\Models\Quiz\Quiz;
 use Illuminate\Database\QueryException;
@@ -53,7 +54,7 @@ class QuizSchemaTest extends TestCase
         $this->assertSame('Lose weight', $options[0]['label']);
     }
 
-    public function test_a_price_range_is_computed_live_and_never_authored(): void
+    public function test_a_price_figure_is_computed_live_and_never_authored(): void
     {
         // The package's own price is explicit and sits INSIDE the plan span, so
         // the plans decide the range. It used to be whatever the factory rolled,
@@ -78,21 +79,32 @@ class QuizSchemaTest extends TestCase
         $options = $this->getJson('/api/v1/quiz')->assertOk()
             ->json('data.steps.0.questions.0.options');
 
-        // sale_price wins over retail where present. assertEquals, not
-        // assertSame: JSON renders 100.0 as 100, so the decoded value is an
-        // int — the same shape PackageResource's price_range has always had.
-        $this->assertEquals(['from' => 100, 'to' => 400, 'currency' => 'USD'], $options[0]['price_range']);
-        // No source means no range — not a zero range, which would render as
-        // "$0 – $0" and read as free.
-        $this->assertNull($options[1]['price_range']);
+        // The CHEAPEST WAY IN across the package's own price and its monthly
+        // plans — 100, not the 250 own price and not the 400 upper plan. This
+        // used to be a min/max RANGE whose two ends were in different billing
+        // units; see QuizSchemaBuilder::priceFrom for why that had to go.
+        //
+        // assertEquals, not assertSame: JSON renders 100.0 as 100, so the
+        // decoded value is an int.
+        $this->assertEquals(['amount' => 100, 'currency' => 'USD'], $options[0]['price_from']);
+        // No source means no figure — not a zero, which would render as "$0"
+        // and read as free.
+        $this->assertNull($options[1]['price_from']);
     }
 
-    public function test_a_package_on_sale_below_its_plans_lowers_the_quiz_range(): void
+    public function test_a_package_on_sale_below_its_plans_lowers_the_quiz_figure(): void
     {
-        // The quiz computes its range LIVE rather than reading PackageResource,
-        // so the two implementations have to be fixed in lockstep — a package
-        // buyable on its own for less than any plan must move the "from" a
-        // visitor is quoted, or the quiz advertises a price higher than the
+        // A package buyable on its own for less than any plan must move the
+        // figure a visitor is quoted, or the quiz advertises a price higher
+        // than the cheapest thing on the page it sends them to. The quiz no
+        // longer computes this itself — it runs the shared card-price
+        // expression, so this and the listings cannot disagree — but the case
+        // is kept because it is the one an implementation reading plans ALONE
+        // gets wrong, and that is what the quiz used to do.
+        //
+        // Original wording, for the record: the quiz computes its range LIVE
+        // rather than reading PackageResource, so the two implementations have
+        // to be fixed in lockstep — or the quiz advertises a price higher than the
         // cheapest thing on the page it sends them to.
         $package = Package::factory()->create([
             'status' => CatalogStatus::Published,
@@ -113,10 +125,53 @@ class QuizSchemaTest extends TestCase
         $options = $this->getJson('/api/v1/quiz')->assertOk()
             ->json('data.steps.0.questions.0.options');
 
-        $this->assertEquals(['from' => 60, 'to' => 400, 'currency' => 'USD'], $options[0]['price_range']);
+        $this->assertEquals(['amount' => 60, 'currency' => 'USD'], $options[0]['price_from']);
     }
 
-    public function test_a_tier_matching_no_package_yields_no_range_rather_than_every_package(): void
+    /**
+     * THE `products` BRANCH NEEDS ITS OWN TEST, because the two branches differ
+     * only by which model they name.
+     *
+     * A `Package`-for-`Product` slip in `QuizSchemaBuilder::priceFrom()` would
+     * still return a plausible number — the other branch's — and every other
+     * test in this file exercises packages, so nothing would notice. Asserting
+     * a product-only figure that no package could produce is what separates
+     * them.
+     *
+     * This branch is also the one whose live behaviour changed most: it used to
+     * return NULL, because the old implementation queried plans alone and a
+     * product's own price could not appear in the figure at all.
+     */
+    public function test_the_products_source_prices_products_and_not_packages(): void
+    {
+        $product = Product::factory()->create([
+            'status' => CatalogStatus::Published,
+            'retail_price' => 149.00,
+            'sale_price' => null,
+        ]);
+
+        // A package far cheaper than the product: if the branch resolved to
+        // packages, the figure would be 12 rather than 149.
+        Package::factory()->create([
+            'status' => CatalogStatus::Published,
+            'retail_price' => 12.00,
+            'sale_price' => null,
+        ]);
+
+        $quiz = $this->quiz();
+        $question = $this->step($quiz)->questions()->create([
+            'slug' => 'start', 'kind' => QuizQuestionKind::SingleSelect,
+            'prompt' => 'Where?', 'position' => 1, 'is_active' => true,
+        ]);
+        $question->options()->create(['value' => 'one', 'label' => 'One peptide', 'price_source' => 'products', 'position' => 1]);
+
+        $options = $this->getJson('/api/v1/quiz')->assertOk()
+            ->json('data.steps.0.questions.0.options');
+
+        $this->assertEquals(['amount' => 149, 'currency' => 'USD'], $options[0]['price_from']);
+    }
+
+    public function test_a_tier_matching_no_package_yields_no_figure_rather_than_every_package(): void
     {
         $package = Package::factory()->create(['status' => CatalogStatus::Published, 'tier' => 'protocol']);
         Plan::factory()->create(['package_id' => $package->id, 'status' => CatalogStatus::Published, 'retail_price' => 100]);
@@ -129,7 +184,7 @@ class QuizSchemaTest extends TestCase
         $question->options()->create(['value' => 'stack', 'label' => 'Stack', 'price_source' => 'packages:stack', 'position' => 1]);
 
         $this->assertNull(
-            $this->getJson('/api/v1/quiz')->json('data.steps.0.questions.0.options.0.price_range')
+            $this->getJson('/api/v1/quiz')->json('data.steps.0.questions.0.options.0.price_from')
         );
     }
 

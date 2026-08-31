@@ -30,7 +30,7 @@ use Tests\TestCase;
  * any-cadence fallback); a soft-deleted plan; an unpublished plan; an unpriced
  * plan; and an intro price, which must never be a candidate.
  */
-class PackagePriceParityTest extends TestCase
+class CatalogPriceParityTest extends TestCase
 {
     use RefreshDatabase;
 
@@ -241,6 +241,102 @@ class PackagePriceParityTest extends TestCase
             ->assertJsonPath('data.package_price.max', 1450)
             ->assertJsonPath('data.price.min', 25)
             ->assertJsonPath('data.price.max', 25);
+    }
+
+    /**
+     * PRODUCTS RUN THE SAME EXPRESSION, so they get the same contract.
+     *
+     * Nothing here changes a live figure — no product carries a monthly plan,
+     * so a product's own price is its card figure either way. That is exactly
+     * why the test matters: the agreement is currently a coincidence, and the
+     * day a product gets a cheaper monthly plan these are the assertions that
+     * decide whether its filter, sort and slider follow its cards or silently
+     * stop matching them.
+     */
+    public function test_parity_for_a_product_whose_monthly_plan_undercuts_its_own_price(): void
+    {
+        $product = Product::factory()->create([
+            'status' => CatalogStatus::Published,
+            'retail_price' => 249.00,
+            'sale_price' => null,
+        ]);
+        Plan::factory()->for($product)->create([
+            'status' => CatalogStatus::Published,
+            'billing_period' => BillingPeriod::Monthly,
+            'retail_price' => 199.00,
+        ]);
+
+        $served = $this->getJson("/api/v1/catalog/products/{$product->slug}")
+            ->assertOk()
+            ->json('data.price_from.amount');
+
+        $sql = Product::query()
+            ->whereKey($product->id)
+            ->selectRaw(Product::priceFromAmountSql().' as figure')
+            ->first()?->figure;
+
+        $this->assertEquals(199, $served);
+        $this->assertEquals($served, $sql, 'Product::priceFromAmountSql() disagrees with the served product figure.');
+    }
+
+    /**
+     * A PRODUCT'S PREPAY TERM PLAN MUST NOT BECOME ITS FILTER FIGURE EITHER.
+     *
+     * The mixed-unit guard has to hold on both sides of the parity, or the
+     * filter would keep a product the card never advertised at that price.
+     */
+    public function test_parity_for_a_product_with_only_a_prepay_term_plan(): void
+    {
+        $product = Product::factory()->create([
+            'status' => CatalogStatus::Published,
+            'retail_price' => 399.00,
+            'sale_price' => null,
+        ]);
+        Plan::factory()->for($product)->quarterly()->create([
+            'status' => CatalogStatus::Published,
+            'retail_price' => 279.00,
+        ]);
+
+        $served = $this->getJson("/api/v1/catalog/products/{$product->slug}")
+            ->assertOk()
+            ->json('data.price_from.amount');
+
+        $sql = Product::query()
+            ->whereKey($product->id)
+            ->selectRaw(Product::priceFromAmountSql().' as figure')
+            ->first()?->figure;
+
+        $this->assertEquals(399, $served);
+        $this->assertEquals($served, $sql);
+    }
+
+    public function test_the_product_price_filter_uses_the_card_figure(): void
+    {
+        $cheapByPlan = Product::factory()->create([
+            'status' => CatalogStatus::Published,
+            'retail_price' => 900.00,
+            'sale_price' => null,
+        ]);
+        Plan::factory()->for($cheapByPlan)->create([
+            'status' => CatalogStatus::Published,
+            'billing_period' => BillingPeriod::Monthly,
+            'retail_price' => 120.00,
+        ]);
+
+        $dear = Product::factory()->create([
+            'status' => CatalogStatus::Published,
+            'retail_price' => 900.00,
+            'sale_price' => null,
+        ]);
+
+        $slugs = collect($this->getJson('/api/v1/catalog/products?price_min=100&price_max=200')
+            ->assertOk()
+            ->json('data'))
+            ->pluck('slug')
+            ->all();
+
+        $this->assertContains($cheapByPlan->slug, $slugs, 'A product whose card reads $120 was dropped by a 100-200 filter.');
+        $this->assertNotContains($dear->slug, $slugs);
     }
 
     public function test_parity_when_nothing_is_priced_at_all(): void

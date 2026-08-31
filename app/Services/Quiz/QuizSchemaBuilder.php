@@ -5,13 +5,12 @@ namespace App\Services\Quiz;
 use App\Enums\CatalogStatus;
 use App\Enums\Quiz\QuizQuestionKind;
 use App\Models\Catalog\Package;
-use App\Models\Catalog\Plan;
+use App\Models\Catalog\Product;
 use App\Models\Kb\HealthGoal;
 use App\Models\Quiz\Quiz;
 use App\Models\Quiz\QuizQuestion;
 use App\Models\Quiz\QuizQuestionOption;
 use App\Models\Quiz\QuizStep;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
 
 /**
@@ -107,7 +106,7 @@ class QuizSchemaBuilder
                     'description' => $goal->description,
                     'icon' => $goal->icon,
                     'is_exclusive' => false,
-                    'price_range' => null,
+                    'price_from' => null,
                     'image_url' => $goal->image_path ? Storage::disk('public')->url($goal->image_path) : null,
                 ])
                 ->all();
@@ -124,94 +123,72 @@ class QuizSchemaBuilder
                 'description' => $option->description,
                 'icon' => $option->icon,
                 'is_exclusive' => $option->is_exclusive,
-                'price_range' => $this->priceRange($option->price_source),
+                'price_from' => $this->priceFrom($option->price_source),
                 'image_url' => null,
             ])
             ->all();
     }
 
     /**
-     * Live min/max across published plans for whatever the option points at.
+     * The cheapest way into whatever the option points at, as an "as low as"
+     * figure — the same rule and the same expression every card on the site
+     * uses.
      *
-     * Returns null rather than a zero range when nothing is priced: a card
-     * reading "$0 – $0" is worse than a card with no price on it, and the
-     * frontend can only tell the two apart if one of them is absent.
+     * THIS USED TO BE A LIVE min/max RANGE AND IT WAS THE LAST SURFACE SHOWING
+     * ONE. The two ends came from different billing units: on live data the
+     * "full stack" option served `{from: 725, to: 6050}`, where 725 is an entry
+     * price and 6050 a six-month prepay TOTAL, so the card read
+     * "$725 – $6,050" and invited a visitor to read the upper number as what a
+     * stack costs. That is the mixed-unit defect every other card surface was
+     * fixed for; the quiz kept it because it computed its own range instead of
+     * asking the shared rule.
+     *
+     * It also queried `Plan` ALONE, so an item's own price — the thing most of
+     * this catalog is actually bought at — could not appear in the figure at
+     * all. Both problems have the same cause and the same fix: ask the one
+     * expression that already answers "what does a card quote".
+     *
+     * AN OPTION POINTS AT A SET, NOT AN ITEM, and "as low as" is still the
+     * honest reading of that: the cheapest way into any product, or into any
+     * package, or into any package of one tier. A range across a set would need
+     * both ends in the same unit to mean anything, and they are not.
+     *
+     * `MIN()` over the shared card-price expression, so the quiz cannot drift
+     * from the listings — the parity contract in `CatalogPriceParityTest`
+     * covers this by covering the expression.
+     *
+     * Returns null rather than a zero figure when nothing is priced: a card
+     * reading "$0" is worse than a card with no price on it, and the frontend
+     * can only tell the two apart if one of them is absent.
+     *
+     * @return array{amount: float, currency: string}|null
      */
-    private function priceRange(?string $source): ?array
+    private function priceFrom(?string $source): ?array
     {
         if ($source === null || $source === '') {
             return null;
         }
 
-        $query = Plan::query()
-            ->where('status', CatalogStatus::Published->value)
-            ->where(fn ($q) => $q->whereNotNull('retail_price')->orWhereNotNull('sale_price'));
-
         if ($source === 'products') {
-            $query->whereNotNull('product_id')
-                ->whereHas('product', fn ($q) => $q->where('status', CatalogStatus::Published->value));
+            $query = Product::query()->selectRaw('MIN('.Product::priceFromAmountSql().') as figure');
         } elseif (str_starts_with($source, 'packages')) {
             $tier = str_contains($source, ':') ? explode(':', $source, 2)[1] : null;
 
-            $query->whereNotNull('package_id')
-                ->whereHas('package', function ($q) use ($tier): void {
-                    $q->where('status', CatalogStatus::Published->value);
-
-                    // No tier in the source means "any package". A tier that
-                    // matches nothing must yield NO range rather than every
-                    // package's — an operator who mistypes a tier should see a
-                    // missing price, not a wrong one.
-                    if ($tier !== null && $tier !== '') {
-                        $q->where('tier', $tier);
-                    }
-                });
+            $query = Package::query()
+                ->selectRaw('MIN('.Package::priceFromAmountSql().') as figure')
+                // A tier that matches nothing must yield NO figure rather than
+                // every package's — an operator who mistypes a tier should see
+                // a missing price, not a wrong one.
+                ->when($tier !== null && $tier !== '', fn ($q) => $q->where('tier', $tier));
         } else {
             return null;
         }
 
-        $prices = $query->get(['retail_price', 'sale_price'])
-            ->map(fn (Plan $p): float => (float) ($p->sale_price ?? $p->retail_price));
+        $figure = $query->where('status', CatalogStatus::Published->value)->first()?->figure;
 
-        // THE PACKAGES' OWN PRICES COUNT TOO. A package is buyable on its own,
-        // so a range built from plans alone advertises a "from" higher than the
-        // cheapest thing a visitor can actually buy the moment a single purchase
-        // is discounted below the plans — which is what a sale on a package is
-        // for.
-        //
-        // This mirrors `PackageResource::buildPriceRange()` on purpose, and the
-        // two have to move together: the quiz computes its range LIVE rather
-        // than reading that resource, so a fix in one is invisible to the other.
-        if (str_starts_with($source, 'packages')) {
-            $prices = $prices->concat($this->packageOwnPrices(
-                str_contains($source, ':') ? explode(':', $source, 2)[1] : null
-            ));
-        }
-
-        if ($prices->isEmpty()) {
-            return null;
-        }
-
-        return [
-            'from' => round((float) $prices->min(), 2),
-            'to' => round((float) $prices->max(), 2),
+        return $figure === null ? null : [
+            'amount' => round((float) $figure, 2),
             'currency' => 'USD',
         ];
-    }
-
-    /**
-     * Single-purchase prices of the published packages a source refers to.
-     *
-     * @return Collection<int, float>
-     */
-    private function packageOwnPrices(?string $tier): Collection
-    {
-        return Package::query()
-            ->where('status', CatalogStatus::Published->value)
-            ->where(fn ($q) => $q->whereNotNull('retail_price')->orWhereNotNull('sale_price'))
-            // Same rule as the plan query above: a tier that matches nothing
-            // yields no prices rather than every package's.
-            ->when($tier !== null && $tier !== '', fn ($q) => $q->where('tier', $tier))
-            ->get(['retail_price', 'sale_price'])
-            ->map(fn (Package $p): float => (float) ($p->sale_price ?? $p->retail_price));
     }
 }

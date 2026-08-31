@@ -129,9 +129,9 @@ Paginated. 15 per page, max 50.
 | `ingredient` | string | Filter by ingredient (compound) slug |
 | `featured` | bool | Featured products only |
 | `in_stock` | bool | In-stock products only |
-| `price_min` / `price_max` | float | Effective-price bounds |
+| `price_min` / `price_max` | float | Bounds on `price_from.amount` — the figure the card shows |
 | `search` | string | Name / subtitle LIKE search |
-| `sort` | string | `position` (default) \| `name` \| `-name` \| `price` \| `-price` \| `newest` \| `oldest` — whitelisted in `SortsCatalogQueries`. Price sorts on `COALESCE(sale_price, retail_price)` for products; packages pass `Package::priceFromAmountSql()` so the order matches their cards |
+| `sort` | string | `position` (default) \| `name` \| `-name` \| `price` \| `-price` \| `newest` \| `oldest` — whitelisted in `SortsCatalogQueries`. Price sorts on `price_from.amount` for both kinds, so the order matches the cards |
 | `per_page` | int | Page size (max 50) |
 
 Response includes `links` + `meta` pagination keys. Cards carry a
@@ -178,11 +178,14 @@ plans unable to match any price range at all — cards read "As low as $399.00" 
 a $350 minimum because their plans were $279.99 and $671.98 with nothing in between.
 
 The figure is not a stored column, so filtering, sorting and aggregating it need it as SQL:
-`Package::priceFromAmountSql()` is the single definition, used by this filter, the price sort
-and the facet bounds. It mirrors the **amount** half of
+`HasCardPriceExpression` is the single definition, exposed as `Package::priceFromAmountSql()`
+and `Product::priceFromAmountSql()` and used by both listings' filters, both price sorts, both
+facet bounds, and the quiz's option figures. **Products run the same rule for the same reason**
+— a product's own price is its card figure only while no product carries a monthly plan, and
+that is a coincidence rather than a rule. It mirrors the **amount** half of
 `BuildsCatalogPricing::catalogPriceFrom()` — the suffix, the `plan_id` and the non-recurring
 tie-break decide which candidate is reported, never what the lowest number is.
-`PackagePriceParityTest` asserts the two agree on every branch, including the ones raw SQL
+`CatalogPriceParityTest` asserts the two agree on every branch, for both kinds, including the ones raw SQL
 gets wrong for free: soft-deleted plans (the relation hides them, SQL does not), unpublished
 plans, unpriced plans, and intro prices.
 
@@ -293,13 +296,17 @@ zero-count rows omitted), `availability {in_stock, out_of_stock}` counts, and
 
 | Key | Spans |
 |---|---|
-| `price {min, max, currency}` | `COALESCE(sale, retail)` across published **products** |
-| `package_price {min, max, currency}` | `price_from.amount` across published **packages** — the same expression the package filter and price sort use |
+| `price {min, max, currency}` | `price_from.amount` across published **products** |
+| `package_price {min, max, currency}` | `price_from.amount` across published **packages** |
 
-**Two blocks because one endpoint serves both listings and the kinds are not priced alike.** A
-product card shows its own effective price; a package card shows the cheapest way in across its
-own price and its monthly plans. A slider fed the wrong block labels one range while filtering
-another — which is what `/stacks` did until `package_price` existed. `package_price` is
+Both measure the figure the cards show, through the one shared expression
+(`HasCardPriceExpression`), so a slider's ends, the rows it keeps and the order they appear in
+cannot disagree with each other or with the cards.
+
+**Two blocks because one endpoint serves both listings, and the two catalogs do not span the
+same prices.** Both measure the same thing — the card figure — but over different rows, so a
+slider fed the wrong block labels one catalog's range while filtering the other's. That is what
+`/stacks` did until `package_price` existed. `package_price` is
 additive: `price` has always meant products and other frontends read it.
 
 **Known and not fixed: every other facet group is still product-scoped.** The counts are

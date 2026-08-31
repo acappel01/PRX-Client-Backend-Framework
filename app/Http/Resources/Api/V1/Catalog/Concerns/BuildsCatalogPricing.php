@@ -21,10 +21,16 @@ use Illuminate\Support\Collection;
  * true. Two implementations of a pricing rule is how that happens; there is
  * now one.
  *
- * NOTE there is still a second range implementation outside this file, in
- * QuizSchemaBuilder::priceRange(), which computes live rather than reading a
- * resource. The two must move together. Folding it in here is worth doing and
- * is not this change.
+ * THE RULE NOW EXISTS TWICE ON PURPOSE, AND ONLY TWICE. Here, deciding the
+ * amount AND the suffix, the `plan_id` and the tie-break; and in
+ * `HasCardPriceExpression`, which mirrors the AMOUNT alone as SQL because a
+ * listing must FILTER, SORT and take MIN/MAX over a figure that is computed
+ * rather than stored. `CatalogPriceParityTest` asserts the two agree on every
+ * branch, for products and packages both — change the amount rule here and it
+ * fails there.
+ *
+ * `QuizSchemaBuilder` used to be a third, computing its own live min/max from
+ * plans alone. It now runs the shared expression. There is no other.
  */
 trait BuildsCatalogPricing
 {
