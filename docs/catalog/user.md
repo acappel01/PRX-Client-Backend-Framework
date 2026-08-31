@@ -138,7 +138,7 @@ package perfectly sellable; clearing its own price does not.
 
 **A suffix you type OVERRIDES the billing period, and nothing checks the two agree.** Left
 blank, a quarterly plan gets "/qtr" and a six-month plan "/6mo" automatically. Type "/mo" on a
-quarterly plan and its $3,050 term TOTAL reads "$3050.00/mo" — on the package page, and in the
+quarterly plan and its $3,050 term TOTAL reads "$3050/mo" — on the package page, and in the
 term picker on the plan page — which tells a visitor they will be charged that every month.
 Only type a suffix when the price genuinely is per that period.
 
