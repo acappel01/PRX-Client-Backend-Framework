@@ -551,12 +551,29 @@ class PackageEndpointTest extends TestCase
 
     // ── Gap 7: price_min / price_max ─────────────────────────────────────
 
-    public function test_packages_filter_price_min_uses_plan_effective_price(): void
+    /**
+     * THESE TWO PIN THEIR OWN PRICES, AND THE REASON IS A REAL FLAKE.
+     *
+     * They were written when the filter read PLAN prices alone, so the
+     * package's own price was irrelevant and the factory's random
+     * `retail_price` (99-999) never mattered. Since the filter began measuring
+     * the card figure — the cheapest of the own price and the monthly plans —
+     * that random draw decides the answer: any roll below 100 makes
+     * "Expensive" quote under $100 and drop out of a `price_min=100` filter.
+     * Correct behaviour, and a test that passes 999 runs in 1000. Measured at
+     * 0.107%, which is roughly one full-suite run in 900, and it duly failed
+     * one.
+     *
+     * **An unpinned factory value is a hidden input.** It is harmless until a
+     * rule starts reading the column, and then it produces a failure that does
+     * not reproduce.
+     */
+    public function test_packages_filter_price_min_uses_the_card_figure(): void
     {
-        $cheap = Package::factory()->create(['status' => CatalogStatus::Published, 'name' => 'Cheap']);
+        $cheap = Package::factory()->create(['status' => CatalogStatus::Published, 'name' => 'Cheap', 'retail_price' => 900, 'sale_price' => null]);
         Plan::factory()->create(['package_id' => $cheap->id, 'status' => CatalogStatus::Published, 'retail_price' => 50, 'sale_price' => null]);
 
-        $expensive = Package::factory()->create(['status' => CatalogStatus::Published, 'name' => 'Expensive']);
+        $expensive = Package::factory()->create(['status' => CatalogStatus::Published, 'name' => 'Expensive', 'retail_price' => 900, 'sale_price' => null]);
         Plan::factory()->create(['package_id' => $expensive->id, 'status' => CatalogStatus::Published, 'retail_price' => 200, 'sale_price' => null]);
 
         $this->getJson('/api/v1/catalog/packages?price_min=100')
@@ -565,18 +582,36 @@ class PackageEndpointTest extends TestCase
             ->assertJsonPath('data.0.name', 'Expensive');
     }
 
-    public function test_packages_filter_price_max_uses_plan_effective_price(): void
+    public function test_packages_filter_price_max_uses_the_card_figure(): void
     {
-        $cheap = Package::factory()->create(['status' => CatalogStatus::Published, 'name' => 'Cheap']);
+        $cheap = Package::factory()->create(['status' => CatalogStatus::Published, 'name' => 'Cheap', 'retail_price' => 900, 'sale_price' => null]);
         Plan::factory()->create(['package_id' => $cheap->id, 'status' => CatalogStatus::Published, 'retail_price' => 50, 'sale_price' => null]);
 
-        $expensive = Package::factory()->create(['status' => CatalogStatus::Published, 'name' => 'Expensive']);
+        $expensive = Package::factory()->create(['status' => CatalogStatus::Published, 'name' => 'Expensive', 'retail_price' => 900, 'sale_price' => null]);
         Plan::factory()->create(['package_id' => $expensive->id, 'status' => CatalogStatus::Published, 'retail_price' => 200, 'sale_price' => null]);
 
         $this->getJson('/api/v1/catalog/packages?price_max=100')
             ->assertOk()
             ->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.name', 'Cheap');
+    }
+
+    /**
+     * And the own price DOES decide it — the half the two above cannot show,
+     * because in both of them the plan is the cheaper candidate either way.
+     *
+     * Here the package's own price undercuts its plan, so the figure is 80 and
+     * a `price_min=100` filter must drop it. A filter still reading plan prices
+     * alone would keep it on the strength of the $200 plan, quoting a card that
+     * reads "As low as $80.00".
+     */
+    public function test_packages_price_filter_follows_an_own_price_that_undercuts_the_plans(): void
+    {
+        $package = Package::factory()->create(['status' => CatalogStatus::Published, 'name' => 'Own price wins', 'retail_price' => 80, 'sale_price' => null]);
+        Plan::factory()->create(['package_id' => $package->id, 'status' => CatalogStatus::Published, 'retail_price' => 200, 'sale_price' => null]);
+
+        $this->getJson('/api/v1/catalog/packages?price_min=100')->assertOk()->assertJsonCount(0, 'data');
+        $this->getJson('/api/v1/catalog/packages?price_max=100')->assertOk()->assertJsonCount(1, 'data');
     }
 
     public function test_packages_price_filter_uses_sale_price_when_set(): void
