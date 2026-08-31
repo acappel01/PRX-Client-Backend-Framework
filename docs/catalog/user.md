@@ -136,6 +136,12 @@ package's own price is the one-time buy and stays what cards quote, and a plan
 adds a recurring alternative on the package page. Deleting every plan leaves a
 package perfectly sellable; clearing its own price does not.
 
+**A suffix you type OVERRIDES the billing period, and nothing checks the two agree.** Left
+blank, a quarterly plan gets "/qtr" and a six-month plan "/6mo" automatically. Type "/mo" on a
+quarterly plan and its $3,050 term TOTAL reads "$3050.00/mo" — on the package page, and in the
+term picker on the plan page — which tells a visitor they will be charged that every month.
+Only type a suffix when the price genuinely is per that period.
+
 **Example:** A "Testosterone" package might have three plans:
 - Monthly — $299/mo, auto-renews
 - 3-Month Supply — $799 (save 11%), recurring every 3 months
@@ -146,7 +152,7 @@ package perfectly sellable; clearing its own price does not.
 | Billing period | Monthly / Quarterly / 9-Month / Annual / One-time |
 | Term (months) | Explicit month count sent to the provider at checkout (1, 3, 6, 9, 12). |
 | Retail / Sale price | Display prices. Sale price shows as discounted if set. |
-| Price suffix | Appended to price in the UI ("/mo", "every 3 months"). Auto-filled from billing period if blank. |
+| Price suffix | Appended to price in the UI ("/mo", "every 3 months"). Auto-filled from billing period if blank — **leave it blank and it is always right.** |
 | Badge | "Most Popular", "Best Value", etc. |
 | Pre-selected | Mark one plan per package as the default selection on the package page. |
 | Recurring | Toggle ON for subscription plans. OFF = one-time purchase. |

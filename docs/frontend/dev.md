@@ -426,6 +426,25 @@ otherwise disagree about the same person.
 `excluded_count` count-not-list rule. Both are produced by one `ProtocolPresenter`, so a new
 field appears on both at once; do not write a consumer that handles one shape and not the other.
 
+**A PACKAGE HERE CARRIES ITS `plans`, AND THAT IS LOAD-BEARING, NOT INCIDENTAL.** The report is
+the end of a funnel, so the term a card's `price_from` names is chosen in place rather than by
+sending the visitor to the package's own page — which needs the terms to be in *this* payload,
+because a frontend must not fetch content from the browser. `ProtocolPresenter` eager-loads
+published plans in `position` order, the same constraint the catalogue listing uses so the two
+cannot compute a figure from different plan sets. Pinned by
+`LeadPlanEndpointTest::test_a_package_carries_the_plans_the_report_offers_a_term_from`, which
+asserts the array is POPULATED — `whenLoaded` omits the key entirely when the relation is
+missing, so a `has` assertion passes on the broken shape.
+
+**A PRODUCT HERE DOES NOT.** `ProductResource` route-gates `plans` to the product *show* route,
+because a listing must not ship every plan object. So a product on this payload carries
+`price_from` — including its `plan_id` — without the plans behind it. Nothing is broken by that
+today: no product's figure comes from a plan, so every product card is a one-tap add. **A
+consumer must therefore ask whether the plans are actually present rather than assume the kind
+implies them**, and fall back to linking out when they are not. Widening the gate to this route
+is a deliberate decision; `LeadPlanEndpointTest::test_a_product_carries_its_figure_but_not_its_plans_here`
+records the current contract and will fail first.
+
 `meta` carries four things beyond 5a's `filtered`:
 
 | key | meaning |

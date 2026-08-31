@@ -345,6 +345,135 @@ class LeadPlanEndpointTest extends TestCase
     }
 
     /**
+     * THE PLAN PICKER'S INPUT, PINNED.
+     *
+     * The report offers a stack's terms in a modal rather than sending the
+     * visitor to the stack's own page, and it can only do that because the
+     * plans are already in THIS payload — the frontend never fetches content
+     * from the browser. Nothing declares that dependency today: `PackageResource`
+     * emits `plans` on a bare `whenLoaded`, so the key is present because
+     * `ProtocolPresenter` happens to eager load it, and a load removed for an
+     * unrelated reason would empty every picker on the report with no error
+     * anywhere — the card would fall back to its link-out and the feature would
+     * simply stop existing.
+     *
+     * ASSERTING THE ARRAY IS POPULATED, NOT MERELY PRESENT, IS THE POINT.
+     * `whenLoaded` omits the key when the relation is not loaded, so a `has`
+     * assertion passes on the broken shape as readily as on the working one.
+     *
+     * AND THE PICKER MUST BE ABLE TO OPEN ON `price_from.plan_id`. That id is
+     * the plan the card's "as low as" figure came from, so it is what the modal
+     * preselects; if it could name a plan outside this array the modal would
+     * open on nothing while the card quoted a number. It cannot, because
+     * `catalogPriceFrom()` chooses from the same loaded collection this key
+     * serializes — this asserts the invariant rather than trusting the shared
+     * origin to stay shared.
+     */
+    public function test_a_package_carries_the_plans_the_report_offers_a_term_from(): void
+    {
+        $unisex = Ingredient::factory()->create(['sex_eligibility' => SexEligibility::Any]);
+        $product = Product::factory()->create();
+        $product->ingredients()->attach($unisex->id);
+        $goal = $this->goal('weight', [$unisex]);
+
+        $package = Package::factory()->create(['retail_price' => 399]);
+        $package->products()->attach($product->id);
+        $package->healthGoals()->attach($goal->id);
+
+        $monthly = Plan::factory()->create([
+            'package_id' => $package->id,
+            'retail_price' => 279.99,
+            'billing_period' => BillingPeriod::Monthly,
+            'status' => CatalogStatus::Published,
+            'position' => 1,
+        ]);
+        $quarterly = Plan::factory()->create([
+            'package_id' => $package->id,
+            'retail_price' => 799,
+            'billing_period' => BillingPeriod::Quarterly,
+            'term_months' => 3,
+            'status' => CatalogStatus::Published,
+            'position' => 2,
+        ]);
+
+        // A withdrawn plan must not reach a picker. The presenter constrains the
+        // load to published, and the modal renders whatever it is handed.
+        Plan::factory()->create([
+            'package_id' => $package->id,
+            'status' => CatalogStatus::Draft,
+            'position' => 3,
+        ]);
+
+        $quiz = $this->quiz([QuizQuestionKind::HealthGoals->value => 'health_goals']);
+        $lead = $this->quizLead($quiz, ['health_goals' => ['weight']]);
+
+        $response = $this->getJson("/api/v1/leads/{$lead->uuid}/plan")->assertOk();
+
+        $plans = $response->json('data.0.packages.0.plans');
+
+        $this->assertIsArray($plans, 'the plans key is absent — the relation was not eager loaded, '
+            .'so the report can only link a stack out and the plan picker has nothing to offer.');
+        $this->assertCount(2, $plans, 'the picker must be offered the published plans and only those.');
+        $this->assertEqualsCanonicalizing(
+            [$monthly->id, $quarterly->id],
+            array_column($plans, 'id'),
+        );
+
+        // The fields the picker actually renders. A plan with no price is a
+        // radio option a visitor cannot evaluate.
+        $this->assertNotNull($plans[0]['name']);
+        $this->assertNotNull($plans[0]['price']['effective']);
+
+        // The modal opens on this one, so it has to be in the list above.
+        $planId = $response->json('data.0.packages.0.price_from.plan_id');
+
+        $this->assertSame($monthly->id, $planId);
+        $this->assertContains($planId, array_column($plans, 'id'));
+    }
+
+    /**
+     * THE ASYMMETRY THE REPORT HAS TO GUARD AGAINST, STATED.
+     *
+     * `ProductResource` route-gates `plans` to the product SHOW route, so a
+     * product on this payload carries its `price_from` figure but not the plans
+     * behind it. Today that costs nothing: no product quotes a plan, so every
+     * product on the report adds in one tap and the picker is never asked for.
+     * The day one does, the report would otherwise open a modal with no terms
+     * in it — which is why the card asks whether the plans are actually THERE
+     * rather than assuming the kind implies them.
+     *
+     * This is a record of the current contract, not a preference. Widening the
+     * gate to this route is a deliberate decision and should fail here first.
+     */
+    public function test_a_product_carries_its_figure_but_not_its_plans_here(): void
+    {
+        $unisex = Ingredient::factory()->create(['sex_eligibility' => SexEligibility::Any]);
+        $product = Product::factory()->create(['retail_price' => 249]);
+        $product->ingredients()->attach($unisex->id);
+        $this->goal('weight', [$unisex]);
+
+        Plan::factory()->create([
+            'product_id' => $product->id,
+            'retail_price' => 199,
+            'billing_period' => BillingPeriod::Monthly,
+            'status' => CatalogStatus::Published,
+        ]);
+
+        $quiz = $this->quiz([QuizQuestionKind::HealthGoals->value => 'health_goals']);
+        $lead = $this->quizLead($quiz, ['health_goals' => ['weight']]);
+
+        $response = $this->getJson("/api/v1/leads/{$lead->uuid}/plan")->assertOk();
+
+        // The figure is there and it names its source, so the card knows the
+        // quoted number is a plan's rate rather than the product's own price.
+        $response->assertJsonPath('data.0.products.0.price_from.amount', 199);
+        $this->assertNotNull($response->json('data.0.products.0.price_from.plan_id'));
+
+        // The terms behind it are not.
+        $this->assertArrayNotHasKey('plans', $response->json('data.0.products.0'));
+    }
+
+    /**
      * The results-page words come from the quiz, so an operator can change what
      * a visitor who matched nothing is told without a deploy. An unauthored
      * field stays null rather than acquiring a default in a component.
