@@ -3041,7 +3041,7 @@
                                                     ]
                                                 },
                                                 "price_from": {
-                                                    "description": "The one figure a listing card leads with, plus the cadence it is\ncharged at. Emitted alongside `price_range`, not instead of it \u2014\nthe two answer different questions, and the range's ends are in\ndifferent units. See BuildsPackagePricing::packagePriceFrom().",
+                                                    "description": "The one figure a listing card leads with: the package's own\nprice when it has one, because a package is a set group of\nproducts bought once and its plans are separate recurring\ncommitments shown on the detail page. `plan_id` is null in that\ncase, which also tells a card to render the figure bare rather\nthan as \"From $X\". Emitted alongside `price_range`, not instead\nof it \u2014 the two answer different questions, and the range's ends\nare in different units. See\nBuildsPackagePricing::packagePriceFrom().",
                                                     "anyOf": [
                                                         {
                                                             "type": "object",
@@ -3075,6 +3075,30 @@
                                                                 },
                                                                 "suffix": {
                                                                     "type": "null"
+                                                                },
+                                                                "plan_id": {
+                                                                    "type": "null"
+                                                                },
+                                                                "currency": {
+                                                                    "type": "string",
+                                                                    "const": "USD"
+                                                                }
+                                                            },
+                                                            "required": [
+                                                                "amount",
+                                                                "suffix",
+                                                                "plan_id",
+                                                                "currency"
+                                                            ]
+                                                        },
+                                                        {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "amount": {
+                                                                    "type": "number"
+                                                                },
+                                                                "suffix": {
+                                                                    "type": "string"
                                                                 },
                                                                 "plan_id": {
                                                                     "type": "null"
@@ -7674,6 +7698,30 @@
                                 ]
                             },
                             {
+                                "type": "object",
+                                "properties": {
+                                    "amount": {
+                                        "type": "number"
+                                    },
+                                    "suffix": {
+                                        "type": "string"
+                                    },
+                                    "plan_id": {
+                                        "type": "null"
+                                    },
+                                    "currency": {
+                                        "type": "string",
+                                        "const": "USD"
+                                    }
+                                },
+                                "required": [
+                                    "amount",
+                                    "suffix",
+                                    "plan_id",
+                                    "currency"
+                                ]
+                            },
+                            {
                                 "type": "null"
                             }
                         ]
@@ -8575,7 +8623,7 @@
                         ]
                     },
                     "price_from": {
-                        "description": "The one figure a listing card leads with, plus the cadence it is\ncharged at. Emitted alongside `price_range`, not instead of it \u2014\nthe two answer different questions, and the range's ends are in\ndifferent units. See BuildsPackagePricing::packagePriceFrom().",
+                        "description": "The one figure a listing card leads with: the package's own\nprice when it has one, because a package is a set group of\nproducts bought once and its plans are separate recurring\ncommitments shown on the detail page. `plan_id` is null in that\ncase, which also tells a card to render the figure bare rather\nthan as \"From $X\". Emitted alongside `price_range`, not instead\nof it \u2014 the two answer different questions, and the range's ends\nare in different units. See\nBuildsPackagePricing::packagePriceFrom().",
                         "anyOf": [
                             {
                                 "type": "object",
@@ -8609,6 +8657,30 @@
                                     },
                                     "suffix": {
                                         "type": "null"
+                                    },
+                                    "plan_id": {
+                                        "type": "null"
+                                    },
+                                    "currency": {
+                                        "type": "string",
+                                        "const": "USD"
+                                    }
+                                },
+                                "required": [
+                                    "amount",
+                                    "suffix",
+                                    "plan_id",
+                                    "currency"
+                                ]
+                            },
+                            {
+                                "type": "object",
+                                "properties": {
+                                    "amount": {
+                                        "type": "number"
+                                    },
+                                    "suffix": {
+                                        "type": "string"
                                     },
                                     "plan_id": {
                                         "type": "null"

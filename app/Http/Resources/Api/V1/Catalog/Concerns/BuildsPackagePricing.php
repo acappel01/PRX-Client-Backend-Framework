@@ -67,8 +67,23 @@ trait BuildsPackagePricing
     }
 
     /**
-     * The single "From $X" figure a listing card leads with, and the cadence
-     * that figure is actually charged at.
+     * The single figure a listing card leads with, and — when that figure comes
+     * from a plan — the plan it came from.
+     *
+     * THE PACKAGE'S OWN PRICE WINS WHENEVER IT HAS ONE, even against a cheaper
+     * plan. That is a commercial rule, not an arithmetic one, and it follows
+     * from what the two things ARE on this install: a package is a set group of
+     * products bought ONCE (1 of X, 1 of Y, 1 of Z, no rebill), while a plan
+     * lays a monthly or prepaid RECURRING commitment over the same bundle.
+     * They are two different transactions, not two labels for one. So the
+     * cheapest number across both is not "what this costs" — it is the entry
+     * price of a subscription, quoted on a card whose button buys a bundle.
+     *
+     * Leading with the plan understates the card by $50-$119 on live data and
+     * commits the buyer to a rebill they did not choose; leading with the own
+     * price quotes exactly what the visitor is about to buy. The plans are not
+     * hidden — the stack's own page is where a visitor picks one, and that is
+     * the screen where a recurring commitment should be presented.
      *
      * WHY THIS IS NOT `price_range` WITH THE TOP END DROPPED. The range spans
      * every way of buying, and those ways are not priced in the same unit: on
@@ -78,46 +93,54 @@ trait BuildsPackagePricing
      * a month. `price_range` is still correct for what it measures and is still
      * emitted; a card just cannot show two numbers in two units side by side.
      *
-     * So: the lowest MONTHLY-cadence price, carrying its OWN suffix rather than
-     * a "/mo" this method invents. A plan's cadence is structural
-     * (`billing_period`, an enum) and trustworthy. A package's own price has no
-     * cadence column at all — only the free-text `price_suffix` an operator
-     * typed — so it is always a candidate and its suffix is passed through
-     * verbatim. Nothing here fabricates a unit for a number that has none.
+     * `plan_id` NAMES THE PLAN THE FIGURE CAME FROM, or null when the package's
+     * OWN price won. It carries two meanings, and both are load-bearing:
+     *
+     *   - The cart adds by it. A card that quotes one price and then adds a
+     *     different one has lied at the last possible moment, and the
+     *     alternative — having the frontend search the plans for one whose
+     *     price matches the string it rendered — is reverse-engineering an
+     *     answer this method already knows.
+     *   - It says whether the figure is EXACT or a floor. Null means the own
+     *     price: one number, one purchase, no rebill, so a card renders it
+     *     bare. Non-null means the cheapest of several plans, so a card renders
+     *     "From $X". `catalogCardPrice` in the frontend reads it for exactly
+     *     that, and there is deliberately no second flag saying the same thing
+     *     twice.
+     *
+     * THE FALLBACK IS THE ONLY PLACE THIS IS STILL A "FROM". A package with no
+     * own price can only be bought through a plan, and rendering nothing would
+     * hide a purchasable stack. So it takes the lowest MONTHLY-cadence price,
+     * carrying that price's OWN suffix rather than a "/mo" this method invents
+     * — a plan's cadence is structural (`billing_period`, an enum) and
+     * trustworthy. Failing even that (a package sold only as a 6-month prepay),
+     * it takes the cheapest price of any cadence with that price's suffix, so
+     * the card says "From $899.00/6mo", which is true, rather than
+     * "$899.00/mo", which is not.
      *
      * Intro prices are excluded deliberately: `intro_price` buys one billing
      * cycle, so leading a card with it advertises a number the visitor pays
      * once. The detail page's plan picker is where that offer belongs.
      *
-     * The fallback matters more than it looks. A package sold only as a
-     * 6-month prepay has no monthly price to lead with, and rendering nothing
-     * would hide a purchasable stack; it falls back to the cheapest price of
-     * any cadence, with that price's suffix, so the card still says something
-     * true.
+     * THE SUFFIX ON THE OWN PRICE IS PASSED THROUGH VERBATIM AND IS NOT
+     * VALIDATED HERE. A package's own price has no cadence column at all —
+     * only the free-text `price_suffix` an operator typed — so nothing in this
+     * method can tell "/mo" from "/ea" or know whether either is true. Under
+     * the model above that suffix should normally be EMPTY, because a one-time
+     * bundle price is not charged per period; four packages carried a
+     * mislabelled "/mo" until the rule changed and were cleared with it. If a
+     * card ever reads "$399.00/mo" for a purchase the cart books once, the bug
+     * is in the data, not here. Inventing a unit for a number that has none is
+     * the one thing this method must never do.
      *
-     * `plan_id` NAMES THE PLAN THE FIGURE CAME FROM, or null when the package's
-     * OWN price won. A card that quotes "From $279.99/mo" and then adds a
-     * different price to the cart has lied at the last possible moment, and the
-     * alternative — having the frontend search the plans for one whose price
-     * matches the string it rendered — is reverse-engineering an answer this
-     * method already knows. Null is meaningful rather than missing: it says
-     * "buy the package itself", which the cart supports.
-     *
-     * ON AN EQUAL PRICE, THE NON-RECURRING OPTION WINS. This is not a tidiness
-     * rule, it decides what the buyer is signed up to. A package is a set group
-     * of products bought ONCE; a plan lays a monthly or prepaid REBILL over the
-     * same bundle. Downstream, prescribe-rx reads a package with no plan id as a
-     * single transaction and a plan carrying a recurring subscription as a
-     * subscription — and on a local checkout the same choice decides whether the
-     * merchant account starts auto-billing. So when a plan and the package's own
-     * price are the same number, choosing the plan silently enrols someone in a
-     * recurring commitment at a price they could have paid once.
-     *
-     * Live example this was written for: Metabolic Reset, own price 399, plan #4
-     * monthly retail 499 / sale 399 — an exact tie. Every published plan on this
-     * install is `is_recurring`, so the own price is currently the only
-     * non-recurring path; the flag is read rather than assumed so a future
-     * one-off plan behaves correctly without another change here.
+     * ON AN EQUAL PRICE BETWEEN TWO PLANS, THE NON-RECURRING ONE WINS. Only
+     * reachable in the fallback now that the own price pre-empts every plan,
+     * but the reasoning is unchanged and is the same reasoning as the rule
+     * above: downstream, prescribe-rx reads a package with no plan id as a
+     * single transaction and a recurring plan as a subscription, and on a local
+     * checkout the same choice decides whether the merchant account starts
+     * auto-billing. Ordering equals by rebill costs three lines and keeps that
+     * decision from falling out of collection order.
      *
      * CAVEAT, AND IT IS A SCHEMA GAP RATHER THAN A RULE: "no plan means no
      * rebill" holds here only because `packages` carries NO recurring column at
@@ -126,17 +149,26 @@ trait BuildsPackagePricing
      * `plans`. prescribe-rx models recurrence on the PACKAGE as well as the
      * plan, so a recurring package with no plan is a shape that exists over
      * there and cannot be represented here. If a package-level recurring flag is
-     * ever added, this tie-break must read it — `plan_id: null` would no longer
-     * be sufficient evidence of a single transaction.
-     *
-     * A genuinely CHEAPER recurring plan still wins — this breaks ties, it does
-     * not prefer one-time purchases over better prices.
+     * ever added, this method must read it — the own price would no longer be
+     * evidence of a single transaction, and `plan_id: null` would no longer be
+     * safe to render bare.
      *
      * @param  Collection<int, mixed>  $plans
      * @return array{amount: float|null, suffix: string|null, plan_id: int|null, currency: string}
      */
     private function packagePriceFrom(Collection $plans, ?float $ownEffective, ?string $ownSuffix): array
     {
+        // The bundle is buyable outright, so that is what the card quotes.
+        // Deliberately BEFORE the plans are looked at: this is not a comparison.
+        if ($ownEffective !== null) {
+            return [
+                'amount' => round($ownEffective, 2),
+                'suffix' => $ownSuffix,
+                'plan_id' => null,
+                'currency' => 'USD',
+            ];
+        }
+
         $priced = $plans->filter(fn ($p) => $p->sale_price !== null || $p->retail_price !== null);
 
         $candidate = fn ($p) => [
@@ -154,17 +186,6 @@ trait BuildsPackagePricing
             ->filter(fn ($p) => $p->billing_period === BillingPeriod::Monthly)
             ->map($candidate)
             ->values();
-
-        if ($ownEffective !== null) {
-            // The package's own price belongs to no plan, and buying the
-            // package alone never creates a rebill.
-            $monthly->push([
-                'plan_id' => null,
-                'recurring' => false,
-                'amount' => $ownEffective,
-                'suffix' => $ownSuffix,
-            ]);
-        }
 
         $pool = $monthly->isNotEmpty() ? $monthly : $priced->map($candidate)->values();
 

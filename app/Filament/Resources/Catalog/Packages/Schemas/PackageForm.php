@@ -120,10 +120,20 @@ class PackageForm
                                             ->prefix('$')
                                             ->step(0.01)
                                             ->hintIcon(Heroicon::InformationCircle, 'Active sale price. If set, this is the price displayed to customers.'),
+                                        // NORMALLY BLANK, AND THE HINT HAS TO SAY SO. This
+                                        // price is the one-time cost of the bundle, and every
+                                        // listing card leads with it — so a per-period suffix
+                                        // here makes a card read "$399.00/mo" for a purchase
+                                        // the cart books once. Nothing validates the value
+                                        // (it is free text with no cadence column behind it),
+                                        // so the form's own example is the only guard, and it
+                                        // used to suggest "/mo". Four packages carried that
+                                        // mistake. Cadence suffixes belong on plans, where
+                                        // BillingPeriod fills them in.
                                         TextInput::make('price_suffix')
                                             ->maxLength(32)
-                                            ->placeholder('e.g. /mo, starting at')
-                                            ->hintIcon(Heroicon::InformationCircle, 'Optional copy appended after the price, e.g. "/mo" or "starting at".'),
+                                            ->placeholder('usually blank — e.g. /ea')
+                                            ->hintIcon(Heroicon::InformationCircle, 'Usually leave this BLANK. The package price is a one-time price for the bundle and is what listing cards show, so a per-period suffix like "/mo" makes a card advertise a subscription for a purchase billed once. Use it only for a genuine per-unit price such as "/ea". Monthly and prepaid wording belongs on the package\'s Plans.'),
                                         TextInput::make('cost')
                                             ->numeric()
                                             ->prefix('$')

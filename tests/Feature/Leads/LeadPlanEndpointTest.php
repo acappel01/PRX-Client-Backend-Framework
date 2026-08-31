@@ -290,11 +290,18 @@ class LeadPlanEndpointTest extends TestCase
      *
      * PackageResource emits it only when the `plans` relation is loaded and
      * omits it silently otherwise — so dropping the eager load does not break a
-     * request, it just makes this surface render the package's own price while
-     * every catalogue card renders the cheaper "From" figure. The same item,
-     * two numbers, which is the defect the shared card price rule was written
-     * to end. Asserting the KEY is populated rather than merely present is the
-     * point: `null` is exactly what the missing load produces.
+     * request, it just leaves this surface computing its figure from a
+     * different input than every catalogue card. The same item, two numbers,
+     * which is the defect the shared card price rule was written to end.
+     *
+     * ASSERTING THE KEY IS POPULATED, RATHER THAN MERELY PRESENT, IS NOW THE
+     * WHOLE GUARD, and it matters more than it did. Since the card figure
+     * became the package's OWN price, a missing eager load no longer shows up
+     * as a wrong number on screen — the frontend falls back to `price.effective`
+     * and renders the same $399. It shows up as a missing `plan_id`
+     * distinction and as a wrong figure only for a package with no own price.
+     * The payload assertion below still fails the moment the load is dropped;
+     * a screenshot would not.
      */
     public function test_a_package_carries_the_price_from_figure_cards_lead_with(): void
     {
@@ -324,17 +331,17 @@ class LeadPlanEndpointTest extends TestCase
             .'will disagree with every catalogue card about the same package.',
         );
 
-        // And it is the cheapest monthly plan, not the package's own price.
-        $response->assertJsonPath('data.0.packages.0.price_from.amount', 279.99);
+        // And it is the package's OWN price, not the cheaper monthly plan: the
+        // report's button buys the bundle, and $279.99 is the entry price of a
+        // subscription over it.
+        $response->assertJsonPath('data.0.packages.0.price_from.amount', 399);
 
-        // THE FIGURE MUST NAME ITS OWN PLAN. The report adds this plan to the
-        // cart, so a card quoting one price and adding another is the failure
-        // this key exists to prevent. Reverse-engineering it frontend-side by
-        // matching the rendered string against plan prices is what this avoids.
-        $response->assertJsonPath(
-            'data.0.packages.0.price_from.plan_id',
-            $package->plans()->first()->id,
-        );
+        // THE LIVE CONSEQUENCE, AND THE REASON THIS ASSERTION IS HERE RATHER
+        // THAN ONLY IN THE CATALOGUE TESTS. This report is the one card surface
+        // that ADDS TO THE CART, and it adds by this id. Null books the package
+        // alone as a single transaction; naming the monthly plan would enrol a
+        // visitor who clicked "add" on a $399 bundle into a $279.99 rebill.
+        $response->assertJsonPath('data.0.packages.0.price_from.plan_id', null);
     }
 
     /**

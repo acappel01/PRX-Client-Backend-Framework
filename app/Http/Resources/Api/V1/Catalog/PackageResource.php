@@ -71,10 +71,15 @@ class PackageResource extends JsonResource
                 fn () => $this->buildPriceRange()
             ),
 
-            // The one figure a listing card leads with, plus the cadence it is
-            // charged at. Emitted alongside `price_range`, not instead of it —
-            // the two answer different questions, and the range's ends are in
-            // different units. See BuildsPackagePricing::packagePriceFrom().
+            // The one figure a listing card leads with: the package's own
+            // price when it has one, because a package is a set group of
+            // products bought once and its plans are separate recurring
+            // commitments shown on the detail page. `plan_id` is null in that
+            // case, which also tells a card to render the figure bare rather
+            // than as "From $X". Emitted alongside `price_range`, not instead
+            // of it — the two answer different questions, and the range's ends
+            // are in different units. See
+            // BuildsPackagePricing::packagePriceFrom().
             'price_from' => $this->when(
                 $this->relationLoaded('plans'),
                 fn () => $this->buildPriceFrom()

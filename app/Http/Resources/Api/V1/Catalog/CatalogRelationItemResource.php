@@ -129,9 +129,14 @@ class CatalogRelationItemResource extends JsonResource
     }
 
     /**
-     * The "From $X/mo" figure, packages only and on the same terms as the
+     * The figure a card leads with, packages only and on the same terms as the
      * range above: null when this is a product, or when plans were not loaded,
      * so a card can tell "no figure" from "a figure of nothing".
+     *
+     * The plans still have to be loaded even though a package with an own price
+     * never reads them — the rule falls back to them for a package with no own
+     * price, and a resource that guessed which branch applied before loading
+     * would be the same silent-omission trap from the other direction.
      *
      * A PRODUCT DELIBERATELY GETS NONE. Its own price is the whole story on a
      * card, and a product's term plans are 3/6/9/12-month prepay totals — a

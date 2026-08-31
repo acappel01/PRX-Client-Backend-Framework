@@ -249,7 +249,7 @@ when a package has no plans at all.
 |---|---|---|
 | `price` | `{retail, sale, effective, suffix, currency}` | What one purchase of the package itself costs. `effective` is `sale ?? retail`, and is `null` — never `0.00` — when unpriced |
 | `price_range` | `{from, to, currency}` | The full span a visitor could pay, across plans **and** the package's own price |
-| `price_from` | `{amount, suffix, plan_id, currency}` | The single figure a card leads with, the cadence it is charged at, and the plan it came from |
+| `price_from` | `{amount, suffix, plan_id, currency}` | The single figure a card leads with, the unit it is charged in, and — when it came from a plan — which plan |
 
 **`price_from` is NOT `price_range.from`, and a card must not use the range.** The range's two
 ends are routinely in different units: on a typical install the low end is a monthly rate and
@@ -258,25 +258,45 @@ and tells a visitor a stack might cost $1,259.96 a month. The range is still cor
 it measures — it is the honest answer to "what could I pay" — but only `price_from` is safe on
 its own.
 
-`price_from` is the cheapest **monthly-cadence** price among the package's plans and its own
-price, carrying that price's own suffix rather than a `/mo` the backend invented. A plan's
-cadence is structural (`billing_period`); a package's own price has no cadence column, so its
-free-text `price_suffix` is passed through as authored and may be absent. When no monthly price
-exists — a package sold only as a prepay term — it falls back to the cheapest price of any
-cadence, again with that price's suffix, so a card renders "From $899.00/6mo" rather than a
-false "/mo" or nothing at all. `amount` is `null` when nothing is priced.
+**`price_from` is the package's OWN price whenever it has one — not the cheapest number
+available.** That is a commercial rule, not an arithmetic one, and it follows from what the two
+things are: a package is a set group of products bought **once**, while a plan lays a monthly or
+prepaid **recurring** commitment over the same bundle. Two different transactions, not two
+labels for one. A card's button buys the bundle, so quoting a cheaper plan understates what is
+about to be bought and commits the visitor to a rebill they never chose. Present the plans on
+the package's own detail page, which is where a recurring commitment belongs.
+
+**Only a package with no own price falls back to its plans**, because then a plan is the only
+way to buy it and rendering nothing would hide a purchasable package. The fallback takes the
+cheapest **monthly-cadence** price, carrying that price's own suffix rather than a `/mo` the
+backend invented; a plan's cadence is structural (`billing_period`). Failing even that — a
+package sold only as a prepay term — it takes the cheapest price of any cadence, again with
+that price's suffix, so a card renders "From $899.00/6mo" rather than a false "/mo" or nothing
+at all. `amount` is `null` when nothing is priced anywhere.
 
 **Intro prices are excluded from `price_from` on purpose.** A plan's `intro_price` buys one
 billing cycle, so leading a card with it advertises a number the visitor stops paying. Render
 it on a detail page's plan picker, where the term is visible, not on a card.
 
-**`plan_id` names the plan the figure came from, and `null` is meaningful rather than missing.**
-Null means the package's OWN price won, so buying the package itself is exactly the quoted
-figure. This exists so a surface that both quotes the figure AND adds to the cart charges what
-it displayed: adding a package with no plan bills its own price, which on live data is $399
-against cards reading "From $279.99/mo". If you add to the cart from a card, send this
-`plan_id` (omit `plan_id` entirely when it is null). Do not reverse-engineer it by matching the
-rendered string against plan prices — this field is the answer the backend already computed.
+**`plan_id` carries two meanings and a frontend needs both.**
+
+- **It is what to add to the cart.** A surface that quotes the figure and also adds to the cart
+  must charge what it displayed. Send this `plan_id`, omitting the key entirely when it is
+  null. Do not reverse-engineer it by matching the rendered string against plan prices — this
+  field is the answer already computed.
+- **It says whether the figure is exact or a floor.** `null` means the package's own price: one
+  number, one purchase, no plan, no rebill — render it **bare**, because "From $399.00" invents
+  a cheaper option the button cannot buy. Non-null means the cheapest of several plans, with
+  the visitor choosing one on the detail page — render it as **"From $X"**. There is
+  deliberately no second field repeating this; two flags saying one thing is how they drift.
+
+**The own price's suffix is free text and is passed through unvalidated.** A package's own price
+has no cadence column — nothing in the backend can tell `/mo` from `/ea` or know whether either
+is true — so `price_suffix` arrives exactly as an operator typed it and may be absent. Under the
+model above it should normally be **empty**, because a one-time bundle price is not charged per
+period. Render it verbatim and do not supply a default: a card reading "$399.00/mo" for a
+purchase the cart books once is a content bug with a content fix, and a frontend fallback would
+hide it.
 
 Products get no `price_range` and no `price_from`. A product's own `price` is the whole story
 on a card, and its term plans are 3/6/9/12-month prepay totals — a "from" built from those
