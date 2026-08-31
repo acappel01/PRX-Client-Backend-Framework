@@ -131,7 +131,7 @@ Paginated. 15 per page, max 50.
 | `in_stock` | bool | In-stock products only |
 | `price_min` / `price_max` | float | Effective-price bounds |
 | `search` | string | Name / subtitle LIKE search |
-| `sort` | string | `position` (default) \| `name` \| `-name` \| `price` \| `-price` \| `newest` \| `oldest` — whitelisted in `SortsCatalogQueries`; price sorts on `COALESCE(sale_price, retail_price)` |
+| `sort` | string | `position` (default) \| `name` \| `-name` \| `price` \| `-price` \| `newest` \| `oldest` — whitelisted in `SortsCatalogQueries`. Price sorts on `COALESCE(sale_price, retail_price)` for products; packages pass `Package::priceFromAmountSql()` so the order matches their cards |
 | `per_page` | int | Page size (max 50) |
 
 Response includes `links` + `meta` pagination keys. Cards carry a
@@ -165,7 +165,26 @@ Also includes `faqs` — see [Polymorphic FAQs](#polymorphic-faqs).
 
 ### `GET /api/v1/catalog/packages`
 
-Same filter params as products (minus class/type/form/ingredient) plus `sort`. Each package includes its Published plans and a `price_range` computed from plan prices.
+Same filter params as products (minus class/type/form/ingredient) plus `sort`. Each package
+includes its Published plans, a `price_range` spanning the plans and its own price, and
+`price_from` — the figure a card leads with.
+
+**`price_min` / `price_max` and `sort=price` operate on `price_from.amount`, not on plan
+prices and not on the package's own columns.** A package's card shows the cheapest way in
+(its own one-time price against its monthly-cadence plans), and a filter measuring anything
+else contradicts the numbers on screen. It previously ran `whereHas('plans')` on plan prices,
+which made the package's own price invisible to the filter and left a package with **no**
+plans unable to match any price range at all — cards read "As low as $399.00" and vanished at
+a $350 minimum because their plans were $279.99 and $671.98 with nothing in between.
+
+The figure is not a stored column, so filtering, sorting and aggregating it need it as SQL:
+`Package::priceFromAmountSql()` is the single definition, used by this filter, the price sort
+and the facet bounds. It mirrors the **amount** half of
+`BuildsCatalogPricing::catalogPriceFrom()` — the suffix, the `plan_id` and the non-recurring
+tie-break decide which candidate is reported, never what the lowest number is.
+`PackagePriceParityTest` asserts the two agree on every branch, including the ones raw SQL
+gets wrong for free: soft-deleted plans (the relation hides them, SQL does not), unpublished
+plans, unpriced plans, and intro prices.
 
 ### `GET /api/v1/catalog/packages/{slug}`
 
@@ -269,8 +288,26 @@ All visible tags ordered by position.
 
 Filter-sidebar payload: `categories` / `classes` / `types` / `forms` /
 `ingredients` / `tags` (each `[{name, slug, count}]`, published-product counts,
-zero-count rows omitted), `price {min, max, currency}` bounds across published
-products, `availability {in_stock, out_of_stock}` counts.
+zero-count rows omitted), `availability {in_stock, out_of_stock}` counts, and
+**two** price blocks:
+
+| Key | Spans |
+|---|---|
+| `price {min, max, currency}` | `COALESCE(sale, retail)` across published **products** |
+| `package_price {min, max, currency}` | `price_from.amount` across published **packages** — the same expression the package filter and price sort use |
+
+**Two blocks because one endpoint serves both listings and the kinds are not priced alike.** A
+product card shows its own effective price; a package card shows the cheapest way in across its
+own price and its monthly plans. A slider fed the wrong block labels one range while filtering
+another — which is what `/stacks` did until `package_price` existed. `package_price` is
+additive: `price` has always meant products and other frontends read it.
+
+**Known and not fixed: every other facet group is still product-scoped.** The counts are
+published-PRODUCT counts, and `products_count > 0` drops a category or tag attached only to
+packages from the payload entirely — so it cannot be selected on the package listing even though
+`PackageController` honours those same slugs. `availability` is likewise a product count. Fixing
+it needs a scoping parameter and a decision about what the counts mean per kind; it is recorded
+rather than half-done.
 
 ---
 

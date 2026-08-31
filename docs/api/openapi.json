@@ -2710,7 +2710,7 @@
                     {
                         "name": "price_min",
                         "in": "query",
-                        "description": "Filter packages with at least one plan priced at or above this amount (USD).",
+                        "description": "Filter by the figure a card shows (`price_from.amount`, the \"as low as\" price) at or above this amount (USD).",
                         "schema": {
                             "type": "number"
                         },
@@ -2719,7 +2719,7 @@
                     {
                         "name": "price_max",
                         "in": "query",
-                        "description": "Filter packages with at least one plan priced at or below this amount (USD).",
+                        "description": "Filter by the figure a card shows (`price_from.amount`, the \"as low as\" price) at or below this amount (USD).",
                         "schema": {
                             "type": "number"
                         },
@@ -2728,7 +2728,7 @@
                     {
                         "name": "sort",
                         "in": "query",
-                        "description": "Sort order: position (default), name, -name, price, -price, newest, oldest.",
+                        "description": "Sort order: position (default), name, -name, price, -price, newest, oldest. Price sorts by the same figure the price filter uses.",
                         "schema": {
                             "type": "string"
                         },
@@ -3456,7 +3456,7 @@
         "/catalog/facets": {
             "get": {
                 "operationId": "v1.catalog.facets.index",
-                "description": "Returns the option lists a product-listing filter UI needs: categories,\nclasses, types, forms, and ingredients (each with published-product\ncounts), the price bounds across published products, and availability\ncounts. Facet values with zero published products are omitted.",
+                "description": "Returns the option lists a catalog filter UI needs: categories, classes,\ntypes, forms, and ingredients (each with published-product counts),\navailability counts, and TWO sets of price bounds \u2014 `price` across\npublished products, `package_price` across published packages.\n\nThe two price blocks exist because one endpoint serves both listings and\nthe two are not priced alike: a product's card shows its own effective\nprice, a package's shows the cheapest way in across its own price and its\nmonthly plans. A slider fed the wrong one filters on a range its own\nlabels contradict.\n\nKNOWN AND NOT FIXED HERE: every other facet group is still\nproduct-scoped. The counts are published-PRODUCT counts, and a category\nor tag attached only to packages is dropped from the payload entirely\n(`products_count > 0`), so it cannot be selected on the package listing\neven though PackageController honours those same slugs. Availability is\nlikewise a product count. That is a larger change than the price bounds \u2014\nit needs a scoping parameter and a decision about what the counts mean \u2014\nand is recorded rather than half-done.\n\nFacet values with zero published products are omitted.",
                 "summary": "Get catalog filter facets",
                 "tags": [
                     "Catalog"
@@ -3516,6 +3516,33 @@
                                                         "currency"
                                                     ]
                                                 },
+                                                "package_price": {
+                                                    "type": "object",
+                                                    "description": "Additive, never a reshaping of `price`: this payload ships to\nmore than one frontend and `price` has always meant products.",
+                                                    "properties": {
+                                                        "min": {
+                                                            "type": [
+                                                                "number",
+                                                                "null"
+                                                            ]
+                                                        },
+                                                        "max": {
+                                                            "type": [
+                                                                "number",
+                                                                "null"
+                                                            ]
+                                                        },
+                                                        "currency": {
+                                                            "type": "string",
+                                                            "const": "USD"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "min",
+                                                        "max",
+                                                        "currency"
+                                                    ]
+                                                },
                                                 "availability": {
                                                     "type": "object",
                                                     "properties": {
@@ -3542,6 +3569,7 @@
                                                 "ingredients",
                                                 "tags",
                                                 "price",
+                                                "package_price",
                                                 "availability"
                                             ]
                                         },
