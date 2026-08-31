@@ -2424,11 +2424,75 @@
                                                         "currency"
                                                     ]
                                                 },
+                                                "price_from": {
+                                                    "description": "The \"As low as $X\" figure a card leads with \u2014 the same rule and\nthe same shared trait packages use, because one item must not\nquote two numbers on two screens. Emitted only when `plans` is\nloaded, and SILENTLY OMITTED otherwise: a card then falls back to\n`price.effective`, which is right today (no product has a monthly\nplan, so the own price always wins) and would quietly stop being\nright the day one does. Every route that serializes a product for\na card loads the relation; the tests assert the key is POPULATED\nrather than merely present, because that is the difference a\nmissing load actually makes.",
+                                                    "anyOf": [
+                                                        {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "amount": {
+                                                                    "type": "number"
+                                                                },
+                                                                "suffix": {
+                                                                    "type": "string"
+                                                                },
+                                                                "plan_id": {
+                                                                    "type": "string"
+                                                                },
+                                                                "currency": {
+                                                                    "type": "string",
+                                                                    "const": "USD"
+                                                                }
+                                                            },
+                                                            "required": [
+                                                                "amount",
+                                                                "suffix",
+                                                                "plan_id",
+                                                                "currency"
+                                                            ]
+                                                        },
+                                                        {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "amount": {
+                                                                    "type": "null"
+                                                                },
+                                                                "suffix": {
+                                                                    "type": "null"
+                                                                },
+                                                                "plan_id": {
+                                                                    "type": "null"
+                                                                },
+                                                                "currency": {
+                                                                    "type": "string",
+                                                                    "const": "USD"
+                                                                }
+                                                            },
+                                                            "required": [
+                                                                "amount",
+                                                                "suffix",
+                                                                "plan_id",
+                                                                "currency"
+                                                            ]
+                                                        },
+                                                        {
+                                                            "type": "object"
+                                                        }
+                                                    ]
+                                                },
                                                 "plans": {
-                                                    "type": "array",
-                                                    "items": {
-                                                        "$ref": "#/components/schemas/PlanResource"
-                                                    }
+                                                    "description": "THE LISTING LOADS PLANS BUT MUST NOT SHIP THEM. The relation is\neager-loaded on every product route so `price_from` above can be\ncomputed, but a listing card needs the FIGURE, not the plan\nobjects \u2014 `ProductPlansTest::test_product_index_does_not_expose_plans`\nis the contract, and gating on `whenLoaded` alone would have\nsilently broken it the moment the load was added for the figure.\nRoute-gated, like `related` and `pairs_with` above.",
+                                                    "anyOf": [
+                                                        {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "$ref": "#/components/schemas/PlanResource"
+                                                            }
+                                                        },
+                                                        {
+                                                            "type": "object"
+                                                        }
+                                                    ]
                                                 },
                                                 "faqs": {
                                                     "anyOf": [
@@ -2565,6 +2629,7 @@
                                                 "related",
                                                 "pairs_with",
                                                 "price",
+                                                "price_from",
                                                 "plans",
                                                 "faqs",
                                                 "rating",
@@ -3041,7 +3106,7 @@
                                                     ]
                                                 },
                                                 "price_from": {
-                                                    "description": "The one figure a listing card leads with: the package's own\nprice when it has one, because a package is a set group of\nproducts bought once and its plans are separate recurring\ncommitments shown on the detail page. `plan_id` is null in that\ncase, which also tells a card to render the figure bare rather\nthan as \"From $X\". Emitted alongside `price_range`, not instead\nof it \u2014 the two answer different questions, and the range's ends\nare in different units. See\nBuildsPackagePricing::packagePriceFrom().",
+                                                    "description": "The \"As low as $X\" figure a listing card leads with: the\ncheapest of the package's own one-time price and its\nmonthly-cadence plans. `plan_id` names which it came from, and\nnull means the package itself \u2014 a surface that both quotes this\nand adds to the cart must not add on a non-null id, because the\nvisitor has agreed to no plan. Emitted alongside `price_range`,\nnot instead of it \u2014 the two answer different questions, and the\nrange's ends are in different units. See\nBuildsCatalogPricing::catalogPriceFrom().",
                                                     "anyOf": [
                                                         {
                                                             "type": "object",
@@ -3075,30 +3140,6 @@
                                                                 },
                                                                 "suffix": {
                                                                     "type": "null"
-                                                                },
-                                                                "plan_id": {
-                                                                    "type": "null"
-                                                                },
-                                                                "currency": {
-                                                                    "type": "string",
-                                                                    "const": "USD"
-                                                                }
-                                                            },
-                                                            "required": [
-                                                                "amount",
-                                                                "suffix",
-                                                                "plan_id",
-                                                                "currency"
-                                                            ]
-                                                        },
-                                                        {
-                                                            "type": "object",
-                                                            "properties": {
-                                                                "amount": {
-                                                                    "type": "number"
-                                                                },
-                                                                "suffix": {
-                                                                    "type": "string"
                                                                 },
                                                                 "plan_id": {
                                                                     "type": "null"
@@ -7698,30 +7739,6 @@
                                 ]
                             },
                             {
-                                "type": "object",
-                                "properties": {
-                                    "amount": {
-                                        "type": "number"
-                                    },
-                                    "suffix": {
-                                        "type": "string"
-                                    },
-                                    "plan_id": {
-                                        "type": "null"
-                                    },
-                                    "currency": {
-                                        "type": "string",
-                                        "const": "USD"
-                                    }
-                                },
-                                "required": [
-                                    "amount",
-                                    "suffix",
-                                    "plan_id",
-                                    "currency"
-                                ]
-                            },
-                            {
                                 "type": "null"
                             }
                         ]
@@ -8623,7 +8640,7 @@
                         ]
                     },
                     "price_from": {
-                        "description": "The one figure a listing card leads with: the package's own\nprice when it has one, because a package is a set group of\nproducts bought once and its plans are separate recurring\ncommitments shown on the detail page. `plan_id` is null in that\ncase, which also tells a card to render the figure bare rather\nthan as \"From $X\". Emitted alongside `price_range`, not instead\nof it \u2014 the two answer different questions, and the range's ends\nare in different units. See\nBuildsPackagePricing::packagePriceFrom().",
+                        "description": "The \"As low as $X\" figure a listing card leads with: the\ncheapest of the package's own one-time price and its\nmonthly-cadence plans. `plan_id` names which it came from, and\nnull means the package itself \u2014 a surface that both quotes this\nand adds to the cart must not add on a non-null id, because the\nvisitor has agreed to no plan. Emitted alongside `price_range`,\nnot instead of it \u2014 the two answer different questions, and the\nrange's ends are in different units. See\nBuildsCatalogPricing::catalogPriceFrom().",
                         "anyOf": [
                             {
                                 "type": "object",
@@ -8657,30 +8674,6 @@
                                     },
                                     "suffix": {
                                         "type": "null"
-                                    },
-                                    "plan_id": {
-                                        "type": "null"
-                                    },
-                                    "currency": {
-                                        "type": "string",
-                                        "const": "USD"
-                                    }
-                                },
-                                "required": [
-                                    "amount",
-                                    "suffix",
-                                    "plan_id",
-                                    "currency"
-                                ]
-                            },
-                            {
-                                "type": "object",
-                                "properties": {
-                                    "amount": {
-                                        "type": "number"
-                                    },
-                                    "suffix": {
-                                        "type": "string"
                                     },
                                     "plan_id": {
                                         "type": "null"
@@ -9419,8 +9412,62 @@
                             "currency"
                         ]
                     },
+                    "price_from": {
+                        "description": "The \"As low as $X\" figure a card leads with \u2014 the same rule and\nthe same shared trait packages use, because one item must not\nquote two numbers on two screens. Emitted only when `plans` is\nloaded, and SILENTLY OMITTED otherwise: a card then falls back to\n`price.effective`, which is right today (no product has a monthly\nplan, so the own price always wins) and would quietly stop being\nright the day one does. Every route that serializes a product for\na card loads the relation; the tests assert the key is POPULATED\nrather than merely present, because that is the difference a\nmissing load actually makes.",
+                        "anyOf": [
+                            {
+                                "type": "object",
+                                "properties": {
+                                    "amount": {
+                                        "type": "number"
+                                    },
+                                    "suffix": {
+                                        "type": "string"
+                                    },
+                                    "plan_id": {
+                                        "type": "string"
+                                    },
+                                    "currency": {
+                                        "type": "string",
+                                        "const": "USD"
+                                    }
+                                },
+                                "required": [
+                                    "amount",
+                                    "suffix",
+                                    "plan_id",
+                                    "currency"
+                                ]
+                            },
+                            {
+                                "type": "object",
+                                "properties": {
+                                    "amount": {
+                                        "type": "null"
+                                    },
+                                    "suffix": {
+                                        "type": "null"
+                                    },
+                                    "plan_id": {
+                                        "type": "null"
+                                    },
+                                    "currency": {
+                                        "type": "string",
+                                        "const": "USD"
+                                    }
+                                },
+                                "required": [
+                                    "amount",
+                                    "suffix",
+                                    "plan_id",
+                                    "currency"
+                                ]
+                            }
+                        ]
+                    },
                     "plans": {
                         "type": "array",
+                        "description": "THE LISTING LOADS PLANS BUT MUST NOT SHIP THEM. The relation is\neager-loaded on every product route so `price_from` above can be\ncomputed, but a listing card needs the FIGURE, not the plan\nobjects \u2014 `ProductPlansTest::test_product_index_does_not_expose_plans`\nis the contract, and gating on `whenLoaded` alone would have\nsilently broken it the moment the load was added for the figure.\nRoute-gated, like `related` and `pairs_with` above.",
                         "items": {
                             "$ref": "#/components/schemas/PlanResource"
                         }

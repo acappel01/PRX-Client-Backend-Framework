@@ -49,7 +49,14 @@ final readonly class ProtocolPresenter
     {
         $result = $this->resolver->resolve($goal, $profile);
 
-        $products = $result['products']->loadMissing('ingredients', 'healthGoals');
+        $products = $result['products']->loadMissing([
+            'ingredients',
+            'healthGoals',
+            // Products carry `price_from` as packages do, and it is omitted
+            // silently without this — see the note on the package load below,
+            // which is the same trap and cost this surface a wrong figure once.
+            'plans' => fn ($q) => $q->where('status', CatalogStatus::Published)->orderBy('position'),
+        ]);
         $packages = $result['packages']->loadMissing([
             // Published-only: see CatalogInliner for why an unconstrained
             // nested products load is a content leak, not a detail.
@@ -61,10 +68,11 @@ final readonly class ProtocolPresenter
             // REQUIRED FOR `price_from`, WHICH IS WHY IT IS NOT OPTIONAL HERE.
             // PackageResource emits `price_from` only when this relation is
             // loaded, and silently omits it otherwise — so without this line a
-            // package renders its own $399 while every catalogue card renders
-            // "From $349". That is the single-figure disagreement the shared
-            // card price rule exists to have ended, reappearing through a
-            // missing eager load rather than through a second implementation.
+            // package renders its own price while every catalogue card renders
+            // the cheaper "as low as" figure. That is the single-figure
+            // disagreement the shared card price rule exists to have ended,
+            // reappearing through a missing eager load rather than through a
+            // second implementation.
             // Filtered and ordered exactly as the listing does it
             // (PackageController) so the two cannot compute from different
             // plan sets and disagree that way instead.

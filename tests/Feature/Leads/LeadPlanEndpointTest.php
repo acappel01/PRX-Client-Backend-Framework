@@ -294,14 +294,11 @@ class LeadPlanEndpointTest extends TestCase
      * different input than every catalogue card. The same item, two numbers,
      * which is the defect the shared card price rule was written to end.
      *
-     * ASSERTING THE KEY IS POPULATED, RATHER THAN MERELY PRESENT, IS NOW THE
-     * WHOLE GUARD, and it matters more than it did. Since the card figure
-     * became the package's OWN price, a missing eager load no longer shows up
-     * as a wrong number on screen — the frontend falls back to `price.effective`
-     * and renders the same $399. It shows up as a missing `plan_id`
-     * distinction and as a wrong figure only for a package with no own price.
-     * The payload assertion below still fails the moment the load is dropped;
-     * a screenshot would not.
+     * ASSERTING THE KEY IS POPULATED, RATHER THAN MERELY PRESENT, IS THE POINT:
+     * `null` is exactly what the missing load produces, and the frontend then
+     * falls back to `price.effective` — the package's own $399 — while every
+     * catalogue card shows $279.99. Same item, two numbers, which is the defect
+     * the shared card price rule exists to have ended.
      */
     public function test_a_package_carries_the_price_from_figure_cards_lead_with(): void
     {
@@ -331,17 +328,20 @@ class LeadPlanEndpointTest extends TestCase
             .'will disagree with every catalogue card about the same package.',
         );
 
-        // And it is the package's OWN price, not the cheaper monthly plan: the
-        // report's button buys the bundle, and $279.99 is the entry price of a
-        // subscription over it.
-        $response->assertJsonPath('data.0.packages.0.price_from.amount', 399);
+        // And it is the cheapest way in — the $279.99 monthly plan, not the
+        // package's own $399. "As low as" is a floor, and the report links a
+        // stack to its own page precisely because that floor names a plan the
+        // visitor has not chosen yet.
+        $response->assertJsonPath('data.0.packages.0.price_from.amount', 279.99);
 
-        // THE LIVE CONSEQUENCE, AND THE REASON THIS ASSERTION IS HERE RATHER
-        // THAN ONLY IN THE CATALOGUE TESTS. This report is the one card surface
-        // that ADDS TO THE CART, and it adds by this id. Null books the package
-        // alone as a single transaction; naming the monthly plan would enrol a
-        // visitor who clicked "add" on a $399 bundle into a $279.99 rebill.
-        $response->assertJsonPath('data.0.packages.0.price_from.plan_id', null);
+        // THE FIGURE MUST NAME ITS SOURCE. A stack is not added from here — it
+        // links out — but the id is what a plan picker would open on, and it is
+        // the only thing distinguishing "this figure is a plan" from "this
+        // figure is the item itself", which decides whether a rebill exists.
+        $response->assertJsonPath(
+            'data.0.packages.0.price_from.plan_id',
+            $package->plans()->first()->id,
+        );
     }
 
     /**

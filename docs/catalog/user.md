@@ -92,24 +92,33 @@ difference is not cosmetic — it decides whether the customer is billed again:
 | Products | Assign which products are included in this package. Set sort order in admin. |
 | Plans | Optional subscription tiers (see Plans section below). A package with no plans is still fully sellable at its own price. |
 
-### The package's own price is what listing cards show
+Both are real, sellable shapes, and the customer chooses between them on the package page.
 
-**Retail / Sale on the package is the one-time price of the bundle, and it is the figure every
-listing card, rail, quick-view and cross-sell leads with.** Plans are shown on the package's own
-page, where the customer can read the terms before committing to a rebill. A card that quoted the
-cheapest plan instead would advertise a subscription on a button that buys a bundle — cheaper on
-the page, and a recurring charge the customer did not choose.
+### What a listing card shows: "As low as $X"
 
-A plan priced **below** the package's own price does not change the card. That is the point: the
-lower number is the entry price of a commitment, not a cheaper way to buy the same thing.
+**Cards advertise the cheapest way in.** For each package the storefront compares its own
+one-time price against its **monthly** plans and shows the lowest, labelled "as low as" — so
+$399 one-time against a $279.99/mo plan gives a card reading **"As low as $279.99/mo"**. The
+same rule runs on product cards.
+
+**"As low as" is a floor, not a quote, which is why a card never adds a stack to the cart.** The
+cheapest figure is usually a plan, and a plan is a recurring commitment — so the customer picks
+the term on the package's own page, where the terms are visible. Anything that showed the low
+figure and then added something on the customer's behalf would either sign them up to a rebill
+they did not choose or charge more than the card said.
+
+**Prepaid multi-month plans never become the card figure.** A $1,259.96 six-month plan is a
+TOTAL, not a rate; only monthly plans are compared, so a card cannot advertise a prepay total as
+though it were a monthly price. They still appear on the package page.
 
 **Leave the package's price Suffix BLANK unless the price genuinely is per-unit.** The suffix is
 free text and is printed exactly as typed — nothing validates it. A one-time bundle price is not
-charged per period, so "/mo" there makes a card read "$399.00/mo" for a purchase billed once.
-Suffixes belong on plans, where the billing period fills them in automatically.
+charged per period, so "/mo" there makes a card read "As low as $399.00/mo" for a purchase
+billed once. Cadence wording belongs on plans, where the billing period fills it in
+automatically.
 
-**A package with no retail or sale price** falls back to its cheapest monthly plan, and its cards
-then read "From $X/mo" — correct, because a plan is the only way to buy it.
+**A package with no retail or sale price** is sold through its plans alone, and its cards read
+"As low as $X/mo" from the cheapest of them.
 
 ---
 

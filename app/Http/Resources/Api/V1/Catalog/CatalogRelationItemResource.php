@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\Storage;
  * default (or first) published plan, on the once-true reasoning that packages
  * carried no price columns; they do now, so a $399 buy-once stack advertised
  * its plan's $279.99 on every upsell and pairs-with card. The rule lives in
- * BuildsPackagePricing so this cannot drift from the detail page again.
+ * BuildsCatalogPricing so this cannot drift from the detail page again.
  *
  * `price_range` rides along for packages, so that dropping the plan
  * substitution could not leave a plan-sold package with nothing to show.
@@ -31,8 +31,8 @@ use Illuminate\Support\Facades\Storage;
  */
 class CatalogRelationItemResource extends JsonResource
 {
+    use Concerns\BuildsCatalogPricing;
     use Concerns\BuildsHealthGoalBadges;
-    use Concerns\BuildsPackagePricing;
 
     /**
      * @return array<string, mixed>
@@ -124,24 +124,29 @@ class CatalogRelationItemResource extends JsonResource
 
         return $this->packagePriceRange(
             $source->plans,
-            $this->packageEffectivePrice($source->sale_price, $source->retail_price),
+            $this->catalogEffectivePrice($source->sale_price, $source->retail_price),
         );
     }
 
     /**
-     * The figure a card leads with, packages only and on the same terms as the
-     * range above: null when this is a product, or when plans were not loaded,
-     * so a card can tell "no figure" from "a figure of nothing".
+     * The "As low as $X" figure a rail card leads with — BOTH KINDS.
      *
-     * The plans still have to be loaded even though a package with an own price
-     * never reads them — the rule falls back to them for a package with no own
-     * price, and a resource that guessed which branch applied before loading
-     * would be the same silent-omission trap from the other direction.
+     * A rail mixes products and packages in one row, so a figure computed for
+     * one kind and not the other is visible as a row where some cards say
+     * "As low as $349.00/mo" and their neighbours say "$249.00". This resource
+     * gated on Package until the rule became catalogue-wide, and the gate
+     * outlived the reason: it made the plans eager load in
+     * HasCatalogRelations dead for products, running the query and discarding
+     * the answer.
      *
-     * A PRODUCT DELIBERATELY GETS NONE. Its own price is the whole story on a
-     * card, and a product's term plans are 3/6/9/12-month prepay totals — a
-     * "from" built out of those would be the mixed-unit bug this field exists
-     * to avoid, pointed at products instead.
+     * The mixed-unit worry that once justified excluding products is handled
+     * inside the rule, not here — only monthly-cadence plans join the pool, so
+     * a product's 3/6/9/12-month prepay totals can never become its card
+     * figure. See BuildsCatalogPricing::catalogPriceFrom.
+     *
+     * Null when plans were not loaded, so a card can tell "no figure" from "a
+     * figure of nothing" — the plans are needed even for an item whose own
+     * price wins, because deciding that requires knowing what the plans cost.
      *
      * @return array{amount: float|null, suffix: string|null, plan_id: int|null, currency: string}|null
      */
@@ -149,14 +154,14 @@ class CatalogRelationItemResource extends JsonResource
     {
         $source = $this->resource;
 
-        if (! $source instanceof Package || ! $source->relationLoaded('plans')) {
+        if (! $source->relationLoaded('plans')) {
             return null;
         }
 
-        return $this->packagePriceFrom(
+        return $this->catalogPriceFrom(
             $source->plans,
-            $this->packageEffectivePrice($source->sale_price, $source->retail_price),
-            $source->price_suffix,
+            $this->catalogEffectivePrice($source->sale_price ?? null, $source->retail_price ?? null),
+            $source->price_suffix ?? null,
         );
     }
 }

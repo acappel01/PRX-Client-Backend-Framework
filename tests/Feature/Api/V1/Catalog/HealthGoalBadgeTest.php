@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Api\V1\Catalog;
 
+use App\Enums\BillingPeriod;
 use App\Enums\CatalogRelationType;
 use App\Enums\CatalogStatus;
 use App\Models\Catalog\Package;
@@ -202,6 +203,76 @@ class HealthGoalBadgeTest extends TestCase
         $this->getJson("/api/v1/catalog/products/{$product->slug}")
             ->assertOk()
             ->assertJsonPath('data.pairs_with.0.health_goals.0.badge_color', 'shell');
+    }
+
+    /**
+     * A RAIL MIXES BOTH KINDS IN ONE ROW, SO BOTH MUST CARRY THE CARD FIGURE.
+     *
+     * This is the test that was missing when `CatalogRelationItemResource`
+     * still gated `price_from` on `instanceof Package`. Everything stayed green
+     * while every product on a related rail, the Pairs With slider and the
+     * cart upsells shipped `price_from: null` — and the eager load added for
+     * them ran its query and threw the answer away. On the wire that row read
+     * "As low as $349.00/mo" next to a bare "$249.00" for the same kind of
+     * thing.
+     *
+     * ASSERTING THE KEY IS POPULATED, NOT MERELY PRESENT, IS THE POINT — third
+     * time this bug class has landed on this project. `null` does not fail a
+     * request; the card silently falls back to the item's own price and
+     * disagrees with the item's own page.
+     *
+     * Deleting the `plans` closure from HasCatalogRelations::resolveRelationTargets,
+     * or restoring the kind gate, must fail here.
+     */
+    public function test_relation_rails_carry_the_card_figure_for_both_kinds(): void
+    {
+        $product = Product::factory()->create(['status' => CatalogStatus::Published]);
+
+        $relatedProduct = Product::factory()->create([
+            'status' => CatalogStatus::Published,
+            'retail_price' => 249.00,
+            'sale_price' => null,
+        ]);
+        Plan::factory()->for($relatedProduct)->create([
+            'status' => CatalogStatus::Published,
+            'billing_period' => BillingPeriod::Monthly,
+            'retail_price' => 199.00,
+        ]);
+
+        $package = Package::factory()->create([
+            'status' => CatalogStatus::Published,
+            'retail_price' => 399.00,
+        ]);
+        Plan::factory()->create([
+            'package_id' => $package->id,
+            'status' => CatalogStatus::Published,
+            'billing_period' => BillingPeriod::Monthly,
+            'retail_price' => 349.00,
+        ]);
+
+        foreach ([[Product::class, $relatedProduct->id], [Package::class, $package->id]] as [$type, $id]) {
+            $product->catalogRelations()->create([
+                'relation_type' => CatalogRelationType::PairsWith->value,
+                'related_type' => $type,
+                'related_id' => $id,
+            ]);
+        }
+
+        $response = $this->getJson("/api/v1/catalog/products/{$product->slug}")->assertOk();
+
+        $figures = collect($response->json('data.pairs_with'))
+            ->mapWithKeys(fn ($row) => [$row['type'] => $row['price_from']['amount'] ?? null]);
+
+        $this->assertNotNull(
+            $figures['product'] ?? null,
+            'A product on a rail carries no price_from — either the plans eager load was dropped '
+            .'or the resource gated the figure on kind. The rail will mix "As low as $X" cards '
+            .'with bare own-price ones.',
+        );
+        // assertEquals, not assertSame: whole floats lose their zero fraction
+        // over JSON and decode as ints — the same note as the test below.
+        $this->assertEquals(199, $figures['product']);
+        $this->assertEquals(349, $figures['package']);
     }
 
     /**

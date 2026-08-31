@@ -49,7 +49,16 @@ trait HasCatalogRelations
                     'healthGoals',
                     'healthGoalSourceProducts.healthGoals',
                 ],
-                Product::class => ['healthGoals'],
+                Product::class => [
+                    'healthGoals',
+                    // A product carries `price_from` too, and the resource
+                    // omits it silently without this — so a rail card would
+                    // fall back to the own price while the product's own page
+                    // quoted a cheaper monthly plan. Same constraint as the
+                    // package branch above so the two cannot compute from
+                    // different plan sets.
+                    'plans' => fn ($q) => $q->where('status', CatalogStatus::Published)->orderBy('position'),
+                ],
             ])])
             ->get()
             ->pluck('related')

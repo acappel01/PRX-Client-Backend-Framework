@@ -188,13 +188,15 @@ Add an item to the cart. Increments quantity if the same item+plan combination a
 without one, the item's own `sale_price ?? retail_price` is — the same rule for products and
 packages.
 
-**Omitting `plan_id` for a package is the primary purchase path, not an edge case.** A package
-is a set group of products bought once, and its plans are a separate recurring commitment over
-the same bundle; `price_from.plan_id` on the catalogue payload tells a card which of the two its
-figure came from, and a card that adds to the cart must pass that value through — omitting the
-key entirely when it is null. Sending a `plan_id` a card did not quote enrols the buyer in a
-rebill they did not choose. `plan_id` was `required_if:type,package` until `a464b0a`, which made
+**Omitting `plan_id` for a package is a first-class path, not an edge case.** A package is a set
+group of products bought once, and its plans are a separate recurring commitment over the same
+bundle — both are sellable. `plan_id` was `required_if:type,package` until `a464b0a`, which made
 a package purchasable only as a subscription; see `CartController::addItem`.
+
+**Do not derive a `plan_id` from a card's `price_from`.** That figure is the cheapest way in
+("as low as $X") and usually names a recurring plan the visitor has not agreed to; adding on it
+signs them up to a rebill, and adding without it charges more than the card quoted. Send a
+`plan_id` the visitor actually chose — from a plan picker or the item's detail page — or none.
 
 ---
 

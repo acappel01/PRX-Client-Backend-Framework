@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Storage;
 
 class ProductResource extends JsonResource
 {
+    use Concerns\BuildsCatalogPricing;
     use Concerns\BuildsHealthGoalBadges;
     use Concerns\BuildsRatingSummary;
     use Concerns\NormalizesDetailSections;
@@ -106,7 +107,38 @@ class ProductResource extends JsonResource
                 'suffix' => $this->price_suffix,
                 'currency' => 'USD',
             ],
-            'plans' => PlanResource::collection($this->whenLoaded('plans')),
+
+            // The "As low as $X" figure a card leads with — the same rule and
+            // the same shared trait packages use, because one item must not
+            // quote two numbers on two screens. Emitted only when `plans` is
+            // loaded, and SILENTLY OMITTED otherwise: a card then falls back to
+            // `price.effective`, which is right today (no product has a monthly
+            // plan, so the own price always wins) and would quietly stop being
+            // right the day one does. Every route that serializes a product for
+            // a card loads the relation; the tests assert the key is POPULATED
+            // rather than merely present, because that is the difference a
+            // missing load actually makes.
+            'price_from' => $this->when(
+                $this->relationLoaded('plans'),
+                fn () => $this->catalogPriceFrom(
+                    $this->plans,
+                    $this->sale_price !== null || $this->retail_price !== null
+                        ? (float) ($this->sale_price ?? $this->retail_price)
+                        : null,
+                    $this->price_suffix,
+                )
+            ),
+            // THE LISTING LOADS PLANS BUT MUST NOT SHIP THEM. The relation is
+            // eager-loaded on every product route so `price_from` above can be
+            // computed, but a listing card needs the FIGURE, not the plan
+            // objects — `ProductPlansTest::test_product_index_does_not_expose_plans`
+            // is the contract, and gating on `whenLoaded` alone would have
+            // silently broken it the moment the load was added for the figure.
+            // Route-gated, like `related` and `pairs_with` above.
+            'plans' => $this->when(
+                $request->routeIs('api.v1.catalog.products.show') && $this->relationLoaded('plans'),
+                fn () => PlanResource::collection($this->plans)->toArray($request)
+            ),
             'faqs' => $this->whenLoaded('faqs', fn () => $this->faqs->map(fn ($faq) => [
                 'id' => $faq->id,
                 'question' => $faq->question,

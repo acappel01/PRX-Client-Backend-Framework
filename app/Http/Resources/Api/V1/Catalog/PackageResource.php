@@ -9,8 +9,8 @@ use Illuminate\Support\Facades\Storage;
 
 class PackageResource extends JsonResource
 {
+    use Concerns\BuildsCatalogPricing;
     use Concerns\BuildsHealthGoalBadges;
-    use Concerns\BuildsPackagePricing;
     use Concerns\BuildsRatingSummary;
     use Concerns\NormalizesDetailSections;
     use Concerns\NormalizesHighlights;
@@ -71,15 +71,15 @@ class PackageResource extends JsonResource
                 fn () => $this->buildPriceRange()
             ),
 
-            // The one figure a listing card leads with: the package's own
-            // price when it has one, because a package is a set group of
-            // products bought once and its plans are separate recurring
-            // commitments shown on the detail page. `plan_id` is null in that
-            // case, which also tells a card to render the figure bare rather
-            // than as "From $X". Emitted alongside `price_range`, not instead
-            // of it — the two answer different questions, and the range's ends
-            // are in different units. See
-            // BuildsPackagePricing::packagePriceFrom().
+            // The "As low as $X" figure a listing card leads with: the
+            // cheapest of the package's own one-time price and its
+            // monthly-cadence plans. `plan_id` names which it came from, and
+            // null means the package itself — a surface that both quotes this
+            // and adds to the cart must not add on a non-null id, because the
+            // visitor has agreed to no plan. Emitted alongside `price_range`,
+            // not instead of it — the two answer different questions, and the
+            // range's ends are in different units. See
+            // BuildsCatalogPricing::catalogPriceFrom().
             'price_from' => $this->when(
                 $this->relationLoaded('plans'),
                 fn () => $this->buildPriceFrom()
@@ -136,14 +136,14 @@ class PackageResource extends JsonResource
         ];
     }
 
-    /** What a single purchase of the package itself costs, sale winning. */
+    /** What a single purchase of the item itself costs, sale winning. */
     private function effectivePrice(): ?float
     {
-        return $this->packageEffectivePrice($this->sale_price, $this->retail_price);
+        return $this->catalogEffectivePrice($this->sale_price, $this->retail_price);
     }
 
     /**
-     * The span a visitor could pay — see BuildsPackagePricing for the rule and
+     * The span a visitor could pay — see BuildsCatalogPricing for the rule and
      * for why the package's own price belongs in it.
      *
      * @return array{from: float|null, to: float|null, currency: string}
@@ -154,13 +154,13 @@ class PackageResource extends JsonResource
     }
 
     /**
-     * The "From $X/mo" a card leads with — see BuildsPackagePricing for why
+     * The "As low as $X" a card leads with — see BuildsCatalogPricing for why
      * this is not simply the low end of the range.
      *
      * @return array{amount: float|null, suffix: string|null, plan_id: int|null, currency: string}
      */
     private function buildPriceFrom(): array
     {
-        return $this->packagePriceFrom($this->plans, $this->effectivePrice(), $this->price_suffix);
+        return $this->catalogPriceFrom($this->plans, $this->effectivePrice(), $this->price_suffix);
     }
 }

@@ -43,7 +43,15 @@ class ProductController extends ApiController
 
         $products = Product::query()
             ->where('status', CatalogStatus::Published)
-            ->with(['categories', 'tags', 'healthGoals', 'productClass', 'productType', 'productForm', 'administrationMethod', 'volumeUnit'])
+            ->with([
+                'categories', 'tags', 'healthGoals', 'productClass', 'productType',
+                'productForm', 'administrationMethod', 'volumeUnit',
+                // REQUIRED FOR `price_from` — ProductResource omits it silently
+                // when this is missing, and a listing card would then disagree
+                // with the detail page about the same product. Same constraint
+                // as the show route and as PackageController.
+                'plans' => fn ($q) => $q->where('status', CatalogStatus::Published)->orderBy('position'),
+            ])
             ->when($request->filled('category'), fn ($q) => $q->whereHas(
                 'categories',
                 fn ($q) => $q->where('slug', $request->string('category'))
