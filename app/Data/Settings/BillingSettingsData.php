@@ -15,6 +15,16 @@ class BillingSettingsData extends Data
         #[Required, In(['prx', 'local'])]
         public string $checkout_path,
 
+        /**
+         * WHO TAKES THE MONEY — deliberately part of this DTO rather than only
+         * on the settings class. A Filament settings page saves through this
+         * action, so a property missing here renders, accepts a value, reports
+         * success and writes NOTHING. That has happened three times in this
+         * repo; the round-trip test beside it is the guard.
+         */
+        #[In(['provider', 'storefront'])]
+        public string $payment_collector = 'provider',
+
         public bool $upsells_enabled = true,
 
         #[IntegerType, Min(1), Max(12)]

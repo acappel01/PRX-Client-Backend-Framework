@@ -13,6 +13,7 @@ class UpdateBillingSettingsAction
     public function execute(BillingSettingsData $data): BillingSettings
     {
         $this->settings->checkout_path = $data->checkout_path;
+        $this->settings->payment_collector = $data->payment_collector;
         $this->settings->upsells_enabled = $data->upsells_enabled;
         $this->settings->upsells_limit = $data->upsells_limit;
         $this->settings->save();

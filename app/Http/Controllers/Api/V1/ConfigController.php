@@ -119,11 +119,24 @@ class ConfigController extends ApiController
                     'allow_indexing' => $seo->allow_indexing,
                 ],
                 'checkout' => [
-                    // 'prx' — frontend collects lead info then redirects to the
-                    // backend handoff page (lead.handoff_url) where the PRX embed
-                    // runs clinical intake + payment. 'local' — frontend tokenizes
-                    // payment via the gateway SDK and posts it to /api/v1/checkout.
+                    // WHO SUBMITS THE ORDER. 'prx' — the storefront collects
+                    // lead info, then hosts the provider's clinical intake embed
+                    // and the encounter is created there. 'local' — the
+                    // storefront tokenises a card and posts it to
+                    // /api/v1/checkout.
                     'path' => $billing->checkout_path,
+
+                    // WHO TAKES THE MONEY, which is a different question. A
+                    // deployment can route orders through the provider while
+                    // still taking the card itself, so the storefront needs
+                    // both answers: this one decides whether it renders its own
+                    // payment step, and the provider's embed skips its payment
+                    // step on exactly the same setting. One source of truth, so
+                    // the two can never both try to collect.
+                    'payment' => [
+                        'collector' => $billing->paymentCollector()->value,
+                        'collect_on_site' => $billing->collectsPaymentOnSite(),
+                    ],
                     'upsells' => [
                         'enabled' => $billing->upsells_enabled,
                         'limit' => $billing->upsells_limit,
