@@ -4,6 +4,7 @@ namespace App\Filament\Pages\Settings;
 
 use App\Actions\Settings\UpdateBillingSettingsAction;
 use App\Data\Settings\BillingSettingsData;
+use App\Enums\Payments\PaymentCollector;
 use App\Settings\BillingSettings;
 use BackedEnum;
 use Filament\Forms\Components\Radio;
@@ -54,6 +55,20 @@ class ManageBilling extends BaseSettingsPage
                                 'local' => 'Payment is captured locally through the configured merchant account. The frontend tokenizes the card via the gateway SDK and sends the token to /api/v1/checkout.',
                             ])
                             ->required(),
+                    ]),
+                Section::make('Who collects payment')
+                    ->description('Separate from the checkout path above, which decides who submits the ORDER. A deployment can route orders through the provider while still taking the card itself, so these are two questions rather than one.')
+                    ->schema([
+                        Radio::make('payment_collector')
+                            ->label('Payment is taken by')
+                            ->options(fn (): array => collect(PaymentCollector::cases())
+                                ->mapWithKeys(fn (PaymentCollector $c) => [$c->value => $c->label()])
+                                ->all())
+                            ->descriptions(fn (): array => collect(PaymentCollector::cases())
+                                ->mapWithKeys(fn (PaymentCollector $c) => [$c->value => $c->helperText()])
+                                ->all())
+                            ->required()
+                            ->helperText('This is the only input to whether the clinical embed shows its payment step and whether our checkout shows its own — one setting, so the two can never both try to collect. Note the provider only permits their own pre-authorisation inside their embed, so "we collect" means we charge here and report the payment to them as already captured.'),
                     ]),
                 Section::make('Upsells & cross-sells')
                     ->description('Suggestions shown in the cart drawer and on the checkout page. Driven entirely by the "Related" / "Pairs With" relations configured on catalog items — nothing is hardcoded.')

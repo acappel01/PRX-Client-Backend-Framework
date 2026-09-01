@@ -3,13 +3,14 @@
 namespace Tests\Feature\PrescribeRx;
 
 use App\Enums\Catalog\IntakeSelectionMode;
+use App\Enums\Payments\PaymentCollector;
 use App\Models\Catalog\Package;
 use App\Models\Catalog\Plan;
 use App\Models\Catalog\Product;
 use App\Models\Catalog\ProductType;
 use App\Models\Lead;
 use App\Services\PrescribeRx\Embed\PrxEmbedPayloadBuilder;
-use App\Settings\IntegrationSettings;
+use App\Settings\BillingSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -29,9 +30,10 @@ class PrxEmbedPayloadBuilderTest extends TestCase
 {
     use RefreshDatabase;
 
+    /** Resolved through the container so new dependencies do not break every test. */
     private function builder(): PrxEmbedPayloadBuilder
     {
-        return new PrxEmbedPayloadBuilder(app(IntegrationSettings::class));
+        return app(PrxEmbedPayloadBuilder::class);
     }
 
     private function leadWithCart(array $items): Lead
@@ -53,18 +55,56 @@ class PrxEmbedPayloadBuilderTest extends TestCase
         $this->assertSame(['PKG-10001'], $payload['packages']);
     }
 
-    public function test_a_mapped_product_reaches_the_embed_as_its_prx_number(): void
+    /**
+     * PRODUCTS PREFER THE UUID, packages prefer the number — and the asymmetry
+     * is the provider's. Their `/packages` carries a `package_number`
+     * (PKG-XXXXX); their `/products` carries only `id` and a descriptive
+     * warehouse `sku`, which is not a lookup key.
+     */
+    public function test_a_mapped_product_reaches_the_embed_as_its_prx_uuid(): void
     {
         $product = Product::factory()->create([
             'provider_product_id' => 'b3f1c2d4-0000-4000-8000-000000000002',
-            'provider_product_sku' => 'PROD-20002',
+            'provider_product_sku' => 'GLPTIRZ-B12-17-0.5-2ML-VIALRECON',
         ]);
 
         $payload = $this->builder()->forLead($this->leadWithCart([
             ['resource_type' => 'product', 'resource_id' => $product->id],
         ]));
 
-        $this->assertSame(['PROD-20002'], $payload['products']);
+        $this->assertSame(['b3f1c2d4-0000-4000-8000-000000000002'], $payload['products']);
+    }
+
+    public function test_a_product_mapped_by_sku_alone_falls_back_to_it(): void
+    {
+        $product = Product::factory()->create([
+            'provider_product_id' => null,
+            'provider_product_sku' => 'GLPTIRZ-B12-17-0.5-2ML-VIALRECON',
+        ]);
+
+        $payload = $this->builder()->forLead($this->leadWithCart([
+            ['resource_type' => 'product', 'resource_id' => $product->id],
+        ]));
+
+        $this->assertSame(['GLPTIRZ-B12-17-0.5-2ML-VIALRECON'], $payload['products']);
+    }
+
+    /**
+     * At least one mapped SKU in the live catalogue carries a leading space,
+     * which would defeat an exact match on their side.
+     */
+    public function test_a_padded_identifier_is_trimmed_before_it_is_sent(): void
+    {
+        $product = Product::factory()->create([
+            'provider_product_id' => null,
+            'provider_product_sku' => ' PEPNAD-1600-P3-3ML-PEN',
+        ]);
+
+        $payload = $this->builder()->forLead($this->leadWithCart([
+            ['resource_type' => 'product', 'resource_id' => $product->id],
+        ]));
+
+        $this->assertSame(['PEPNAD-1600-P3-3ML-PEN'], $payload['products']);
     }
 
     /**
@@ -194,10 +234,45 @@ class PrxEmbedPayloadBuilderTest extends TestCase
         $this->assertSame('4200 Guadalupe St', $prefill['address_line1']);
     }
 
+    /**
+     * WHO TAKES THE MONEY DECIDES WHICH STEPS RENDER. One setting drives both
+     * sides, so the provider and the storefront cannot both believe they are
+     * collecting — the failure mode that produces a double charge, or none.
+     */
+    public function test_the_providers_payment_step_renders_when_the_provider_collects(): void
+    {
+        $billing = app(BillingSettings::class);
+        $billing->payment_collector = PaymentCollector::Provider->value;
+
+        $skips = $this->builder()->forLead(Lead::factory()->create(['cart_items' => []]))['skipSteps'];
+
+        $this->assertNotContains('checkout', $skips);
+        $this->assertNotContains('payment', $skips);
+    }
+
+    public function test_the_providers_payment_step_is_skipped_when_we_collect(): void
+    {
+        $billing = app(BillingSettings::class);
+        $billing->payment_collector = PaymentCollector::Storefront->value;
+
+        $skips = $this->builder()->forLead(Lead::factory()->create(['cart_items' => []]))['skipSteps'];
+
+        $this->assertContains('checkout', $skips);
+        $this->assertContains('payment', $skips);
+    }
+
+    /** The personal-information step is always skipped — we collect it first. */
+    public function test_the_personal_information_step_is_always_skipped(): void
+    {
+        $skips = $this->builder()->forLead(Lead::factory()->create(['cart_items' => []]))['skipSteps'];
+
+        $this->assertContains('personal-information', $skips);
+    }
+
     public function test_a_mixed_cart_nominates_every_kind_at_once(): void
     {
         $package = Package::factory()->create(['provider_package_sku' => 'PKG-10005']);
-        $product = Product::factory()->create(['provider_product_sku' => 'PROD-20005']);
+        $product = Product::factory()->create(['provider_product_id' => 'b3f1c2d4-0000-4000-8000-00000000dd05']);
         $plan = Plan::factory()->create([
             'package_id' => $package->id,
             'provider_plan_id' => 'b3f1c2d4-0000-4000-8000-000000000005',
@@ -210,7 +285,7 @@ class PrxEmbedPayloadBuilderTest extends TestCase
         ]));
 
         $this->assertSame(['PKG-10005'], $payload['packages']);
-        $this->assertSame(['PROD-20005'], $payload['products']);
+        $this->assertSame(['b3f1c2d4-0000-4000-8000-00000000dd05'], $payload['products']);
         $this->assertSame(['b3f1c2d4-0000-4000-8000-000000000005'], $payload['planIds']);
     }
 }

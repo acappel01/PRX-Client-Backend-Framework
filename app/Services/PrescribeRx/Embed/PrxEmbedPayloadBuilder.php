@@ -7,6 +7,7 @@ use App\Models\Catalog\Package;
 use App\Models\Catalog\Plan;
 use App\Models\Catalog\Product;
 use App\Models\Lead;
+use App\Settings\BillingSettings;
 use App\Settings\IntegrationSettings;
 
 /**
@@ -27,6 +28,7 @@ class PrxEmbedPayloadBuilder
 {
     public function __construct(
         protected IntegrationSettings $settings,
+        protected BillingSettings $billing,
     ) {}
 
     /**
@@ -122,16 +124,27 @@ class PrxEmbedPayloadBuilder
         $packages = Package::query()->whereIn('id', $items->pluck('resource_id'))->get();
 
         return $packages
-            ->map(fn (Package $p) => $p->provider_package_sku ?: $p->provider_package_id)
+            ->map(fn (Package $p) => trim((string) ($p->provider_package_sku ?: $p->provider_package_id)) ?: null)
             ->filter()
             ->values()
             ->all();
     }
 
     /**
-     * Resolve product numbers (PROD-XXXXX) for every cart line of type=product.
-     * Reads `provider_product_sku` / `provider_product_id` — see the note on
-     * packageNumbersFromCart() for why the column names matter here.
+     * Resolve identifiers for every cart line of type=product.
+     *
+     * THE UUID IS PREFERRED HERE, unlike packages — and that asymmetry is
+     * theirs, not ours. Their `/packages` payload carries a `package_number`
+     * (PKG-XXXXX), so a package has a human-readable identifier their catalog
+     * recognises. Their `/products` payload does NOT: it carries `id` and a
+     * descriptive `sku` like `GLPTIRZ-B12-17-0.5-2ML-VIALRECON`, which is a
+     * warehouse SKU rather than a lookup key. Verified against their live
+     * production catalogue.
+     *
+     * So a product is nominated by UUID and only falls back to the SKU when no
+     * UUID is mapped. Values are trimmed because at least one mapped SKU in
+     * this catalogue carries a leading space, which would defeat an exact
+     * match on their side.
      * Plan items also implicitly drag in their parent package's products via
      * the embed (PRX dereferences plan→package→items server-side); we don't
      * unroll that here.
@@ -149,7 +162,7 @@ class PrxEmbedPayloadBuilder
             ->whereIn('id', $items->pluck('resource_id'))
             ->where('intake_selection_mode', IntakeSelectionMode::Product)
             ->get()
-            ->map(fn (Product $p) => $p->provider_product_sku ?: $p->provider_product_id)
+            ->map(fn (Product $p) => trim((string) ($p->provider_product_id ?: $p->provider_product_sku)) ?: null)
             ->filter()
             ->values()
             ->all();
@@ -181,7 +194,7 @@ class PrxEmbedPayloadBuilder
             ->whereIn('id', $items->pluck('resource_id'))
             ->where('intake_selection_mode', IntakeSelectionMode::ProductType)
             ->get()
-            ->map(fn (Product $p) => $p->productType?->provider_product_type_id)
+            ->map(fn (Product $p) => trim((string) $p->productType?->provider_product_type_id) ?: null)
             ->filter()
             ->unique()
             ->values()
@@ -199,7 +212,16 @@ class PrxEmbedPayloadBuilder
      */
     protected function skipStepsForLead(Lead $lead): array
     {
-        return array_values((array) config('prescribe-rx.embed.skip_steps', []));
+        $slugs = (array) config('prescribe-rx.embed.skip_steps', []);
+
+        // WHO TAKES THE MONEY DECIDES WHICH STEPS RENDER, and it is one
+        // setting so the two sides cannot both believe they are collecting —
+        // the failure mode that produces a double charge, or none.
+        if ($this->billing->collectsPaymentOnSite()) {
+            $slugs = array_merge($slugs, (array) config('prescribe-rx.embed.payment_step_slugs', []));
+        }
+
+        return array_values(array_unique($slugs));
     }
 
     /**
@@ -219,7 +241,7 @@ class PrxEmbedPayloadBuilder
         $plans = Plan::query()->whereIn('id', $items->pluck('resource_id'))->get();
 
         return $plans
-            ->map(fn (Plan $p) => $p->provider_plan_id ?: $p->provider_plan_sku)
+            ->map(fn (Plan $p) => trim((string) ($p->provider_plan_id ?: $p->provider_plan_sku)) ?: null)
             ->filter()
             ->values()
             ->all();

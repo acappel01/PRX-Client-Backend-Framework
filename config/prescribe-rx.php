@@ -77,6 +77,25 @@ return [
             // accumulate them.
             'product-selection',
             'demographics',
+
+            // The storefront collects name / contact / DOB / sex / address
+            // before the handoff, so the provider's personal-information step
+            // has nothing left to ask. Several slug variants are listed
+            // because they differ by encounter type and the SDK silently
+            // ignores ones it does not recognise.
+            'personal-information',
+            'personal-info',
+        ],
+
+        /**
+         * Skipped ONLY when this side collects payment
+         * (`BillingSettings::collectsPaymentOnSite()`). Kept separate from the
+         * always-skip list above because whether the provider takes payment is
+         * an operator decision, not a property of the encounter type.
+         */
+        'payment_step_slugs' => [
+            'checkout',
+            'payment',
         ],
     ],
 ];

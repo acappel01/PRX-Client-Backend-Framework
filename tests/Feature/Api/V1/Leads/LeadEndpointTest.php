@@ -164,6 +164,62 @@ class LeadEndpointTest extends TestCase
         ])->assertStatus(422)->assertJsonValidationErrors(['date_of_birth']);
     }
 
+    /**
+     * THE CART MUST ARRIVE AS IDENTIFIERS, NOT LABELS.
+     *
+     * The frontend used to send the cart API's DISPLAY shape —
+     * `{type: "Product", name: …}`, where `type` is a class basename and the
+     * line's `id` is the cart row rather than the product. Everything
+     * downstream resolves on `resource_type` / `resource_id`, so the embed
+     * looked up nothing, selected nothing, and rendered no clinical steps —
+     * while the request returned 201 and the lead looked fine.
+     *
+     * A loose `['array']` rule is what let it through, so the shape is pinned
+     * at the edge now.
+     */
+    public function test_a_cart_line_without_identifiers_is_refused(): void
+    {
+        $this->postJson('/api/v1/leads', [
+            'first_name' => 'Dana',
+            'last_name' => 'Reyes',
+            'email' => 'dana.cart@example.test',
+            'cart_items' => [
+                ['type' => 'Product', 'name' => 'Sample Compound + B12', 'quantity' => 1],
+            ],
+        ])->assertStatus(422)
+            ->assertJsonValidationErrors(['cart_items.0.resource_type', 'cart_items.0.resource_id']);
+    }
+
+    public function test_a_cart_line_with_identifiers_is_stored_resolvably(): void
+    {
+        $this->postJson('/api/v1/leads', [
+            'first_name' => 'Dana',
+            'last_name' => 'Reyes',
+            'email' => 'dana.cart2@example.test',
+            'cart_items' => [
+                ['resource_type' => 'product', 'resource_id' => 7, 'quantity' => 2, 'name' => 'Sample Compound + B12'],
+            ],
+        ])->assertCreated();
+
+        $stored = Lead::where('email', 'dana.cart2@example.test')->firstOrFail()->cart_items;
+
+        $this->assertSame('product', $stored[0]['resource_type']);
+        $this->assertSame(7, $stored[0]['resource_id']);
+    }
+
+    /** An unknown resource type is a typo, not a new kind. */
+    public function test_an_unknown_cart_resource_type_is_refused(): void
+    {
+        $this->postJson('/api/v1/leads', [
+            'first_name' => 'Dana',
+            'last_name' => 'Reyes',
+            'email' => 'dana.cart3@example.test',
+            'cart_items' => [
+                ['resource_type' => 'protocol', 'resource_id' => 1],
+            ],
+        ])->assertStatus(422)->assertJsonValidationErrors(['cart_items.0.resource_type']);
+    }
+
     public function test_consent_timestamp_set_when_either_consent_granted(): void
     {
         $this->postJson('/api/v1/leads', [

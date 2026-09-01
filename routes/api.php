@@ -23,6 +23,7 @@ use App\Http\Controllers\Api\V1\Intake\IntakeSchemaController;
 use App\Http\Controllers\Api\V1\Kb\CompoundController;
 use App\Http\Controllers\Api\V1\Kb\HealthGoalController;
 use App\Http\Controllers\Api\V1\Leads\LeadController;
+use App\Http\Controllers\Api\V1\Leads\LeadIntakeController;
 use App\Http\Controllers\Api\V1\Leads\LeadPlanController;
 use App\Http\Controllers\Api\V1\Orders\OrderController;
 use App\Http\Controllers\Api\V1\Patient\AuthController as PatientAuthController;
@@ -169,6 +170,13 @@ Route::prefix('v1')->name('api.v1.')->group(function (): void {
         // row — the plan page fetches both and the quiz submit response wants
         // only the second.
         Route::get('{lead:uuid}/plan', [LeadPlanController::class, 'show'])->name('plan');
+
+        // Everything the storefront needs to host the clinical intake embed
+        // itself: embed config, cart summary, and who is collecting payment.
+        // The embed used to live on a server-rendered page in this domain,
+        // which put the clinical step outside the storefront's branding,
+        // compliance copy and cart, with no way back.
+        Route::get('{lead:uuid}/intake', [LeadIntakeController::class, 'show'])->name('intake');
     });
 
     // ── Intake ────────────────────────────────────────────────────────────

@@ -70,7 +70,21 @@ class LeadController extends ApiController
             'consent_disclosures.*.text' => ['nullable', 'string', 'max:2000'],
             'consent_disclosures.*.version' => ['nullable', 'string', 'max:64'],
             'checkout_path' => ['nullable', 'string', 'in:local,prx'],
+            // VALIDATED PER ENTRY, not just as "an array". It was the loose
+            // rule that let a mis-shaped cart through: the frontend sent
+            // `{type: "Product", name: …}` while everything downstream reads
+            // `resource_type` / `resource_id`, so leads stored a cart the
+            // embed could never resolve and NOTHING failed. A shape mismatch
+            // must now 422 at the edge instead of surfacing as an empty
+            // clinical intake days later.
             'cart_items' => ['nullable', 'array'],
+            'cart_items.*.resource_type' => ['required', 'string', 'in:product,package,plan'],
+            'cart_items.*.resource_id' => ['required', 'integer', 'min:1'],
+            'cart_items.*.quantity' => ['nullable', 'integer', 'min:1'],
+            'cart_items.*.name' => ['nullable', 'string', 'max:255'],
+            'cart_items.*.unit_price' => ['nullable', 'numeric', 'min:0'],
+            'cart_items.*.price_suffix' => ['nullable', 'string', 'max:32'],
+            'cart_items.*.billing_period' => ['nullable', 'string', 'max:32'],
             'cart_subtotal' => ['nullable', 'numeric', 'min:0'],
             'utm_source' => ['nullable', 'string', 'max:255'],
             'utm_medium' => ['nullable', 'string', 'max:255'],
