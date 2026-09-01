@@ -84,6 +84,86 @@ class LeadEndpointTest extends TestCase
             ->assertJsonPath('data.consents.email', true);
     }
 
+    /**
+     * A distinct billing address must actually PERSIST. This repo has a
+     * history of forms that save successfully and write nothing, so this
+     * asserts the stored row rather than the response.
+     */
+    public function test_a_distinct_billing_address_round_trips(): void
+    {
+        $this->postJson('/api/v1/leads', [
+            'first_name' => 'Dana',
+            'last_name' => 'Reyes',
+            'email' => 'dana.billing@example.test',
+            'address_line1' => '4200 Guadalupe St',
+            'city' => 'Austin',
+            'state' => 'TX',
+            'postal_code' => '78751',
+            'billing_same_as_shipping' => false,
+            'billing_address_line1' => '900 Congress Ave',
+            'billing_city' => 'Dallas',
+            'billing_state' => 'TX',
+            'billing_postal_code' => '75201',
+        ])->assertCreated();
+
+        $lead = Lead::where('email', 'dana.billing@example.test')->firstOrFail();
+
+        $this->assertFalse($lead->billing_same_as_shipping);
+        $this->assertSame('900 Congress Ave', $lead->billing_address_line1);
+        $this->assertSame('Dallas', $lead->billing_city);
+        $this->assertSame('75201', $lead->billing_postal_code);
+    }
+
+    /** Mirroring is the default, so billing columns stay empty. */
+    public function test_billing_mirrors_shipping_by_default(): void
+    {
+        $this->postJson('/api/v1/leads', [
+            'first_name' => 'Dana',
+            'last_name' => 'Reyes',
+            'email' => 'dana.mirror@example.test',
+            'address_line1' => '4200 Guadalupe St',
+            'city' => 'Austin',
+            'state' => 'TX',
+            'postal_code' => '78751',
+        ])->assertCreated();
+
+        $lead = Lead::where('email', 'dana.mirror@example.test')->firstOrFail();
+
+        $this->assertTrue($lead->billing_same_as_shipping);
+        $this->assertNull($lead->billing_address_line1);
+    }
+
+    /**
+     * An incomplete billing address is rejected at the edge rather than
+     * assembled into a partial their validator would 422 on later.
+     */
+    public function test_an_incomplete_billing_address_is_rejected(): void
+    {
+        $this->postJson('/api/v1/leads', [
+            'first_name' => 'Dana',
+            'last_name' => 'Reyes',
+            'email' => 'dana.partial@example.test',
+            'address_line1' => '4200 Guadalupe St',
+            'city' => 'Austin',
+            'state' => 'TX',
+            'postal_code' => '78751',
+            'billing_same_as_shipping' => false,
+            'billing_address_line1' => '900 Congress Ave',
+        ])->assertStatus(422)
+            ->assertJsonValidationErrors(['billing_city', 'billing_state', 'billing_postal_code']);
+    }
+
+    /** Under-18 is refused here as well as by the provider's own rule. */
+    public function test_an_under_18_date_of_birth_is_refused(): void
+    {
+        $this->postJson('/api/v1/leads', [
+            'first_name' => 'Dana',
+            'last_name' => 'Reyes',
+            'email' => 'dana.minor@example.test',
+            'date_of_birth' => now()->subYears(17)->toDateString(),
+        ])->assertStatus(422)->assertJsonValidationErrors(['date_of_birth']);
+    }
+
     public function test_consent_timestamp_set_when_either_consent_granted(): void
     {
         $this->postJson('/api/v1/leads', [

@@ -48,6 +48,17 @@ class LeadController extends ApiController
             'state' => ['nullable', 'string', 'max:8'],
             'postal_code' => ['nullable', 'string', 'max:16'],
             'country' => ['nullable', 'string', 'size:2'],
+
+            // The address above is the SHIPPING address — its state decides
+            // which licensed clinician can take the encounter. Billing is
+            // optional and only required when it differs.
+            'billing_same_as_shipping' => ['boolean'],
+            'billing_address_line1' => ['nullable', 'required_if:billing_same_as_shipping,false', 'string', 'max:255'],
+            'billing_address_line2' => ['nullable', 'string', 'max:255'],
+            'billing_city' => ['nullable', 'required_if:billing_same_as_shipping,false', 'string', 'max:100'],
+            'billing_state' => ['nullable', 'required_if:billing_same_as_shipping,false', 'string', 'size:2'],
+            'billing_postal_code' => ['nullable', 'required_if:billing_same_as_shipping,false', 'string', 'max:16'],
+            'billing_country' => ['nullable', 'string', 'size:2'],
             'sms_consent' => ['boolean'],
             'email_consent' => ['boolean'],
 
@@ -116,6 +127,13 @@ class LeadController extends ApiController
             state: $validated['state'] ?? null,
             postal_code: $validated['postal_code'] ?? null,
             country: $validated['country'] ?? 'US',
+            billing_same_as_shipping: (bool) ($validated['billing_same_as_shipping'] ?? true),
+            billing_address_line1: $validated['billing_address_line1'] ?? null,
+            billing_address_line2: $validated['billing_address_line2'] ?? null,
+            billing_city: $validated['billing_city'] ?? null,
+            billing_state: $validated['billing_state'] ?? null,
+            billing_postal_code: $validated['billing_postal_code'] ?? null,
+            billing_country: $validated['billing_country'] ?? null,
             sms_consent: (bool) ($validated['sms_consent'] ?? false),
             email_consent: (bool) ($validated['email_consent'] ?? false),
             cart_items: $validated['cart_items'] ?? [],

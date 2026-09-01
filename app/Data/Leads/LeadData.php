@@ -46,6 +46,23 @@ class LeadData extends Data
         public ?string $postal_code = null,
         #[Max(2)]
         public string $country = 'US',
+
+        // Billing, only meaningful when it differs from shipping. Defaults to
+        // mirroring, which is both the common case and the behaviour before
+        // billing was collected at all.
+        public bool $billing_same_as_shipping = true,
+        #[Max(255)]
+        public ?string $billing_address_line1 = null,
+        #[Max(255)]
+        public ?string $billing_address_line2 = null,
+        #[Max(255)]
+        public ?string $billing_city = null,
+        #[Max(2)]
+        public ?string $billing_state = null,
+        #[Max(16)]
+        public ?string $billing_postal_code = null,
+        #[Max(2)]
+        public ?string $billing_country = null,
         public bool $sms_consent = false,
         public bool $email_consent = false,
         #[DataCollectionOf(CartItemData::class)]

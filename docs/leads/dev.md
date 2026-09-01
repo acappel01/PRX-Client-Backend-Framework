@@ -32,13 +32,30 @@ Leads are the local tracking anchor for a checkout attempt. They carry enough st
 | `email` | string | Required. Indexed. |
 | `phone` | string, nullable | |
 | `date_of_birth` | date, nullable | |
-| `gender` | string(32), nullable | Free-form to match PRX flexibility (e.g. `male`, `female`, `other`). Used for PRX embed prefill. |
-| `address_line1` | string, nullable | |
-| `address_line2` | string, nullable | |
+| `gender` | string(32), nullable | Stored free-form. The provider accepts only `male` / `female` / `other`, so an unmappable value (e.g. `prefer_not_to_say`) is DROPPED at the intake boundary rather than guessed. |
+| `address_line1` | string, nullable | **This is the SHIPPING address.** |
+| `address_line2` | string, nullable | Sent as `street2`, never concatenated into `street`. |
 | `city` | string, nullable | |
-| `state` | string(8), nullable | 2-letter code. |
+| `state` | string(8), nullable | 2-letter code. **Decides which licensed clinician can take the encounter**, so it is the most consequential field on the record. |
 | `postal_code` | string(16), nullable | |
 | `country` | string(2) | Default `US`. |
+| `billing_same_as_shipping` | boolean | Default true — the common case, and the behaviour before billing was collected. |
+| `billing_address_line1` | string, nullable | Required by the API only when `billing_same_as_shipping` is false. |
+| `billing_address_line2` | string, nullable | |
+| `billing_city` | string, nullable | Required when billing differs. |
+| `billing_state` | string(2), nullable | Required when billing differs. |
+| `billing_postal_code` | string(16), nullable | Required when billing differs. |
+| `billing_country` | string(2), nullable | |
+
+**Why the shipping address has no `shipping_` prefix.** These columns predate
+billing and are part of the public `POST /leads` contract, so renaming them
+would break every existing consumer for a naming gain. They are the shipping
+address; the prefixed set is billing. A partial billing address is rejected at
+the endpoint rather than assembled, because the provider 422s the whole intake
+on an incomplete one.
+
+`date_of_birth` is validated `before:-18 years` here as well as by the
+provider's own preclusion rule.
 | `sms_consent` | boolean | Default false. |
 | `email_consent` | boolean | Default false. |
 | `consent_given_at` | timestamp, nullable | Set automatically when either consent flag is true at creation time. |

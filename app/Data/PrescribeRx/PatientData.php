@@ -31,6 +31,21 @@ class PatientData extends Data
          */
         #[In(['male', 'female', 'other'])]
         public ?string $gender = null,
+        /**
+         * LEGACY single-address shape. Their controller normalises it into
+         * both a shipping and a billing row. Prefer the explicit pair below —
+         * send one shape or the other, never both.
+         */
         public ?AddressData $address = null,
+        /**
+         * THE CLINICALLY LOAD-BEARING ONE. Its state decides which licensed
+         * clinician can be assigned to the encounter, so it is required in
+         * practice even though the field is nullable here.
+         */
+        public ?AddressData $shipping_address = null,
+        /** Omit entirely when `billing_same_as_shipping` is true. */
+        public ?AddressData $billing_address = null,
+        /** True tells their side to copy shipping into billing at chart-create. */
+        public ?bool $billing_same_as_shipping = null,
     ) {}
 }

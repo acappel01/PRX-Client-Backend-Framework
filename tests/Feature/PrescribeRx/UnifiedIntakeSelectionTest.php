@@ -309,10 +309,104 @@ class UnifiedIntakeSelectionTest extends TestCase
         app(SubmitPrescribeRxCheckoutAction::class)
             ->execute($cart->fresh(), $lead->fresh());
 
-        $address = $this->sentPayload()['patient']['address'];
+        $patient = $this->sentPayload()['patient'];
 
-        $this->assertSame('4200 Guadalupe St', $address['street']);
-        $this->assertSame('Apt 12B', $address['street2']);
+        $this->assertSame('4200 Guadalupe St', $patient['shipping_address']['street']);
+        $this->assertSame('Apt 12B', $patient['shipping_address']['street2']);
+        $this->assertArrayNotHasKey('address', $patient, 'One address shape is sent, never both.');
+    }
+
+    /**
+     * The shipping address carries the state that decides which licensed
+     * clinician can take the encounter, so it is sent as its own structured
+     * field rather than folded into the legacy single-address shape.
+     */
+    public function test_billing_defaults_to_mirroring_shipping(): void
+    {
+        $payload = $this->submitWithLead(function ($lead) {
+            $lead->update([
+                'address_line1' => '4200 Guadalupe St',
+                'city' => 'Austin',
+                'state' => 'TX',
+                'postal_code' => '78751',
+            ]);
+        });
+
+        $patient = $payload['patient'];
+
+        $this->assertSame('TX', $patient['shipping_address']['state']);
+        $this->assertTrue($patient['billing_same_as_shipping']);
+        $this->assertArrayNotHasKey('billing_address', $patient);
+    }
+
+    public function test_a_distinct_billing_address_is_sent_alongside_shipping(): void
+    {
+        $payload = $this->submitWithLead(function ($lead) {
+            $lead->update([
+                'address_line1' => '4200 Guadalupe St',
+                'city' => 'Austin',
+                'state' => 'TX',
+                'postal_code' => '78751',
+                'billing_same_as_shipping' => false,
+                'billing_address_line1' => '900 Congress Ave',
+                'billing_city' => 'Dallas',
+                'billing_state' => 'TX',
+                'billing_postal_code' => '75201',
+            ]);
+        });
+
+        $patient = $payload['patient'];
+
+        $this->assertSame('Austin', $patient['shipping_address']['city']);
+        $this->assertSame('Dallas', $patient['billing_address']['city']);
+        $this->assertFalse($patient['billing_same_as_shipping']);
+    }
+
+    /**
+     * A partial address is worse than none — their validator 422s the whole
+     * intake on an incomplete one, so it must not be assembled and sent.
+     */
+    public function test_an_incomplete_billing_address_is_not_sent_as_a_partial(): void
+    {
+        $payload = $this->submitWithLead(function ($lead) {
+            $lead->update([
+                'address_line1' => '4200 Guadalupe St',
+                'city' => 'Austin',
+                'state' => 'TX',
+                'postal_code' => '78751',
+                'billing_same_as_shipping' => false,
+                'billing_address_line1' => '900 Congress Ave',
+                'billing_city' => null,
+                'billing_state' => null,
+                'billing_postal_code' => null,
+            ]);
+        });
+
+        $this->assertArrayNotHasKey('billing_address', $payload['patient']);
+    }
+
+    /** @return array<string, mixed> */
+    private function submitWithLead(callable $mutate): array
+    {
+        $product = Product::factory()->create([
+            'provider_product_id' => '019d2842-0000-4000-8000-0000000000ad',
+        ]);
+
+        $cart = Cart::factory()->create();
+        $cart->items()->create([
+            'itemable_type' => 'product',
+            'itemable_id' => $product->id,
+            'quantity' => 1,
+            'unit_price_snapshot' => 99.00,
+        ]);
+
+        $lead = $this->lead();
+        $mutate($lead);
+
+        app(SubmitPrescribeRxCheckoutAction::class)
+            ->execute($cart->fresh(), $lead->fresh());
+
+        return $this->sentPayload();
     }
 
     /**

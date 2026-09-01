@@ -346,22 +346,40 @@ class SubmitPrescribeRxCheckoutAction
         );
     }
 
+    /**
+     * THE SHIPPING ADDRESS IS THE CLINICALLY LOAD-BEARING ONE. Its state
+     * decides which licensed clinician can be assigned to the encounter, so it
+     * is sent as its own structured field rather than folded into the legacy
+     * single-address shape. The lead's unprefixed address columns ARE that
+     * shipping address (see the billing-address migration for why they are not
+     * renamed).
+     *
+     * One address SHAPE is sent, never both: the explicit shipping/billing
+     * pair whenever a shipping address exists, and the legacy `address` only
+     * for a lead captured before shipping was collected, so their controller
+     * still has something to normalise.
+     */
     private function buildPatient(Lead $lead): PatientData
     {
-        $address = null;
+        $shipping = $this->addressFrom(
+            $lead->address_line1,
+            $lead->address_line2,
+            $lead->city,
+            $lead->state,
+            $lead->postal_code,
+            $lead->country,
+        );
 
-        if ($lead->address_line1 && $lead->city && $lead->state && $lead->postal_code) {
-            // street2 is its own field on their side; concatenating it into
-            // street produced a single unparseable line on the shipping label.
-            $address = AddressData::from([
-                'street' => $lead->address_line1,
-                'street2' => $lead->address_line2 ?: null,
-                'city' => $lead->city,
-                'state' => $lead->state,
-                'zip' => $lead->postal_code,
-                'country' => $lead->country ?? 'US',
-            ]);
-        }
+        $billing = ($lead->billing_same_as_shipping ?? true)
+            ? null
+            : $this->addressFrom(
+                $lead->billing_address_line1,
+                $lead->billing_address_line2,
+                $lead->billing_city,
+                $lead->billing_state,
+                $lead->billing_postal_code,
+                $lead->billing_country,
+            );
 
         return PatientData::from([
             'first_name' => $lead->first_name,
@@ -370,7 +388,38 @@ class SubmitPrescribeRxCheckoutAction
             'date_of_birth' => $lead->date_of_birth?->toDateString(),
             'phone' => $lead->phone,
             'gender' => self::mapGender($lead->gender),
-            'address' => $address,
+            'shipping_address' => $shipping,
+            'billing_address' => $billing,
+            'billing_same_as_shipping' => $shipping === null ? null : ($billing === null),
+        ]);
+    }
+
+    /**
+     * A PARTIAL address is worse than none: their validator rejects an
+     * incomplete one and the failure surfaces as a 422 on the whole intake,
+     * so anything missing a required part resolves to null here.
+     */
+    private function addressFrom(
+        ?string $line1,
+        ?string $line2,
+        ?string $city,
+        ?string $state,
+        ?string $postalCode,
+        ?string $country,
+    ): ?AddressData {
+        if (! $line1 || ! $city || ! $state || ! $postalCode) {
+            return null;
+        }
+
+        // street2 is its own field on their side; concatenating it into street
+        // produced a single unparseable line on the shipping label.
+        return AddressData::from([
+            'street' => $line1,
+            'street2' => $line2 ?: null,
+            'city' => $city,
+            'state' => $state,
+            'zip' => $postalCode,
+            'country' => $country ?: 'US',
         ]);
     }
 }

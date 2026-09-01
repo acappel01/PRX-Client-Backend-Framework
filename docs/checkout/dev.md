@@ -227,6 +227,12 @@ across retries — do not add a timestamp.
   production submission omits the key entirely.
 - `metadata` carries the lead uuid, cart ulid and UTM attribution, so an
   encounter can be traced back to the visit that produced it.
+- The patient carries an explicit `shipping_address` / `billing_address` pair
+  rather than the legacy single `address`, and exactly one shape is sent.
+  `billing_same_as_shipping` tells their side to mirror. The SHIPPING address
+  is the load-bearing one — its state decides which licensed clinician can be
+  assigned — and a partial address resolves to null rather than being sent, as
+  an incomplete one 422s the whole intake.
 - `gender` is translated, not passed through. Our lead form offers
   `prefer_not_to_say`; they accept only `male` / `female` / `other`. An
   unmappable value is **dropped** — declining to answer is not "other", and
