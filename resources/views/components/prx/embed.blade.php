@@ -3,8 +3,8 @@
 
     Required props:
       $payload — array from PrxEmbedPayloadBuilder->forLead($lead). Keys:
-                 embedCode, prefill, packages, products, planIds,
-                 skipSteps, metadata.
+                 embedCode, prefill, packages, products, productTypes,
+                 planIds, skipSteps, metadata.
       $environment — 'sandbox' | 'production' (drives which sdk.js + iframe
                      origin to load).
       $completeUrl — POST endpoint our parent page pings with the encounter
@@ -26,24 +26,77 @@
     $completeUrl ??= url('/api/internal/checkout/embed-complete');
 @endphp
 
-<div class="space-y-4">
+@once
+    @push('head')
+        <style>
+            /* THE HOST MUST NOT CONSTRAIN THE IFRAME.
+               The embed posts `prescriberx-iframe-resize` and the SDK sets the
+               iframe height to its content, so any max-height / overflow here
+               reintroduces the nested scrollbar this styling exists to remove.
+               Only a WIDTH is asserted. */
+            .prx-embedHost {
+                width: 100%;
+            }
+
+            .prx-embedHost iframe {
+                display: block;
+                width: 100%;
+                border: 0;
+                /* Belt and braces: if a resize message is ever missed, the
+                   frame still fills the viewport rather than collapsing to a
+                   sliver — but it is never CAPPED, so growth still wins. */
+                min-height: 420px;
+                background: transparent;
+            }
+
+            .prx-embedLoading {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                min-height: 320px;
+                font-size: 14px;
+                opacity: 0.55;
+            }
+
+            .prx-embedMissing {
+                padding: 32px 20px;
+                font-size: 14px;
+                line-height: 1.6;
+                text-align: center;
+                border: 1px dashed rgb(190 40 40 / 45%);
+                border-radius: 10px;
+                background: rgb(190 40 40 / 4%);
+            }
+
+            .prx-embedMissing a {
+                text-decoration: underline;
+            }
+        </style>
+    @endpush
+@endonce
+
+<div class="prx-embedWrap">
     @if (empty($payload['embedCode']))
-        <div class="rounded-xl border-2 border-dashed p-10 text-center"
-             style="border-color: rgba(220,38,38,0.3); background: rgba(220,38,38,0.04);">
-            <p class="font-display font-semibold text-lg" style="color: #b91c1c;">Embed code not configured</p>
-            <p class="font-body text-sm mt-2" style="color: #6a6a6a;">
-                Set <code class="font-mono">prescribe_rx_embed_code</code> in
-                <a href="{{ url('/admin/settings/integrations') }}" class="underline" target="_blank">/admin/settings/integrations</a>
-                to load the embed.
-            </p>
+        <div class="prx-embedMissing">
+            <strong>Embed code not configured</strong><br>
+            Set <code>prescribe_rx_embed_code</code> in
+            <a href="{{ url('/admin/settings/integrations') }}" target="_blank" rel="noopener">integration settings</a>
+            to load the clinical intake.
         </div>
     @else
-        {{-- The SDK injects the iframe inside this element. --}}
-        <div id="prx-intake"
-             class="rounded-xl overflow-hidden border min-h-[640px]"
-             style="border-color: rgba(0,0,0,0.08); background: #ffffff;">
-            <div class="flex items-center justify-center py-20">
-                <span class="font-body text-sm" style="color: #6a6a6a;">Loading clinical intake…</span>
+        {{--
+            The SDK injects the iframe inside this element.
+
+            NO BORDER, NO FIXED HEIGHT, NO overflow-hidden. The embed posts
+            `prescriberx-iframe-resize` messages and the SDK grows the iframe
+            to its content, so any height cap here produces a scrollbar INSIDE
+            a scrollbar — the ugly nested-scroll effect. A border likewise
+            frames the provider's form as a foreign object rather than letting
+            it read as part of this page.
+        --}}
+        <div id="prx-intake" class="prx-embedHost">
+            <div class="prx-embedLoading">
+                <span>Loading clinical intake…</span>
             </div>
         </div>
     @endif
@@ -78,6 +131,24 @@
                     window.PrescribeRx.init('prx-intake', {
                         embedCode: payload.embedCode,
 
+                        // Passed at INIT, not only after ready. The universal
+                        // intake decides which steps to render from the
+                        // product / product-type / package it is given, so it
+                        // has to know before it computes its step list — a
+                        // post-ready push can arrive after that decision.
+                        // The onReady block below re-applies the same values
+                        // as a belt-and-braces fallback; it is guarded so a
+                        // remount cannot turn it into a request storm.
+                        packages: payload.packages || [],
+                        products: payload.products || [],
+                        productTypes: payload.productTypes || [],
+                        prefill: payload.prefill || {},
+                        skipSteps: payload.skipSteps || [],
+
+                        // Grow from a modest floor rather than reserving a
+                        // desktop-sized box on a phone.
+                        minHeight: '420px',
+
                         onReady() {
                             // First ready only — bail on subsequent fires.
                             // The SDK's internal state already reflects the
@@ -96,6 +167,10 @@
                                 }
                                 if (payload.products && payload.products.length) {
                                     window.PrescribeRx.selectProducts(payload.products);
+                                }
+                                if (payload.productTypes && payload.productTypes.length) {
+                                    // Items whose dose the prescriber chooses.
+                                    window.PrescribeRx.selectProductTypes(payload.productTypes);
                                 }
                                 if (payload.planIds && payload.planIds.length === 1) {
                                     window.PrescribeRx.selectPlan(payload.planIds[0]);

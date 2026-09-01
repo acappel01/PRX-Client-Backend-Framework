@@ -89,18 +89,15 @@ class PrxEmbedPayloadBuilder
             'state' => $lead->state,
             'postal_code' => $lead->postal_code,
             'country' => $lead->country,
-            // PRX also accepts a nested `address` object — emit both shapes
-            // since different schema versions accept different keys. The
-            // embed will use whichever its current encounter type expects.
-            'address' => array_filter([
-                'street' => $lead->address_line1,
-                'street2' => $lead->address_line2,
-                'city' => $lead->city,
-                'state' => $lead->state,
-                'zip' => $lead->postal_code,
-                'country' => $lead->country,
-            ], fn ($v) => $v !== null && $v !== ''),
-        ], fn ($v) => $v !== null && $v !== '' && $v !== []);
+
+            // FLAT KEYS ONLY. A nested `address` object used to be emitted
+            // here too, "since different schema versions accept different
+            // keys" — but the SDK serialises prefill into the iframe's QUERY
+            // STRING, so the object arrived as the literal
+            // `prefill_address=[object Object]`. Observed on the live handoff
+            // page, not theorised. Anything added here must survive
+            // stringification.
+        ], fn ($v) => $v !== null && $v !== '');
     }
 
     /**

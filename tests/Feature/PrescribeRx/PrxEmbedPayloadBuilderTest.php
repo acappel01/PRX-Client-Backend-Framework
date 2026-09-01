@@ -167,6 +167,33 @@ class PrxEmbedPayloadBuilderTest extends TestCase
         $this->assertSame([], $payload['products']);
     }
 
+    /**
+     * The SDK serialises prefill into the iframe's QUERY STRING, so every
+     * value must survive stringification. A nested address object used to be
+     * emitted here and arrived as the literal `prefill_address=[object
+     * Object]` — observed on the live handoff page.
+     */
+    public function test_prefill_carries_only_stringifiable_values(): void
+    {
+        $lead = Lead::factory()->create([
+            'address_line1' => '4200 Guadalupe St',
+            'city' => 'Austin',
+            'state' => 'TX',
+            'postal_code' => '78751',
+            'cart_items' => [],
+        ]);
+
+        $prefill = $this->builder()->forLead($lead)['prefill'];
+
+        foreach ($prefill as $key => $value) {
+            $this->assertIsNotArray($value, "prefill.{$key} is an array and would stringify to [object Object].");
+            $this->assertIsNotObject($value, "prefill.{$key} is an object and would stringify to [object Object].");
+        }
+
+        $this->assertArrayNotHasKey('address', $prefill);
+        $this->assertSame('4200 Guadalupe St', $prefill['address_line1']);
+    }
+
     public function test_a_mixed_cart_nominates_every_kind_at_once(): void
     {
         $package = Package::factory()->create(['provider_package_sku' => 'PKG-10005']);
