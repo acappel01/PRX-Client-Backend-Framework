@@ -133,18 +133,29 @@ class PrxEmbedPayloadBuilder
     /**
      * Resolve identifiers for every cart line of type=product.
      *
-     * THE UUID IS PREFERRED HERE, unlike packages — and that asymmetry is
-     * theirs, not ours. Their `/packages` payload carries a `package_number`
-     * (PKG-XXXXX), so a package has a human-readable identifier their catalog
-     * recognises. Their `/products` payload does NOT: it carries `id` and a
-     * descriptive `sku` like `GLPTIRZ-B12-17-0.5-2ML-VIALRECON`, which is a
-     * warehouse SKU rather than a lookup key. Verified against their live
-     * production catalogue.
+     * THE UUID IS WHAT THE EMBED RESOLVES. Measured against the live embed,
+     * not inferred — and it contradicts their SDK's own docblock, which
+     * describes `selectProducts(productNumbers)` with `['PROD-001']` examples.
+     * Trust the measurement:
      *
-     * So a product is nominated by UUID and only falls back to the SKU when no
-     * UUID is mapped. Values are trimmed because at least one mapped SKU in
-     * this catalogue carries a leading space, which would defeat an exact
-     * match on their side.
+     *     ?products=<their product UUID>  -> initialProductIds: ["<uuid>"]
+     *     ?products=<their product SKU>   -> initialProductIds: []
+     *
+     * Verified both ways against a product taken from their own production
+     * catalogue, so it is not a property of our data. `init()` serialises
+     * `options.products` into that query param, and it is what seeds the
+     * wizard's initial state — which is what decides the conditional steps.
+     *
+     * AN ID THAT IS NOT IN THEIR CATALOGUE ALSO RESOLVES TO NOTHING, and the
+     * embed reports "no products found" while still skipping every step. That
+     * looks identical to a format problem and is not one: two of this
+     * install's three mapped products pointed at ids absent from the 265-item
+     * production catalogue, almost certainly sandbox ids captured while the
+     * environment setting was sandbox. Check the id EXISTS before concluding
+     * the format is wrong.
+     *
+     * Values are trimmed: at least one mapped identifier here carries a
+     * leading space, which would defeat an exact match.
      * Plan items also implicitly drag in their parent package's products via
      * the embed (PRX dereferences plan→package→items server-side); we don't
      * unroll that here.

@@ -56,12 +56,13 @@ class PrxEmbedPayloadBuilderTest extends TestCase
     }
 
     /**
-     * PRODUCTS PREFER THE UUID, packages prefer the number — and the asymmetry
-     * is the provider's. Their `/packages` carries a `package_number`
-     * (PKG-XXXXX); their `/products` carries only `id` and a descriptive
-     * warehouse `sku`, which is not a lookup key.
+     * THE UUID IS WHAT THE EMBED RESOLVES — measured against the live embed:
+     * `?products=<uuid>` yields `initialProductIds: ["<uuid>"]` while
+     * `?products=<sku>` yields `[]`, proven with a product from their own
+     * production catalogue. This contradicts their SDK docblock, which
+     * describes product NUMBERS; the measurement wins.
      */
-    public function test_a_mapped_product_reaches_the_embed_as_its_prx_uuid(): void
+    public function test_a_mapped_product_reaches_the_embed_as_its_uuid_not_its_sku(): void
     {
         $product = Product::factory()->create([
             'provider_product_id' => 'b3f1c2d4-0000-4000-8000-000000000002',
@@ -75,6 +76,7 @@ class PrxEmbedPayloadBuilderTest extends TestCase
         $this->assertSame(['b3f1c2d4-0000-4000-8000-000000000002'], $payload['products']);
     }
 
+    /** A product mapped by SKU alone is still nominated rather than dropped. */
     public function test_a_product_mapped_by_sku_alone_falls_back_to_it(): void
     {
         $product = Product::factory()->create([
