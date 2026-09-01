@@ -57,7 +57,7 @@ class SubmitPrescribeRxCheckoutAction
         // form throws "Call to undefined relationship". The old
         // `itemable.products` had the mirror-image bug for product lines.
         $items = $cart->items()->with([
-            'itemable' => fn ($morphTo) => $morphTo->morphWith([Product::class => ['productType']]),
+            'itemable' => fn ($morphTo) => $morphTo->morphWith([Product::class => ['productType.productClass']]),
             'plan',
         ])->get();
 
@@ -306,6 +306,11 @@ class SubmitPrescribeRxCheckoutAction
         $quantity = $item->quantity;
         $snapshot = $item->unit_price_snapshot !== null ? (float) $item->unit_price_snapshot : null;
 
+        // Exactly one identifier per line throughout, so each slug is a
+        // FALLBACK rather than a companion. The id wins when present because it
+        // is unambiguous; the slug matters because it is far likelier to survive
+        // a sandbox → production switch, which is how two of this install's
+        // mappings came to point at nothing.
         if ($product->intake_selection_mode === IntakeSelectionMode::ProductType) {
             $type = $product->productType;
             $typeId = $type?->provider_product_type_id;
@@ -321,14 +326,32 @@ class SubmitPrescribeRxCheckoutAction
                 return null;
             }
 
-            // Exactly one identifier per line, so the slug is a FALLBACK, not
-            // a companion. The id is preferred when present because it is
-            // unambiguous; the slug matters because it is far likelier to
-            // survive a sandbox → production switch, which is how two of this
-            // install's mappings came to point at nothing.
             return new IntakeProductSelectionData(
                 product_type_id: $typeId,
                 product_type_slug: $typeId === null ? $typeSlug : null,
+                quantity: $quantity,
+                snapshot_price: $snapshot,
+            );
+        }
+
+        if ($product->intake_selection_mode === IntakeSelectionMode::ProductClass) {
+            $class = $product->productType?->productClass;
+            $classId = $class?->provider_product_class_id;
+            $classSlug = $class?->provider_product_class_slug;
+
+            if ($classId === null && $classSlug === null) {
+                Log::warning('Prescribe-Rx: product omitted from intake — set to product-class mode but its class has no provider mapping.', [
+                    'product_id' => $product->id,
+                    'product_name' => $product->name,
+                    'product_type_id' => $product->product_type_id,
+                ]);
+
+                return null;
+            }
+
+            return new IntakeProductSelectionData(
+                product_class_id: $classId,
+                product_class_slug: $classId === null ? $classSlug : null,
                 quantity: $quantity,
                 snapshot_price: $snapshot,
             );

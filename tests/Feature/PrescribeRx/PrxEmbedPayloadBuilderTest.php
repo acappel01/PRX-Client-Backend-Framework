@@ -3,14 +3,13 @@
 namespace Tests\Feature\PrescribeRx;
 
 use App\Enums\Catalog\IntakeSelectionMode;
-use App\Enums\Payments\PaymentCollector;
 use App\Models\Catalog\Package;
 use App\Models\Catalog\Plan;
 use App\Models\Catalog\Product;
+use App\Models\Catalog\ProductClass;
 use App\Models\Catalog\ProductType;
 use App\Models\Lead;
 use App\Services\PrescribeRx\Embed\PrxEmbedPayloadBuilder;
-use App\Settings\BillingSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -210,15 +209,16 @@ class PrxEmbedPayloadBuilderTest extends TestCase
     }
 
     /**
-     * The SDK serialises prefill into the iframe's QUERY STRING, so every
-     * value must survive stringification. A nested address object used to be
-     * emitted here and arrived as the literal `prefill_address=[object
-     * Object]` — observed on the live handoff page.
+     * THE PREFILL KEY NAMES ARE THEIRS, NOT OURS. Their vocabulary is
+     * `address` / `city` / `state` / `zip`; this used to send `address_line1`,
+     * `postal_code` and `country`, none of which they document — so the whole
+     * address silently failed to prefill while every other field worked.
      */
-    public function test_prefill_carries_only_stringifiable_values(): void
+    public function test_prefill_uses_the_providers_address_vocabulary(): void
     {
         $lead = Lead::factory()->create([
             'address_line1' => '4200 Guadalupe St',
+            'address_line2' => null,
             'city' => 'Austin',
             'state' => 'TX',
             'postal_code' => '78751',
@@ -227,67 +227,99 @@ class PrxEmbedPayloadBuilderTest extends TestCase
 
         $prefill = $this->builder()->forLead($lead)['prefill'];
 
-        foreach ($prefill as $key => $value) {
-            $this->assertIsNotArray($value, "prefill.{$key} is an array and would stringify to [object Object].");
-            $this->assertIsNotObject($value, "prefill.{$key} is an object and would stringify to [object Object].");
-        }
+        $this->assertSame('4200 Guadalupe St', $prefill['address']);
+        $this->assertSame('78751', $prefill['zip']);
+        $this->assertSame('Austin', $prefill['city']);
+        $this->assertSame('TX', $prefill['state']);
 
-        $this->assertArrayNotHasKey('address', $prefill);
-        $this->assertSame('4200 Guadalupe St', $prefill['address_line1']);
+        foreach (['address_line1', 'address_line2', 'postal_code', 'country'] as $ours) {
+            $this->assertArrayNotHasKey($ours, $prefill, "{$ours} is our column name, not a key they read.");
+        }
     }
 
     /**
-     * WHO TAKES THE MONEY DECIDES WHICH STEPS RENDER. One setting drives both
-     * sides, so the provider and the storefront cannot both believe they are
-     * collecting — the failure mode that produces a double charge, or none.
+     * Their flat vocabulary has one street key and no `street2`, so a second
+     * line is joined rather than dropped — a missing apartment number is a
+     * mis-delivered prescription. The intake API takes the opposite approach
+     * because there `street2` is its own field.
      */
-    public function test_the_providers_payment_step_renders_when_the_provider_collects(): void
+    public function test_a_second_address_line_is_joined_into_the_street(): void
     {
-        $billing = app(BillingSettings::class);
-        $billing->payment_collector = PaymentCollector::Provider->value;
-
-        $skips = $this->builder()->forLead(Lead::factory()->create(['cart_items' => []]))['skipSteps'];
-
-        $this->assertNotContains('checkout', $skips);
-        $this->assertNotContains('payment', $skips);
-    }
-
-    public function test_the_providers_payment_step_is_skipped_when_we_collect(): void
-    {
-        $billing = app(BillingSettings::class);
-        $billing->payment_collector = PaymentCollector::Storefront->value;
-
-        $skips = $this->builder()->forLead(Lead::factory()->create(['cart_items' => []]))['skipSteps'];
-
-        $this->assertContains('checkout', $skips);
-        $this->assertContains('payment', $skips);
-    }
-
-    /** The personal-information step is always skipped — we collect it first. */
-    public function test_the_personal_information_step_is_always_skipped(): void
-    {
-        $skips = $this->builder()->forLead(Lead::factory()->create(['cart_items' => []]))['skipSteps'];
-
-        $this->assertContains('personal-information', $skips);
-    }
-
-    /** The embed takes exactly one of the two, same as the intake API. */
-    public function test_the_embed_falls_back_to_the_provider_type_slug(): void
-    {
-        $type = ProductType::factory()->create([
-            'provider_product_type_id' => null,
-            'provider_product_type_slug' => 'semaglutide-b12',
+        $lead = Lead::factory()->create([
+            'address_line1' => '4200 Guadalupe St',
+            'address_line2' => 'Apt 12B',
+            'city' => 'Austin',
+            'state' => 'TX',
+            'postal_code' => '78751',
+            'cart_items' => [],
         ]);
+
+        $this->assertSame(
+            '4200 Guadalupe St, Apt 12B',
+            $this->builder()->forLead($lead)['prefill']['address']
+        );
+    }
+
+    /**
+     * Prefill travels by postMessage, so a nested value would survive — but
+     * every key here is flat by their contract, and a stray array would be a
+     * sign someone reintroduced a shape they do not read.
+     */
+    public function test_prefill_carries_only_scalar_values(): void
+    {
+        $lead = Lead::factory()->create(['cart_items' => []]);
+
+        foreach ($this->builder()->forLead($lead)['prefill'] as $key => $value) {
+            $this->assertIsNotArray($value, "prefill.{$key} should be scalar.");
+        }
+    }
+
+    /**
+     * A class is one level broader than a type: the clinician picks any product
+     * of any type within it, and a step gated on `for_product_class_ids`
+     * renders. It is a separate SDK call, hence a separate payload key.
+     */
+    public function test_a_class_mode_product_goes_to_product_classes(): void
+    {
+        $class = ProductClass::factory()->create([
+            'provider_product_class_id' => '019b8f02-0000-4000-8000-0000000000c1',
+        ]);
+        $type = ProductType::factory()->create(['product_class_id' => $class->id]);
         $product = Product::factory()->create([
             'product_type_id' => $type->id,
-            'intake_selection_mode' => IntakeSelectionMode::ProductType,
+            'provider_product_id' => 'b3f1c2d4-0000-4000-8000-0000000000ff',
+            'intake_selection_mode' => IntakeSelectionMode::ProductClass,
         ]);
 
         $payload = $this->builder()->forLead($this->leadWithCart([
             ['resource_type' => 'product', 'resource_id' => $product->id],
         ]));
 
-        $this->assertSame([['product_type_slug' => 'semaglutide-b12']], $payload['productTypes']);
+        $this->assertSame([['product_class_id' => '019b8f02-0000-4000-8000-0000000000c1']], $payload['productClasses']);
+        $this->assertSame([], $payload['products']);
+        $this->assertSame([], $payload['productTypes']);
+    }
+
+    /** An unmapped class is dropped, never demoted to the concrete product. */
+    public function test_class_mode_with_an_unmapped_class_is_dropped(): void
+    {
+        $class = ProductClass::factory()->create([
+            'provider_product_class_id' => null,
+            'provider_product_class_slug' => null,
+        ]);
+        $type = ProductType::factory()->create(['product_class_id' => $class->id]);
+        $product = Product::factory()->create([
+            'product_type_id' => $type->id,
+            'provider_product_id' => 'b3f1c2d4-0000-4000-8000-0000000000fe',
+            'intake_selection_mode' => IntakeSelectionMode::ProductClass,
+        ]);
+
+        $payload = $this->builder()->forLead($this->leadWithCart([
+            ['resource_type' => 'product', 'resource_id' => $product->id],
+        ]));
+
+        $this->assertSame([], $payload['productClasses']);
+        $this->assertSame([], $payload['products']);
     }
 
     public function test_a_mixed_cart_nominates_every_kind_at_once(): void

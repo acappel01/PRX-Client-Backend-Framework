@@ -39,7 +39,8 @@ class PrxEmbedPayloadBuilder
      *   prefill: array<string, mixed>,
      *   packages: array<int, string>,
      *   products: array<int, string>,
-     *   productTypes: array<int, array{product_type_id: string}>,
+     *   productTypes: array<int, array{product_type_id?: string, product_type_slug?: string}>,
+     *   productClasses: array<int, array{product_class_id?: string, product_class_slug?: string}>,
      *   planIds: array<int, string>,
      *   skipSteps: array<int, string>,
      *   metadata: array<string, mixed>,
@@ -53,6 +54,7 @@ class PrxEmbedPayloadBuilder
             'packages' => $this->packageNumbersFromCart($lead),
             'products' => $this->productNumbersFromCart($lead),
             'productTypes' => $this->productTypesFromCart($lead),
+            'productClasses' => $this->productClassesFromCart($lead),
             'planIds' => $this->planIdsFromCart($lead),
             // Step slugs are encounter-type-specific. The list comes from
             // config/prescribe-rx.php → embed.skip_steps and contains the
@@ -78,6 +80,14 @@ class PrxEmbedPayloadBuilder
      */
     protected function buildPrefill(Lead $lead): array
     {
+        // THE KEY NAMES ARE THEIRS, NOT OURS, and ours were wrong. Their
+        // prefill vocabulary is `address` / `city` / `state` / `zip`; we were
+        // sending `address_line1` / `postal_code` / `country`, none of which
+        // they document, so the whole address silently failed to prefill.
+        //
+        // `gender` is passed through rather than mapped: their prefill accepts
+        // male / female / other, and this lead column is already constrained
+        // to that vocabulary at capture.
         return array_filter([
             'first_name' => $lead->first_name,
             'last_name' => $lead->last_name,
@@ -85,21 +95,34 @@ class PrxEmbedPayloadBuilder
             'phone' => $lead->phone,
             'date_of_birth' => $lead->date_of_birth?->toDateString(),
             'gender' => $lead->gender,
-            'address_line1' => $lead->address_line1,
-            'address_line2' => $lead->address_line2,
+            'address' => self::streetLine($lead),
             'city' => $lead->city,
             'state' => $lead->state,
-            'postal_code' => $lead->postal_code,
-            'country' => $lead->country,
-
-            // FLAT KEYS ONLY. A nested `address` object used to be emitted
-            // here too, "since different schema versions accept different
-            // keys" — but the SDK serialises prefill into the iframe's QUERY
-            // STRING, so the object arrived as the literal
-            // `prefill_address=[object Object]`. Observed on the live handoff
-            // page, not theorised. Anything added here must survive
-            // stringification.
+            'zip' => $lead->postal_code,
         ], fn ($v) => $v !== null && $v !== '');
+    }
+
+    /**
+     * One street line, because their flat prefill vocabulary has exactly one
+     * key for it and no `street2`.
+     *
+     * A second line is joined with a comma rather than dropped: this prefills a
+     * field the patient can see and correct, and a missing apartment number is
+     * a mis-delivered prescription. That is the opposite of the intake API,
+     * where `street2` is its own field and concatenating produced an
+     * unparseable shipping label — different surface, different rule.
+     */
+    private static function streetLine(Lead $lead): ?string
+    {
+        $line1 = trim((string) $lead->address_line1);
+
+        if ($line1 === '') {
+            return null;
+        }
+
+        $line2 = trim((string) $lead->address_line2);
+
+        return $line2 === '' ? $line1 : $line1.', '.$line2;
     }
 
     /**
@@ -220,6 +243,54 @@ class PrxEmbedPayloadBuilder
                 $slug = trim((string) $p->productType?->provider_product_type_slug) ?: null;
 
                 return $slug !== null ? ['product_type_slug' => $slug] : null;
+            })
+            ->filter()
+            ->unique(fn (array $entry) => implode(':', $entry))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Products whose compound is the prescriber's call entirely nominate their
+     * CLASS — one level broader than a type. Feeds the SDK's
+     * `selectProductClasses([{product_class_id}])`, a separate call again, so a
+     * separate payload key.
+     *
+     * Broader is not merely looser: a wizard step gated on
+     * `for_product_class_ids` renders when a class is nominated, so this
+     * reveals the WIDEST set of conditional clinical questions.
+     *
+     * An unmapped class is DROPPED, never demoted, for the same reason a type
+     * is: demoting would pin a specific product on an item that exists to have
+     * one chosen.
+     *
+     * @return array<int, array{product_class_id?: string, product_class_slug?: string}>
+     */
+    protected function productClassesFromCart(Lead $lead): array
+    {
+        $items = collect($lead->cart_items ?? [])->where('resource_type', 'product');
+
+        if ($items->isEmpty()) {
+            return [];
+        }
+
+        return Product::query()
+            ->with('productType.productClass')
+            ->whereIn('id', $items->pluck('resource_id'))
+            ->where('intake_selection_mode', IntakeSelectionMode::ProductClass)
+            ->get()
+            ->map(function (Product $p): ?array {
+                $class = $p->productType?->productClass;
+
+                $id = trim((string) $class?->provider_product_class_id) ?: null;
+
+                if ($id !== null) {
+                    return ['product_class_id' => $id];
+                }
+
+                $slug = trim((string) $class?->provider_product_class_slug) ?: null;
+
+                return $slug !== null ? ['product_class_slug' => $slug] : null;
             })
             ->filter()
             ->unique(fn (array $entry) => implode(':', $entry))

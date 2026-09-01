@@ -22,6 +22,8 @@ class IntakeProductSelectionData extends Data
         public ?string $product_number = null,
         public ?string $product_type_id = null,
         public ?string $product_type_slug = null,
+        public ?string $product_class_id = null,
+        public ?string $product_class_slug = null,
         public ?int $quantity = null,
         public ?float $snapshot_price = null,
     ) {}
