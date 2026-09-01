@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1\Checkout;
 use App\Actions\Checkout\SubmitLocalCheckoutAction;
 use App\Actions\Checkout\SubmitPrescribeRxCheckoutAction;
 use App\Data\Checkout\CheckoutData;
+use App\Data\Checkout\GatewayContextData;
 use App\Http\Controllers\Api\V1\ApiController;
 use App\Http\Resources\Api\V1\Checkout\CheckoutResource;
 use App\Models\Commerce\Cart;
@@ -56,18 +57,18 @@ class CheckoutController extends ApiController
             return $this->error('No active payment gateway is configured.', 503);
         }
 
-        $data = [
-            'gateway_provider' => $account->gateway_provider->value,
-            'environment' => $account->environment->value,
-            'public_key' => $account->getPublicKey(),
-        ];
+        $context = GatewayContextData::forAccount($account);
 
-        // Square Web Payments SDK also requires the location ID for payment forms.
-        if ($account->square_location_id) {
-            $data['location_id'] = $account->square_location_id;
+        // A gateway that cannot tokenise is worse than none: the storefront
+        // would render a card form that fails at submit, after the visitor has
+        // typed their number. Authorize.Net needs its api_login_id beside the
+        // client key, Square its location id — a missing half is a 503, not a
+        // partial payload.
+        if (! $context->isUsable()) {
+            return $this->error('The configured payment gateway is missing credentials required to accept a card.', 503);
         }
 
-        return $this->success($data);
+        return $this->success($context->toArray());
     }
 
     /**
