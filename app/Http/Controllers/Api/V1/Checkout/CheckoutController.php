@@ -52,6 +52,9 @@ class CheckoutController extends ApiController
     public function gatewayConfig(): JsonResponse
     {
         try {
+            // No amount yet — the card form renders before a total is
+            // committed, so this only excludes accounts already at their
+            // limit. The amount is checked again at charge time.
             $account = $this->gatewayManager->defaultAccount();
         } catch (Throwable) {
             return $this->error('No active payment gateway is configured.', 503);

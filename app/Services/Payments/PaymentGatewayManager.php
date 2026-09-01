@@ -10,6 +10,7 @@ use App\Services\Payments\Gateways\NmiGateway;
 use App\Services\Payments\Gateways\SquareGateway;
 use App\Services\Payments\Gateways\StripeGateway;
 use Illuminate\Contracts\Container\Container;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 
 class PaymentGatewayManager
 {
@@ -62,11 +63,27 @@ class PaymentGatewayManager
      * Resolve the default active merchant account model.
      * Throws ModelNotFoundException if no default account is active.
      */
-    public function defaultAccount(): MerchantAccount
+    /**
+     * The account that should take a charge of this size.
+     *
+     * ROUTED, NOT FIXED. An install runs several accounts and moves between
+     * them as they approach their processing limits, so this asks the router
+     * rather than reading `is_default` — the default is only a tie-break now.
+     * `$amount` matters: a charge that would breach an account's limit skips
+     * it even while the account is otherwise healthy.
+     *
+     * Still `firstOrFail`-shaped for callers: no eligible account is an
+     * exception, because a checkout with nowhere to send the money must fail
+     * loudly rather than silently pick something over its limit.
+     */
+    public function defaultAccount(?float $amount = null): MerchantAccount
     {
-        return MerchantAccount::query()
-            ->where('is_default', true)
-            ->where('is_active', true)
-            ->firstOrFail();
+        $account = app(MerchantRoutingService::class)->select($amount);
+
+        if (! $account) {
+            throw new ModelNotFoundException('No eligible merchant account is available to take this payment.');
+        }
+
+        return $account;
     }
 }

@@ -29,6 +29,15 @@ use Spatie\LaravelData\Data;
 class GatewayContextData extends Data
 {
     public function __construct(
+        /**
+         * WHICH ACCOUNT THIS CONTEXT BELONGS TO, and it must travel back with
+         * the token. The browser mints an opaque token against ONE gateway's
+         * SDK and that token is worthless at any other — so if routing moves
+         * to a different account while the visitor is typing, charging the
+         * newly-selected one would fail. The storefront hands this back at
+         * submit and the charge uses it.
+         */
+        public string $merchant_account_id,
         public string $gateway_provider,
         public string $environment,
 
@@ -58,6 +67,7 @@ class GatewayContextData extends Data
         $isSandbox = $environment === GatewayEnvironment::Sandbox;
 
         $base = [
+            'merchant_account_id' => $account->uuid,
             'gateway_provider' => $account->gateway_provider->value,
             'environment' => $environment->value,
         ];
