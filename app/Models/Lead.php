@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\CheckoutPath;
+use App\Enums\Payments\LeadPaymentStatus;
 use App\Models\Commerce\Encounter;
 use App\Models\Quiz\QuizQuestion;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -43,6 +44,20 @@ class Lead extends Model
         'billing_state',
         'billing_postal_code',
         'billing_country',
+        'payment_status',
+        'payment_gateway_provider',
+        'merchant_account_uuid',
+        'payment_transaction_id',
+        'payment_authorization_code',
+        'payment_amount',
+        'provider_customer_profile_id',
+        'provider_payment_profile_id',
+        'card_brand',
+        'card_last_four',
+        'card_exp_month',
+        'card_exp_year',
+        'payment_processed_at',
+        'payment_failure_reason',
         'sms_consent',
         'email_consent',
         'consent_given_at',
@@ -87,6 +102,9 @@ class Lead extends Model
             'email_consent' => 'boolean',
             'cart_items' => 'array',
             'billing_same_as_shipping' => 'boolean',
+            'payment_status' => LeadPaymentStatus::class,
+            'payment_amount' => 'decimal:2',
+            'payment_processed_at' => 'datetime',
             'prescribe_rx_response' => 'array',
             'cart_subtotal' => 'decimal:2',
         ];

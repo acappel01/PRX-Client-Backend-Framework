@@ -40,6 +40,22 @@ class LeadIntakeController extends Controller
         IntegrationSettings $integrations,
         BillingSettings $billing,
     ): JsonResponse {
+        // THE GATE. When this deployment collects payment, a lead may not
+        // reach a single clinical question until the card has actually
+        // succeeded. A declined card that still produced a completed encounter
+        // means a clinician's time spent and product shipped for money nobody
+        // took — so this refuses rather than rendering an intake the storefront
+        // would happily host.
+        //
+        // Enforced HERE and not only in the page, because the page is a URL
+        // anyone holding the lead uuid can open directly.
+        if ($billing->collectsPaymentOnSite() && ! $lead->payment_status->isSettled()) {
+            return response()->json([
+                'message' => 'This order has no completed payment, so the clinical intake is not available.',
+                'errors' => ['payment' => ['Payment must be completed before the medical intake.']],
+            ], 402);
+        }
+
         return response()->json([
             'data' => [
                 'embed' => $payloads->forLead($lead),

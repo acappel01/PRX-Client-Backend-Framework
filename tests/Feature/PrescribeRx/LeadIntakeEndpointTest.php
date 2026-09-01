@@ -3,6 +3,7 @@
 namespace Tests\Feature\PrescribeRx;
 
 use App\Enums\LeadStatus;
+use App\Enums\Payments\LeadPaymentStatus;
 use App\Enums\Payments\PaymentCollector;
 use App\Models\Lead;
 use App\Settings\BillingSettings;
@@ -53,12 +54,72 @@ class LeadIntakeEndpointTest extends TestCase
         $billing = app(BillingSettings::class);
         $billing->payment_collector = PaymentCollector::CaptureThenIntake->value;
 
-        $lead = Lead::factory()->create(['cart_items' => []]);
+        // Settled, because when this side collects, an unpaid lead is refused
+        // outright — see the gate tests below.
+        $lead = Lead::factory()->create([
+            'cart_items' => [],
+            'payment_status' => LeadPaymentStatus::Captured,
+        ]);
 
         $this->getJson("/api/v1/leads/{$lead->uuid}/intake")
             ->assertOk()
             ->assertJsonPath('data.payment.collector', 'capture_then_intake')
             ->assertJsonPath('data.payment.collect_on_site', true);
+    }
+
+    /**
+     * THE GATE, and it is why the payment state is recorded at all.
+     *
+     * A declined card that still reached a clinical intake would produce a
+     * completed encounter: a clinician's time spent, and product shipped, for
+     * money nobody took. Enforced on the ENDPOINT rather than only in the page,
+     * because the page is a URL anyone holding the lead uuid can open.
+     */
+    public function test_an_unpaid_lead_cannot_reach_the_intake_when_we_collect(): void
+    {
+        $billing = app(BillingSettings::class);
+        $billing->payment_collector = PaymentCollector::CaptureThenIntake->value;
+
+        $lead = Lead::factory()->create(['cart_items' => [], 'payment_status' => LeadPaymentStatus::None]);
+
+        $this->getJson("/api/v1/leads/{$lead->uuid}/intake")
+            ->assertStatus(402)
+            ->assertJsonPath('errors.payment.0', 'Payment must be completed before the medical intake.');
+    }
+
+    public function test_a_failed_card_cannot_reach_the_intake(): void
+    {
+        $billing = app(BillingSettings::class);
+        $billing->payment_collector = PaymentCollector::CaptureThenIntake->value;
+
+        $lead = Lead::factory()->create(['cart_items' => [], 'payment_status' => LeadPaymentStatus::Failed]);
+
+        $this->getJson("/api/v1/leads/{$lead->uuid}/intake")->assertStatus(402);
+    }
+
+    /** An authorisation is enough: the provider captures after the encounter. */
+    public function test_an_authorised_card_may_reach_the_intake(): void
+    {
+        $billing = app(BillingSettings::class);
+        $billing->payment_collector = PaymentCollector::AuthorizeThenCapture->value;
+
+        $lead = Lead::factory()->create(['cart_items' => [], 'payment_status' => LeadPaymentStatus::Authorized]);
+
+        $this->getJson("/api/v1/leads/{$lead->uuid}/intake")->assertOk();
+    }
+
+    /**
+     * With the provider collecting there is nothing for us to gate on — their
+     * embed takes the card inside its own checkout step.
+     */
+    public function test_the_gate_does_not_apply_when_the_provider_collects(): void
+    {
+        $billing = app(BillingSettings::class);
+        $billing->payment_collector = PaymentCollector::Provider->value;
+
+        $lead = Lead::factory()->create(['cart_items' => [], 'payment_status' => LeadPaymentStatus::None]);
+
+        $this->getJson("/api/v1/leads/{$lead->uuid}/intake")->assertOk();
     }
 
     public function test_an_unknown_lead_is_a_404_not_an_empty_payload(): void
