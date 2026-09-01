@@ -2,12 +2,14 @@
 
 namespace App\Http\Controllers\Api\V1\Leads;
 
+use App\Actions\Leads\MarkLeadHandedOffAction;
 use App\Http\Controllers\Controller;
 use App\Models\Lead;
 use App\Services\PrescribeRx\Embed\PrxEmbedPayloadBuilder;
 use App\Settings\BillingSettings;
 use App\Settings\IntegrationSettings;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 /**
  * Everything the frontend needs to host the clinical intake embed itself.
@@ -65,5 +67,41 @@ class LeadIntakeController extends Controller
                 ],
             ],
         ]);
+    }
+
+    /**
+     * Advisory "the visitor appears to have submitted" ping from the embed's
+     * onComplete, so the storefront can flip to a thank-you state without
+     * waiting on the webhook.
+     *
+     * NOT AUTHORITATIVE. The body is client-supplied and unverified; the
+     * signed webhook remains the source of truth for status, encounter
+     * creation and fulfilment. Never make a billing or fulfilment decision
+     * from this.
+     *
+     * The same ping already existed for the server-rendered handoff page, but
+     * that route is session- and CSRF-protected on the web middleware — it is
+     * unreachable from the storefront's origin, so moving the embed there
+     * dropped it silently. This is the cross-origin equivalent, with the lead
+     * UUID in the path as the credential rather than in the body.
+     *
+     * @tags Leads
+     *
+     * @unauthenticated
+     */
+    public function complete(Request $request, Lead $lead, MarkLeadHandedOffAction $action): JsonResponse
+    {
+        $data = $request->validate([
+            'encounter_id' => ['nullable', 'string', 'max:64'],
+            'patient_id' => ['nullable', 'string', 'max:64'],
+        ]);
+
+        $action->execute(
+            $lead,
+            $data['encounter_id'] ?? null,
+            $data['patient_id'] ?? null,
+        );
+
+        return response()->json(['data' => ['ok' => true]]);
     }
 }

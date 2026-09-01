@@ -177,6 +177,11 @@ Route::prefix('v1')->name('api.v1.')->group(function (): void {
         // which put the clinical step outside the storefront's branding,
         // compliance copy and cart, with no way back.
         Route::get('{lead:uuid}/intake', [LeadIntakeController::class, 'show'])->name('intake');
+
+        // Advisory completion ping from the embed. The web route of the same
+        // name is CSRF/session bound and unreachable cross-origin, which is
+        // what the storefront now is.
+        Route::post('{lead:uuid}/intake/complete', [LeadIntakeController::class, 'complete'])->name('intake.complete');
     });
 
     // ── Intake ────────────────────────────────────────────────────────────
