@@ -51,13 +51,13 @@ class LeadIntakeEndpointTest extends TestCase
     public function test_the_payment_mode_reflects_the_billing_setting(): void
     {
         $billing = app(BillingSettings::class);
-        $billing->payment_collector = PaymentCollector::Storefront->value;
+        $billing->payment_collector = PaymentCollector::CaptureThenIntake->value;
 
         $lead = Lead::factory()->create(['cart_items' => []]);
 
         $this->getJson("/api/v1/leads/{$lead->uuid}/intake")
             ->assertOk()
-            ->assertJsonPath('data.payment.collector', 'storefront')
+            ->assertJsonPath('data.payment.collector', 'capture_then_intake')
             ->assertJsonPath('data.payment.collect_on_site', true);
     }
 

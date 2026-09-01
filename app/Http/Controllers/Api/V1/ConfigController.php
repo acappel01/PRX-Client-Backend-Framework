@@ -135,7 +135,15 @@ class ConfigController extends ApiController
                     // the two can never both try to collect.
                     'payment' => [
                         'collector' => $billing->paymentCollector()->value,
+                        // The storefront renders a card form ONLY when this is
+                        // true; otherwise the embed's own checkout step handles
+                        // everything and no payment UI exists on this site.
                         'collect_on_site' => $billing->collectsPaymentOnSite(),
+                        // Which bypass shape the intake will be handed, so the
+                        // storefront knows whether to CHARGE or to AUTHORISE
+                        // AND VAULT — the difference between money taken before
+                        // a clinician sees the case and money taken after.
+                        'bypass' => $billing->paymentCollector()->bypassShape(),
                     ],
                     'upsells' => [
                         'enabled' => $billing->upsells_enabled,

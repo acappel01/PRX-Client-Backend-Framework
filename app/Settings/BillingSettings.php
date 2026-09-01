@@ -40,7 +40,7 @@ class BillingSettings extends Settings
 
     public function paymentCollector(): PaymentCollector
     {
-        return PaymentCollector::tryFrom($this->payment_collector) ?? PaymentCollector::Provider;
+        return PaymentCollector::fromStored($this->payment_collector);
     }
 
     /**
@@ -49,7 +49,7 @@ class BillingSettings extends Settings
      */
     public function collectsPaymentOnSite(): bool
     {
-        return $this->paymentCollector() === PaymentCollector::Storefront;
+        return $this->paymentCollector()->collectsOnSite();
     }
 
     public static function group(): string

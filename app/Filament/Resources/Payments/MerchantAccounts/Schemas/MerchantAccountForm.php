@@ -76,6 +76,16 @@ class MerchantAccountForm
                             ->schema([
 
                                 // Hint shown when no gateway has been selected yet
+                                // ── Telehealth provider link ──────────────────────
+                                Section::make('Telehealth provider link')
+                                    ->description('Required before this account can take payment on our own checkout.')
+                                    ->components([
+                                        TextInput::make('provider_merchant_profile_id')
+                                            ->label('Provider merchant profile ID')
+                                            ->maxLength(64)
+                                            ->helperText('The telehealth provider\'s own id for THIS merchant account. Both sides must be the same account before they will link a card we vaulted — they validate it when the intake finalises. Without it a stored card is ours alone, and they cannot capture it later or rebill a subscription against it. Leave blank only while the provider collects payment itself.'),
+                                    ]),
+
                                 Section::make('Credentials')
                                     ->description('Select a gateway provider on the Details tab — the matching credential fields will appear here.')
                                     ->visible(fn (Get $get): bool => blank($get('gateway_provider')))

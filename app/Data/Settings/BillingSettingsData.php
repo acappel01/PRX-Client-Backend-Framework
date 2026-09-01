@@ -22,7 +22,7 @@ class BillingSettingsData extends Data
          * success and writes NOTHING. That has happened three times in this
          * repo; the round-trip test beside it is the guard.
          */
-        #[In(['provider', 'storefront'])]
+        #[In(['provider', 'capture_then_intake', 'authorize_then_capture'])]
         public string $payment_collector = 'provider',
 
         public bool $upsells_enabled = true,

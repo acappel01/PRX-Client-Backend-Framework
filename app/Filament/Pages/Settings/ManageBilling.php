@@ -56,11 +56,11 @@ class ManageBilling extends BaseSettingsPage
                             ])
                             ->required(),
                     ]),
-                Section::make('Who collects payment')
+                Section::make('How payment is taken')
                     ->description('Separate from the checkout path above, which decides who submits the ORDER. A deployment can route orders through the provider while still taking the card itself, so these are two questions rather than one.')
                     ->schema([
                         Radio::make('payment_collector')
-                            ->label('Payment is taken by')
+                            ->label('How payment is taken')
                             ->options(fn (): array => collect(PaymentCollector::cases())
                                 ->mapWithKeys(fn (PaymentCollector $c) => [$c->value => $c->label()])
                                 ->all())

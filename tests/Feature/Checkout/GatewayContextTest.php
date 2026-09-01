@@ -130,6 +130,46 @@ class GatewayContextTest extends TestCase
         $this->getJson('/api/v1/checkout/gateway-config')->assertStatus(503);
     }
 
+    /**
+     * Both storefront sequences need the provider to accept OUR merchant
+     * account as theirs — they validate it when the intake finalises, and
+     * without it a card we vaulted cannot be captured or rebilled on their
+     * side. `fillable` is the only guard on this column, so the round trip is
+     * asserted rather than assumed.
+     */
+    public function test_the_provider_merchant_profile_id_persists(): void
+    {
+        $account = MerchantAccount::factory()->create([
+            'gateway_provider' => GatewayProvider::AuthorizeNet,
+            'provider_merchant_profile_id' => 'mp_01a05c33',
+        ]);
+
+        $this->assertSame('mp_01a05c33', $account->fresh()->provider_merchant_profile_id);
+    }
+
+    /**
+     * It identifies an account to the PROVIDER, server to server. The browser
+     * has no use for it, and everything in this payload is public by
+     * construction — so it stays out.
+     */
+    public function test_the_provider_profile_id_is_not_sent_to_the_browser(): void
+    {
+        MerchantAccount::factory()->create([
+            'gateway_provider' => GatewayProvider::AuthorizeNet,
+            'environment' => GatewayEnvironment::Sandbox,
+            'authnet_api_login_id' => 'login-public',
+            'authnet_public_client_key' => 'client-public',
+            'provider_merchant_profile_id' => 'mp_secretish',
+            'is_default' => true,
+            'is_active' => true,
+        ]);
+
+        $this->assertStringNotContainsString(
+            'mp_secretish',
+            $this->getJson('/api/v1/checkout/gateway-config')->assertOk()->content()
+        );
+    }
+
     public function test_no_configured_gateway_is_a_503(): void
     {
         $this->getJson('/api/v1/checkout/gateway-config')->assertStatus(503);

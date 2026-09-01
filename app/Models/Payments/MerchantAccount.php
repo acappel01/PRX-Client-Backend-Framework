@@ -15,6 +15,7 @@ class MerchantAccount extends Model
 
     protected $fillable = [
         'uuid',
+        'provider_merchant_profile_id',
         'name',
         'gateway_provider',
         'environment',
