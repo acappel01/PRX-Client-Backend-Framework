@@ -130,6 +130,24 @@ resolves a missing attribute to null rather than raising — that mistake sat in
 the embed payload builder for months and shipped an embed with nothing
 selected, silently. Assert POPULATED output when you touch that surface.
 
+### "Sandbox" means three different things — do not conflate them
+
+Three independent switches share the word, and only one of them is about which
+server you are talking to. Reading any of them as the others produces either a
+false alarm or a real test encounter on a real clinician's queue.
+
+| Switch | Where | What it actually controls |
+|---|---|---|
+| `prescribe_rx_environment` | `IntegrationSettings` (ours) | **Which instance.** `sandbox` → `demo.prescribe-rx.com`, `production` → `prescribe-rx.com`. Picks the host for the API, the embed SDK and the iframe. |
+| Embed **sandbox mode** | The embed config, in the provider's admin | **Whether encounters from that embed are test encounters** — on whichever instance. Exists so real clinicians are not handed test intakes. A production embed running in sandbox mode is NORMAL and is not a misconfiguration. |
+| `is_sandbox` | The unified-intake payload (API path) | The API-path equivalent of the embed's mode: flags one submission as a test. Their server also auto-sets it on test-looking names. |
+
+So a wizard served from `prescribe-rx.com` can legitimately show
+"SANDBOX MODE — TEST TRANSACTION ONLY". That banner describes the embed
+config's mode, not the instance, and not our environment setting.
+
+We only ever ASSERT `is_sandbox`, never deny it — see `docs/checkout/dev.md`.
+
 ### What checkout submits
 
 Checkout sends the **modern selection arrays**, `products[]` and `packages[]`.

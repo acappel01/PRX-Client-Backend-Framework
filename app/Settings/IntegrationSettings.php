@@ -20,6 +20,15 @@ class IntegrationSettings extends Settings
     public bool $prescribe_rx_enabled = false;
 
     /** 'sandbox' or 'production' — selects the base URL from config. */
+    /**
+     * WHICH INSTANCE — not whether encounters are tests.
+     *
+     * `sandbox` → demo.prescribe-rx.com, `production` → prescribe-rx.com.
+     * Whether an encounter is a TEST is a separate switch: a mode on the
+     * embed config in their admin (so real clinicians are not handed test
+     * intakes), and `is_sandbox` on the API path. A production embed running
+     * in sandbox mode is normal. See docs/prescribe-rx/dev.md.
+     */
     public string $prescribe_rx_environment = 'sandbox';
 
     /**
