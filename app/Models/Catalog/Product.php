@@ -2,6 +2,7 @@
 
 namespace App\Models\Catalog;
 
+use App\Enums\Catalog\IntakeSelectionMode;
 use App\Enums\CatalogStatus;
 use App\Enums\InventoryStatus;
 use App\Models\Concerns\HasCardPriceExpression;
@@ -65,6 +66,7 @@ class Product extends Model implements Sortable
         'provider_product_id',
         'provider_product_sku',
         'provider_encounter_type_id',
+        'intake_selection_mode',
         'badge_text',
         'highlights',
         'detail_sections',
@@ -102,11 +104,24 @@ class Product extends Model implements Sortable
         return static::cardPriceExpression('products', 'product_id');
     }
 
+    /**
+     * Mirrors the column default so a NEW model instance reports the same
+     * selection mode as a saved one. Without it the attribute reads null
+     * until the row is refreshed, and any `=== IntakeSelectionMode::…`
+     * comparison silently takes the wrong branch on an unrefreshed object.
+     *
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'intake_selection_mode' => 'product',
+    ];
+
     protected function casts(): array
     {
         return [
             'status' => CatalogStatus::class,
             'inventory_status' => InventoryStatus::class,
+            'intake_selection_mode' => IntakeSelectionMode::class,
             'gallery' => 'array',
             'retail_price' => 'decimal:2',
             'sale_price' => 'decimal:2',

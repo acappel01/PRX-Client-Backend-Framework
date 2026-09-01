@@ -177,15 +177,60 @@ Both actions return `CheckoutResultData`.
 
 ## Action: `SubmitPrescribeRxCheckoutAction`
 
-### Product ID resolution
+### Selection resolution
 
-Priority per cart item:
-1. **Package + Plan** → `Plan.provider_product_ids` (JSON array)
-2. **Bare Plan itemable** → `Plan.provider_product_ids`
-3. **Product itemable** → `Product.provider_product_id`
-4. **Package (no plan)** → each `Package.products[*].provider_product_id`
+The payload uses prescribe-rx's **modern selection arrays**, `products[]` and
+`packages[]`. The legacy flat `product_ids` is deprecated on their side and is
+no longer sent.
 
-Duplicates stripped; empty/null filtered. Throws if none resolved (422).
+**A package is named, never flattened.** prescribe-rx already knows which
+products a package contains, and keys real behaviour off the package row — a
+labs hold before dispensing, a $0 shipping quote, consult-included pricing.
+Sending member product ids discarded the package, so none of that fired.
+
+Per cart item:
+
+| Cart line | Emits |
+|---|---|
+| Package (no plan) | `packages[] = {package_id}` |
+| Package + plan | `packages[] = {package_id, plan_id}` |
+| Product | `products[] = {product_id, quantity, snapshot_price}` |
+| Product + plan | `products[] = {product_id, …}` — their `products[]` has no `plan_id`, so the term is expressed by the local order, not the encounter |
+
+A **plan is never itself a cart line**: `CartController::addItem` accepts
+`type` in `product|package` only, and a chosen term arrives as `plan_id` on the
+line. The resolver has no plan branch for that reason.
+
+Each line carries **exactly one** identifier, per their contract: the UUID
+(`package_id` / `product_id`) is preferred because it survives a rename on
+their side, and the human-readable number (`package_number` /
+`product_number`) is the fallback for an item mapped by SKU alone. Unset
+identifiers are stripped before transport — a line carrying two is rejected.
+
+An unmapped item is skipped and **logged**; the action throws only when the
+whole cart resolves to nothing. A partially-mapped cart therefore submits,
+naming only what it could resolve.
+
+### Idempotency
+
+The submission sends `Idempotency-Key: {app-name-slug}-{cart.ulid}-{lead.uuid}`,
+namespaced per install so deployments sharing a prescribe-rx tenant cannot
+collide. Their
+side replays a stored response for 24h, so a retry of the same submission
+cannot mint a second encounter for one patient. The key must stay stable
+across retries — do not add a timestamp.
+
+### Other payload notes
+
+- `is_sandbox` is only ever **asserted**, never denied. Their server auto-flags
+  test-looking names as sandbox; an explicit `false` could override that, so a
+  production submission omits the key entirely.
+- `metadata` carries the lead uuid, cart ulid and UTM attribution, so an
+  encounter can be traced back to the visit that produced it.
+- `gender` is translated, not passed through. Our lead form offers
+  `prefer_not_to_say`; they accept only `male` / `female` / `other`. An
+  unmappable value is **dropped** — declining to answer is not "other", and
+  guessing would put a wrong answer on a clinical chart.
 
 ### Transaction boundary
 

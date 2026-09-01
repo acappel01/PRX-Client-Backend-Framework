@@ -111,13 +111,53 @@ The fixtures live inline in `Client.php` so they evolve together with the respon
 
 ## Sales-organization token guard: `payment.mode=authorize`
 
-**Sales-org tokens cannot use `payment.mode=authorize` on the unified intake endpoint** — prescribe-rx isn't the merchant of record for API-driven flows. Use `reference_captured` (record-only, payment handled locally) or `patient_review` (deferred portal pay) instead. Embed-form tokens (browser-served, separate token type) DO support `authorize`. The Client doesn't currently send a payment block; when we add it, enforce this on our side too.
+**Sales-org tokens cannot use `payment.mode=authorize` on the unified intake endpoint** — prescribe-rx isn't the merchant of record for API-driven flows. Use `reference_captured` (record-only, payment handled locally) or `patient_review` (deferred portal pay) instead. Embed-form tokens (browser-served, separate token type) DO support `authorize`. The Client doesn't currently send a payment block; when we add it, enforce this on our side too. The five modes are `authorize` (embed-only), `reference_preauth` (we pre-auth, they vault and capture later), `reference_captured` (we already charged — record-only audit trail), `prepaid` (settled out of band) and `patient_review` (they email the patient to confirm and pay). Collecting payment up front on our side is `reference_captured` or `reference_preauth`.
 
-## Local Product / Package mapping (planned)
+## Local Product / Package mapping
 
-When the Products module is built, every `Product` and `Package` model gets a `prescribe_rx_product_id` (and optionally `prescribe_rx_package_id`) field. The local CMS product catalog (custom images + marketing descriptions) maps to prescribe-rx UUIDs at order-submission time. This decouples the marketing experience from the clinical inventory and lets the local site curate which slice of the catalog is exposed.
+Every `Product`, `Package` and `Plan` carries provider mapping columns —
+`provider_product_id` / `provider_product_sku`, `provider_package_id` /
+`provider_package_sku`, `provider_plan_id` / `provider_plan_sku`. The local
+catalog (custom images + marketing copy) maps to prescribe-rx UUIDs, which
+decouples the marketing experience from clinical inventory and lets each
+deployment expose its own slice of the catalog.
 
-When checkout submits an intake, our wizard collects the local product UUIDs the user selected, looks up their `prescribe_rx_product_id` mappings, and includes them in the `product_ids` array on the unified-intake payload.
+**The column prefix is `provider_*`, and only `provider_*`.** Three competing
+conventions exist in this codebase (`provider_*` on catalog tables,
+`prescribe_rx_*` on transactional ones, `prx_*` on patients). Reading a
+`prescribe_rx_*` name off a catalog model returns **null**, because Eloquent
+resolves a missing attribute to null rather than raising — that mistake sat in
+the embed payload builder for months and shipped an embed with nothing
+selected, silently. Assert POPULATED output when you touch that surface.
+
+### What checkout submits
+
+Checkout sends the **modern selection arrays**, `products[]` and `packages[]`.
+Legacy flat `product_ids` is deprecated on their side and is not sent.
+
+A package is **named, not flattened into its members**: prescribe-rx already
+knows a package's contents, and keys real behaviour off the package row (labs
+hold, free shipping, telehealth consult). Naming the package delegates all of
+that back to the side that owns it; sending member product ids threw it away
+and none of that machinery fired.
+
+Each line carries exactly one identifier — UUID preferred, `*_number` as the
+fallback — with `packages[].plan_id` selecting the term. Full resolution table,
+idempotency and the `is_sandbox` / `metadata` / `gender` rules are in
+`docs/checkout/dev.md`.
+
+### Field vocabularies that differ from ours
+
+Verified against their published field-mapping reference:
+
+| Field | They accept | Note |
+|---|---|---|
+| `patient.gender` | `male` / `female` / `other` (or 1/2/3) | Our lead form also offers `prefer_not_to_say`; it is dropped, never mapped |
+| `consents[].signature_method` | `click` / `typed` / `pad` | Not `keyboard` / `drawn` |
+| `patient.address.street2` | its own field | Do not concatenate it into `street` |
+
+The shipping address drives their **state-licensing** check, so it is the one
+that must be structurally correct.
 
 ## Tests
 

@@ -2,6 +2,7 @@
 
 namespace App\Services\PrescribeRx\Embed;
 
+use App\Enums\Catalog\IntakeSelectionMode;
 use App\Models\Catalog\Package;
 use App\Models\Catalog\Plan;
 use App\Models\Catalog\Product;
@@ -36,6 +37,7 @@ class PrxEmbedPayloadBuilder
      *   prefill: array<string, mixed>,
      *   packages: array<int, string>,
      *   products: array<int, string>,
+     *   productTypes: array<int, array{product_type_id: string}>,
      *   planIds: array<int, string>,
      *   skipSteps: array<int, string>,
      *   metadata: array<string, mixed>,
@@ -48,6 +50,7 @@ class PrxEmbedPayloadBuilder
             'prefill' => $this->buildPrefill($lead),
             'packages' => $this->packageNumbersFromCart($lead),
             'products' => $this->productNumbersFromCart($lead),
+            'productTypes' => $this->productTypesFromCart($lead),
             'planIds' => $this->planIdsFromCart($lead),
             // Step slugs are encounter-type-specific. The list comes from
             // config/prescribe-rx.php → embed.skip_steps and contains the
@@ -104,6 +107,12 @@ class PrxEmbedPayloadBuilder
      * Resolve package numbers (PKG-XXXXX) for every cart line of type=package.
      * Falls back to UUIDs if no number is mapped.
      *
+     * Reads `provider_package_sku` / `provider_package_id` — the real columns.
+     * These were once written as `prescribe_rx_package_*`, which do not exist;
+     * Eloquent returns null for a missing attribute rather than raising, so the
+     * embed silently opened with nothing selected. Assert POPULATED output when
+     * touching this, never merely that the key is present.
+     *
      * @return array<int, string>
      */
     protected function packageNumbersFromCart(Lead $lead): array
@@ -116,7 +125,7 @@ class PrxEmbedPayloadBuilder
         $packages = Package::query()->whereIn('id', $items->pluck('resource_id'))->get();
 
         return $packages
-            ->map(fn (Package $p) => $p->prescribe_rx_package_number ?: $p->prescribe_rx_package_id)
+            ->map(fn (Package $p) => $p->provider_package_sku ?: $p->provider_package_id)
             ->filter()
             ->values()
             ->all();
@@ -124,6 +133,8 @@ class PrxEmbedPayloadBuilder
 
     /**
      * Resolve product numbers (PROD-XXXXX) for every cart line of type=product.
+     * Reads `provider_product_sku` / `provider_product_id` — see the note on
+     * packageNumbersFromCart() for why the column names matter here.
      * Plan items also implicitly drag in their parent package's products via
      * the embed (PRX dereferences plan→package→items server-side); we don't
      * unroll that here.
@@ -137,12 +148,47 @@ class PrxEmbedPayloadBuilder
             return [];
         }
 
-        $products = Product::query()->whereIn('id', $items->pluck('resource_id'))->get();
-
-        return $products
-            ->map(fn (Product $p) => $p->prescribe_rx_product_number ?: $p->prescribe_rx_product_id)
+        return Product::query()
+            ->whereIn('id', $items->pluck('resource_id'))
+            ->where('intake_selection_mode', IntakeSelectionMode::Product)
+            ->get()
+            ->map(fn (Product $p) => $p->provider_product_sku ?: $p->provider_product_id)
             ->filter()
             ->values()
+            ->all();
+    }
+
+    /**
+     * Products whose dose is provider-determined nominate their TYPE instead,
+     * so the clinician picks the variant inside the embed. Feeds the SDK's
+     * `selectProductTypes([{product_type_id}])`, which is a different call
+     * from `selectProducts()` — hence a separate payload key rather than a
+     * flag on the products array.
+     *
+     * A product in type mode whose type is unmapped is DROPPED, never demoted
+     * to its exact product: demoting would pin a specific dose on an item that
+     * exists to have one chosen.
+     *
+     * @return array<int, array{product_type_id: string}>
+     */
+    protected function productTypesFromCart(Lead $lead): array
+    {
+        $items = collect($lead->cart_items ?? [])->where('resource_type', 'product');
+
+        if ($items->isEmpty()) {
+            return [];
+        }
+
+        return Product::query()
+            ->with('productType')
+            ->whereIn('id', $items->pluck('resource_id'))
+            ->where('intake_selection_mode', IntakeSelectionMode::ProductType)
+            ->get()
+            ->map(fn (Product $p) => $p->productType?->provider_product_type_id)
+            ->filter()
+            ->unique()
+            ->values()
+            ->map(fn (string $id) => ['product_type_id' => $id])
             ->all();
     }
 
@@ -161,6 +207,8 @@ class PrxEmbedPayloadBuilder
 
     /**
      * Resolve plan IDs (UUIDs) for every cart line of type=plan.
+     * `selectPlan(planId)` in the embed SDK takes an id, not a number, so the
+     * id is preferred here and the sku is only a fallback.
      *
      * @return array<int, string>
      */
@@ -174,7 +222,7 @@ class PrxEmbedPayloadBuilder
         $plans = Plan::query()->whereIn('id', $items->pluck('resource_id'))->get();
 
         return $plans
-            ->map(fn (Plan $p) => $p->prescribe_rx_plan_id ?: $p->prescribe_rx_plan_number)
+            ->map(fn (Plan $p) => $p->provider_plan_id ?: $p->provider_plan_sku)
             ->filter()
             ->values()
             ->all();

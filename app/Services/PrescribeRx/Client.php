@@ -648,9 +648,25 @@ class Client
      * `client_id` / `sales_org_id` from IntegrationSettings if the request
      * doesn't already specify them.
      */
-    public function submitUnifiedIntake(UnifiedIntakeRequestData $data): UnifiedIntakeResponseData
+    public function submitUnifiedIntake(UnifiedIntakeRequestData $data, ?string $idempotencyKey = null): UnifiedIntakeResponseData
     {
-        $payload = $this->withConfiguredOrg($data->toArray());
+        $raw = $this->withConfiguredOrg($data->toArray());
+        $payload = self::stripNulls($raw);
+
+        // `answers` was always present on the wire before the null-strip, and
+        // an encounter with no answers is a legitimate submission (the embed
+        // collects them instead). Restore the key rather than let an empty
+        // answer set change the payload's shape — dropping it is a question
+        // for their validator that we cannot answer from here.
+        //
+        // The empty encoding differs deliberately: this sends `{}` where the
+        // pre-strip payload sent `[]`. Both decode identically in PHP, and
+        // `{}` is the truer encoding of their `array<string, mixed>` contract
+        // — but a strict non-PHP validator could tell them apart, so this is
+        // worth confirming on the first real sandbox submission.
+        if (array_key_exists('answers', $raw) && ! array_key_exists('answers', $payload)) {
+            $payload['answers'] = (object) [];
+        }
 
         if (config('prescribe-rx.stub')) {
             return UnifiedIntakeResponseData::from([
@@ -671,10 +687,55 @@ class Client
             ]);
         }
 
-        $response = $this->request()->post('/telehealth/intake/unified', $payload);
+        $request = $this->request();
+
+        if ($idempotencyKey !== null) {
+            $request = $request->withHeaders(['Idempotency-Key' => $idempotencyKey]);
+        }
+
+        $response = $request->post('/telehealth/intake/unified', $payload);
         $body = $this->extractData($response);
 
         return UnifiedIntakeResponseData::from($body);
+    }
+
+    /**
+     * Recursively drop null values from a payload.
+     *
+     * Required by the selection arrays: `products[]` / `packages[]` accept
+     * EXACTLY ONE identifier per line, and a spatie DTO serialises its unset
+     * identifiers as explicit nulls. Empty arrays are dropped for the same
+     * reason — an empty `packages: []` alongside a populated `products` reads
+     * as a deliberate selection of nothing.
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private static function stripNulls(array $payload): array
+    {
+        $isList = array_is_list($payload);
+        $clean = [];
+
+        foreach ($payload as $key => $value) {
+            if ($value === null) {
+                continue;
+            }
+
+            if (is_array($value)) {
+                $value = self::stripNulls($value);
+
+                if ($value === []) {
+                    continue;
+                }
+            }
+
+            $clean[$key] = $value;
+        }
+
+        // Dropping an element from a list leaves an index gap, and PHP encodes
+        // a gapped array as a JSON object rather than an array — which would
+        // turn `products: [...]` into `products: {"1": ...}` on the wire.
+        return $isList ? array_values($clean) : $clean;
     }
 
     // ─── Internals ────────────────────────────────────────────────────────

@@ -22,7 +22,14 @@ class PatientData extends Data
         public string $date_of_birth,
         #[Max(32)]
         public ?string $phone = null,
-        #[In(['male', 'female', 'other', 'unspecified'])]
+        /**
+         * Their contract accepts "male" / "female" / "other" only (or 1/2/3).
+         * Our own lead form also offers "prefer_not_to_say", which is NOT a
+         * value they take — `SubmitPrescribeRxCheckoutAction::mapGender()`
+         * drops it rather than sending a 422. Do not widen this list to match
+         * the lead form; the two vocabularies are deliberately different.
+         */
+        #[In(['male', 'female', 'other'])]
         public ?string $gender = null,
         public ?AddressData $address = null,
     ) {}

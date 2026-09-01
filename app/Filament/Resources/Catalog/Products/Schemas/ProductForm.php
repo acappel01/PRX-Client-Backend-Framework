@@ -2,12 +2,14 @@
 
 namespace App\Filament\Resources\Catalog\Products\Schemas;
 
+use App\Enums\Catalog\IntakeSelectionMode;
 use App\Enums\CatalogStatus;
 use App\Enums\InventoryStatus;
 use App\Models\Catalog\Category;
 use App\Models\Catalog\Tag;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\FileUpload;
+use Filament\Forms\Components\Radio;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
@@ -364,6 +366,18 @@ class ProductForm
                                     ->label('Provider SKU')
                                     ->maxLength(255)
                                     ->hintIcon(Heroicon::InformationCircle, "Provider's human-readable SKU. Used in order submissions."),
+                                Radio::make('intake_selection_mode')
+                                    ->label('What the clinical intake orders')
+                                    ->options(fn (): array => collect(IntakeSelectionMode::cases())
+                                        ->mapWithKeys(fn (IntakeSelectionMode $m) => [$m->value => $m->label()])
+                                        ->all())
+                                    ->descriptions(fn (): array => collect(IntakeSelectionMode::cases())
+                                        ->mapWithKeys(fn (IntakeSelectionMode $m) => [$m->value => $m->helperText()])
+                                        ->all())
+                                    ->default(IntakeSelectionMode::Product->value)
+                                    ->required()
+                                    ->columnSpanFull()
+                                    ->helperText('Choose "Product type" when this item\'s strength or presentation is decided by the prescriber rather than the patient. It needs the Classification tab\'s product type mapped to the provider — an unmapped type means this item is left OFF the order rather than sent at a dose nobody chose.'),
                             ]),
 
                         // ── SEO ───────────────────────────────────────

@@ -21,5 +21,11 @@ class AddressData extends Data
         public string $zip,
         #[Max(2)]
         public string $country = 'US',
+        /**
+         * Optional second address line. Last in the signature so the existing
+         * positional order is untouched — construct with named arguments.
+         */
+        #[Max(255)]
+        public ?string $street2 = null,
     ) {}
 }

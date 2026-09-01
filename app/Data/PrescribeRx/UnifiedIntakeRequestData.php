@@ -35,9 +35,44 @@ class UnifiedIntakeRequestData extends Data
          * @var array<string, mixed>
          */
         public array $answers = [],
-        /** @var array<int, string> */
+        /**
+         * Modern selection array. Prefer this over `product_ids`.
+         *
+         * @var DataCollection<int, IntakeProductSelectionData>|null
+         */
+        public ?DataCollection $products = null,
+        /**
+         * Modern selection array — the shape that makes a bundle land as a
+         * bundle, with its term. Prefer this over `product_ids`.
+         *
+         * @var DataCollection<int, IntakePackageSelectionData>|null
+         */
+        public ?DataCollection $packages = null,
+        /**
+         * LEGACY, documented as deprecated by prescribe-rx. Flattens a package
+         * into member product ids, which discards the package identity their
+         * labs / shipping / consult behaviour keys off. Kept for backward
+         * compatibility only — populate `products` / `packages` instead.
+         *
+         * @var array<int, string>
+         */
         public array $product_ids = [],
         public ?string $reason_for_visit = null,
+        /** Free-form, max 1000 chars. Distinct from `reason_for_visit`. */
+        public ?string $chief_complaint = null,
+        /**
+         * Skips provider auto-assignment, fulfilment and billing on their
+         * side. Their server also auto-sets it on test-looking names.
+         */
+        public ?bool $is_sandbox = null,
+        /**
+         * Opaque pass-through, persisted to `encounters.metadata` and shown
+         * in their admin. Our lead uuid and campaign attribution ride here so
+         * an encounter can be traced back to the visit that produced it.
+         *
+         * @var array<string, mixed>|null
+         */
+        public ?array $metadata = null,
         /** @var DataCollection<int, ConsentData>|null */
         public ?DataCollection $consents = null,
     ) {}

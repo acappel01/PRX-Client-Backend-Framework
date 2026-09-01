@@ -138,7 +138,7 @@ class PrescribeRxProvider implements TelehealthProviderInterface
     {
         $request = UnifiedIntakeRequestData::from($payload);
 
-        $response = $this->client->submitUnifiedIntake($request);
+        $response = $this->client->submitUnifiedIntake($request, $idempotencyKey);
 
         return $response->toArray();
     }

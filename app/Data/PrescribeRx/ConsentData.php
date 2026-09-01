@@ -17,7 +17,10 @@ class ConsentData extends Data
         public string $consent_version = '1.0',
         public ?string $consented_at = null,
         public ?string $ip_address = null,
-        #[In(['click', 'keyboard', 'drawn'])]
+        /** Their accepted values are click / typed / pad. */
+        #[In(['click', 'typed', 'pad'])]
         public string $signature_method = 'click',
+        /** Base64 PNG, used with the `pad` method. */
+        public ?string $signature_data = null,
     ) {}
 }
