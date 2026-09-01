@@ -307,9 +307,11 @@ class SubmitPrescribeRxCheckoutAction
         $snapshot = $item->unit_price_snapshot !== null ? (float) $item->unit_price_snapshot : null;
 
         if ($product->intake_selection_mode === IntakeSelectionMode::ProductType) {
-            $typeId = $product->productType?->provider_product_type_id;
+            $type = $product->productType;
+            $typeId = $type?->provider_product_type_id;
+            $typeSlug = $type?->provider_product_type_slug;
 
-            if ($typeId === null) {
+            if ($typeId === null && $typeSlug === null) {
                 Log::warning('Prescribe-Rx: product omitted from intake — set to product-type mode but its type has no provider mapping.', [
                     'product_id' => $product->id,
                     'product_name' => $product->name,
@@ -319,8 +321,14 @@ class SubmitPrescribeRxCheckoutAction
                 return null;
             }
 
+            // Exactly one identifier per line, so the slug is a FALLBACK, not
+            // a companion. The id is preferred when present because it is
+            // unambiguous; the slug matters because it is far likelier to
+            // survive a sandbox → production switch, which is how two of this
+            // install's mappings came to point at nothing.
             return new IntakeProductSelectionData(
                 product_type_id: $typeId,
+                product_type_slug: $typeId === null ? $typeSlug : null,
                 quantity: $quantity,
                 snapshot_price: $snapshot,
             );

@@ -547,6 +547,72 @@ class UnifiedIntakeSelectionTest extends TestCase
         $this->assertSame('019d2842-0000-4000-8000-00000000000e', $this->sentPayload()['products'][0]['product_id']);
     }
 
+    /**
+     * Their line takes exactly one identifier, so the slug is a FALLBACK for a
+     * type mapped without an id — never sent alongside one.
+     *
+     * The slug matters because a UUID is environment-specific: an id captured
+     * against sandbox resolves to nothing against production and fails
+     * SILENTLY, reporting "no products found" exactly as a malformed payload
+     * would. This install was bitten by that.
+     */
+    public function test_a_product_type_falls_back_to_the_provider_slug(): void
+    {
+        $type = ProductType::factory()->create([
+            'provider_product_type_id' => null,
+            'provider_product_type_slug' => 'semaglutide-b12',
+        ]);
+        $product = Product::factory()->create([
+            'product_type_id' => $type->id,
+            'intake_selection_mode' => IntakeSelectionMode::ProductType,
+        ]);
+
+        $cart = Cart::factory()->create();
+        $cart->items()->create([
+            'itemable_type' => 'product',
+            'itemable_id' => $product->id,
+            'quantity' => 1,
+            'unit_price_snapshot' => 199.00,
+        ]);
+
+        app(SubmitPrescribeRxCheckoutAction::class)
+            ->execute($cart->fresh(), $this->lead());
+
+        $line = $this->sentPayload()['products'][0];
+
+        $this->assertSame('semaglutide-b12', $line['product_type_slug']);
+        $this->assertArrayNotHasKey('product_type_id', $line);
+    }
+
+    /** The id wins when both are mapped — one identifier per line. */
+    public function test_a_product_type_prefers_the_id_over_the_slug(): void
+    {
+        $type = ProductType::factory()->create([
+            'provider_product_type_id' => '01a057df-0000-4000-8000-0000000000b1',
+            'provider_product_type_slug' => 'semaglutide-b12',
+        ]);
+        $product = Product::factory()->create([
+            'product_type_id' => $type->id,
+            'intake_selection_mode' => IntakeSelectionMode::ProductType,
+        ]);
+
+        $cart = Cart::factory()->create();
+        $cart->items()->create([
+            'itemable_type' => 'product',
+            'itemable_id' => $product->id,
+            'quantity' => 1,
+            'unit_price_snapshot' => 199.00,
+        ]);
+
+        app(SubmitPrescribeRxCheckoutAction::class)
+            ->execute($cart->fresh(), $this->lead());
+
+        $line = $this->sentPayload()['products'][0];
+
+        $this->assertSame('01a057df-0000-4000-8000-0000000000b1', $line['product_type_id']);
+        $this->assertArrayNotHasKey('product_type_slug', $line);
+    }
+
     public function test_an_unmapped_cart_is_refused_rather_than_submitted_empty(): void
     {
         $package = Package::factory()->create([

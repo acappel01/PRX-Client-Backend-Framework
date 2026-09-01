@@ -271,6 +271,25 @@ class PrxEmbedPayloadBuilderTest extends TestCase
         $this->assertContains('personal-information', $skips);
     }
 
+    /** The embed takes exactly one of the two, same as the intake API. */
+    public function test_the_embed_falls_back_to_the_provider_type_slug(): void
+    {
+        $type = ProductType::factory()->create([
+            'provider_product_type_id' => null,
+            'provider_product_type_slug' => 'semaglutide-b12',
+        ]);
+        $product = Product::factory()->create([
+            'product_type_id' => $type->id,
+            'intake_selection_mode' => IntakeSelectionMode::ProductType,
+        ]);
+
+        $payload = $this->builder()->forLead($this->leadWithCart([
+            ['resource_type' => 'product', 'resource_id' => $product->id],
+        ]));
+
+        $this->assertSame([['product_type_slug' => 'semaglutide-b12']], $payload['productTypes']);
+    }
+
     public function test_a_mixed_cart_nominates_every_kind_at_once(): void
     {
         $package = Package::factory()->create(['provider_package_sku' => 'PKG-10005']);

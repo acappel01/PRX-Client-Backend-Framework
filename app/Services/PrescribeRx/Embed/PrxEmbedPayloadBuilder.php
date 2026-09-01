@@ -190,7 +190,12 @@ class PrxEmbedPayloadBuilder
      * to its exact product: demoting would pin a specific dose on an item that
      * exists to have one chosen.
      *
-     * @return array<int, array{product_type_id: string}>
+     * Their SDK takes exactly one of `product_type_id` or `product_type_slug`
+     * per entry. The id wins when present; the slug is the fallback, and the
+     * more durable identifier — a UUID is environment-specific and resolves to
+     * nothing after a sandbox → production switch, silently.
+     *
+     * @return array<int, array{product_type_id?: string, product_type_slug?: string}>
      */
     protected function productTypesFromCart(Lead $lead): array
     {
@@ -205,11 +210,20 @@ class PrxEmbedPayloadBuilder
             ->whereIn('id', $items->pluck('resource_id'))
             ->where('intake_selection_mode', IntakeSelectionMode::ProductType)
             ->get()
-            ->map(fn (Product $p) => trim((string) $p->productType?->provider_product_type_id) ?: null)
+            ->map(function (Product $p): ?array {
+                $id = trim((string) $p->productType?->provider_product_type_id) ?: null;
+
+                if ($id !== null) {
+                    return ['product_type_id' => $id];
+                }
+
+                $slug = trim((string) $p->productType?->provider_product_type_slug) ?: null;
+
+                return $slug !== null ? ['product_type_slug' => $slug] : null;
+            })
             ->filter()
-            ->unique()
+            ->unique(fn (array $entry) => implode(':', $entry))
             ->values()
-            ->map(fn (string $id) => ['product_type_id' => $id])
             ->all();
     }
 

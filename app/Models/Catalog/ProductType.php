@@ -27,6 +27,7 @@ class ProductType extends Model implements Sortable
         'is_active',
         'position',
         'provider_product_type_id',
+        'provider_product_type_slug',
     ];
 
     /** @var array<string, mixed> */

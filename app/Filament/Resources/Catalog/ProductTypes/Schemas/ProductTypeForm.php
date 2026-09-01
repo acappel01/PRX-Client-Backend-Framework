@@ -76,6 +76,11 @@ class ProductTypeForm
                                     ->maxLength(36)
                                     ->hintIcon(Heroicon::InformationCircle, 'UUID of the matching product type on the provider side.')
                                     ->helperText('Optional mapping to the fulfillment provider (e.g. PrescribeRx) so synced products reuse this row. Leave blank for non-provider vocabulary.'),
+                                TextInput::make('provider_product_type_slug')
+                                    ->label('Provider product type slug')
+                                    ->maxLength(255)
+                                    ->hintIcon(Heroicon::InformationCircle, "The provider's own slug for this type, e.g. \"tirzepatide\".")
+                                    ->helperText('Used when no ID is set. Worth filling in even when the ID is: an ID is specific to one provider environment, so a mapping captured against sandbox silently resolves to nothing against production — a slug usually survives the switch. Entered by hand, because the provider\'s product-type API does not currently return slugs.'),
                             ]),
                     ]),
             ]);
