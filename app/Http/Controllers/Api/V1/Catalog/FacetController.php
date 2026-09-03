@@ -6,6 +6,7 @@ use App\Enums\CatalogStatus;
 use App\Http\Controllers\Api\V1\ApiController;
 use App\Models\Catalog\Category;
 use App\Models\Catalog\Ingredient;
+use App\Models\Kb\HealthGoal;
 use App\Models\Catalog\Package;
 use App\Models\Catalog\Product;
 use App\Models\Catalog\ProductClass;
@@ -53,12 +54,36 @@ class FacetController extends ApiController
     {
         $published = fn (Builder $q) => $q->where('status', CatalogStatus::Published);
 
+        // How many published packages this goal would actually return on the
+        // stacks listing — mirroring PackageController's filter, which mirrors
+        // the badge builder. Kept as one closure so the three cannot drift.
+        $effectivePackageCount = fn (HealthGoal $goal) => Package::query()
+            ->where('status', CatalogStatus::Published)
+            ->where(fn ($q) => $q
+                ->whereHas('healthGoals', fn ($q) => $q->whereKey($goal->getKey()))
+                ->orWhere(fn ($q) => $q
+                    ->whereDoesntHave('healthGoals')
+                    ->whereHas('healthGoalSourceProducts.healthGoals', fn ($q) => $q->whereKey($goal->getKey()))))
+            ->count();
+
+        // EVERY ROW CARRIES BOTH COUNTS, because one endpoint serves two
+        // listings and a facet with products behind it may have no packages at
+        // all — offering it on the stacks listing is an option that leads
+        // nowhere. This mirrors what `price` / `package_price` below already do
+        // for the slider: emit both figures, let each listing read its own.
+        //
+        // `count` keeps its original meaning (published PRODUCTS) so existing
+        // consumers are unaffected; `package_count` is additive.
+        //
+        // A row is kept when EITHER count is non-zero — dropping on products
+        // alone is what hid package-only categories from the stacks filter.
         $facet = fn ($collection) => $collection
-            ->filter(fn ($row) => $row->products_count > 0)
+            ->filter(fn ($row) => $row->products_count > 0 || ($row->packages_count ?? 0) > 0)
             ->map(fn ($row) => [
                 'name' => $row->name,
                 'slug' => $row->slug,
                 'count' => $row->products_count,
+                'package_count' => $row->packages_count ?? 0,
             ])->values()->all();
 
         // Both blocks measure the figure their cards show, via the one shared
@@ -92,10 +117,32 @@ class FacetController extends ApiController
         ];
 
         return $this->success([
+            // FIRST, because it is the only classification the catalog is
+            // actually populated with: every published product carries health
+            // goals, while categories are a merchandising axis an operator
+            // fills in per install. A UI that renders groups in payload order
+            // therefore leads with the filter that has options in it.
+            //
+            // Same vocabulary as the quiz (`show_in_quiz` decides only whether
+            // a goal is OFFERED there, not whether it classifies), so filtering
+            // a listing and matching a quiz answer cannot disagree about what a
+            // product is for.
+            // `packages` here is the OVERRIDE edge, which is empty in the
+            // normal case — counting it alone reported zero for every goal and
+            // hid the whole group from the stacks filter while the cards were
+            // visibly badged. `packagesEffective` counts what the listing
+            // actually returns: an override when the package has one, otherwise
+            // the goals of its published contents.
+            'goals' => $facet(HealthGoal::query()
+                ->where('is_active', true)
+                ->orderBy('position')
+                ->withCount(['products' => $published])
+                ->get()
+                ->each(fn ($goal) => $goal->packages_count = $effectivePackageCount($goal))),
             'categories' => $facet(Category::query()
                 ->where('is_visible', true)
                 ->orderBy('position')
-                ->withCount(['products' => $published])
+                ->withCount(['products' => $published, 'packages' => $published])
                 ->get()),
             'classes' => $facet(ProductClass::query()
                 ->active()

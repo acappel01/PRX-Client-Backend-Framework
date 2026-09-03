@@ -52,6 +52,15 @@ class ProductController extends ApiController
                 // as the show route and as PackageController.
                 'plans' => fn ($q) => $q->where('status', CatalogStatus::Published)->orderBy('position'),
             ])
+            // Health goals are the catalog's populated classification — every
+            // published product carries them, and they are the same vocabulary
+            // the quiz matches on, so a filtered listing and a quiz result
+            // agree about what a product is for. Categories are the
+            // merchandising axis and stay independent of this.
+            ->when($request->filled('goal'), fn ($q) => $q->whereHas(
+                'healthGoals',
+                fn ($q) => $q->where('slug', $request->string('goal'))
+            ))
             ->when($request->filled('category'), fn ($q) => $q->whereHas(
                 'categories',
                 fn ($q) => $q->where('slug', $request->string('category'))

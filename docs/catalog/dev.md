@@ -584,3 +584,65 @@ Products: a **Health goals** multi-select on the product form's Merchandising
 tab, or the "Pinned products" relation manager on the goal itself. Packages:
 the **Badge override** relation manager on the package, empty by default.
 Colour: the **Badge colour** select on the health goal.
+
+## Listing filters: health goals are the populated axis
+
+`GET /catalog/products` and `/catalog/packages` accept `goal={slug}` alongside
+`category`, `tag`, `class`, `type`, `form` and `ingredient`. `GET /catalog/facets`
+returns a `goals` block first, before `categories`.
+
+**Goals lead because they are the classification that actually has data.** On a
+typical install every published product carries health goals — they are the
+same vocabulary the quiz matches on — while categories are a merchandising axis
+an operator fills in per deployment. Measured on one deployment: 38 goal links
+across 13 of 14 live products, against **zero** category links on any live
+product, which left the Category filter group rendering nothing at all.
+
+The two axes are independent and should stay that way:
+
+| | Means | Populated by |
+|---|---|---|
+| `goal` | what the product is *for* | shared with the quiz |
+| `category` | how it is *merchandised* (`glp-1`, `peptides`, `hrt`) | the operator |
+
+Modelling categories as goal synonyms (`weight-loss` beside `weight-management`)
+produces two vocabularies for one idea that drift the first time either is
+edited. Keep categories to axes the goals cannot express.
+
+**`show_in_quiz` is not consulted by the facet.** It decides whether a goal is
+*offered* in the quiz, not whether it classifies the catalog. `is_active` is the
+gate here, and goals with no published products are omitted — a facet option
+that leads to an empty page is worse than no option.
+
+**A renamed goal redirects.** `HealthGoal` carries `HasSlugHistory`, and
+`health_goal` is registered in `SlugRedirectController`, so `?goal=old-slug`
+resolves to the current one. See `docs/frontend/dev.md`.
+
+## Deleting a catalog record: what goes with it
+
+**Foreign-keyed relations already cascade, and deliberately do not fire on a
+soft delete.** `health_goal_product`, `ingredient_product`, `package_product`
+and `product_coas` are all `ON DELETE CASCADE`; `plans` is `SET NULL`. A soft
+delete is an UPDATE setting `deleted_at`, so the database removes nothing — which
+is correct, because a restored record must come back with its classifications
+intact. The cascades fire on `forceDelete()`, where the record cannot return.
+
+**Polymorphic relations have no foreign key and need code.** A FK cannot span a
+`*_type` column, so `categorizables`, `taggables`, `faqables`, `reviews`,
+`catalog_item_sections`, `fulfillment_center_skus` and **both ends of
+`catalog_relations`** would survive their record with nothing to remove them.
+`catalog_relations` is double-polymorphic and is the largest of them — it drives
+the Related / Pairs-well-with rails — so a record must be cleared as `source`
+AND as `related`, or a deleted product keeps appearing in other products' rails.
+
+`PurgesMorphRelationsOnForceDelete` clears them, on **force delete only**, from
+a `protected array $morphPivots` declared on the model. It is applied to
+`Product` and `Package`.
+
+**The hazard it closes is not untidiness.** An orphan row keyed on `product #8`
+belongs to whatever record next occupies id 8 — note that a normal insert will
+not reissue it, since InnoDB persists the auto-increment counter from MySQL 8;
+the exposure is explicit-id writes, which this project uses in its fill scripts,
+the compound import and any database restore — the categories, tags and FAQs of a deleted product reappearing on an
+unrelated one, with nothing in the admin to explain it. There is a test for
+exactly that.

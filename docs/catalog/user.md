@@ -310,3 +310,51 @@ can change the question without touching any ingredient.
 An answer the system does not recognise as male or female filters **nothing** rather than being
 guessed into a bucket. Someone who self-describes sees the full range rather than a narrowed
 set that a string comparison picked for them.
+
+## Renaming a product, package or page — what happens to the old link
+
+**You can rename freely. The old address keeps working.**
+
+When you change a slug, the site remembers the previous one and sends anyone
+arriving at the old address straight to the new one. Links you have already
+shared, printed, bought ads for, or that Google has indexed all keep working —
+visitors land on the right page and search engines learn the new address.
+
+Menus, buttons and product cards always use the current slug. You never need to
+go and update them.
+
+**Rename as often as you like.** Rename `a` to `b`, then later to `c`, and
+*both* older addresses go straight to `c` — never through a chain of hops.
+
+**If you give a record back an old name, it simply takes it back.** The
+redirect for that name disappears, because the name is in use again.
+
+**One thing to know:** if you *delete* a record, its old addresses stop
+redirecting and go back to showing "not found". Sending someone to a page that
+has itself been deleted would just move the dead end.
+
+## Filtering by health goal
+
+Shoppers can now filter products and stacks by **health goal** — the same goals
+the quiz uses. Nothing to set up: any goal already assigned to a product shows
+up as a filter option automatically, with a count beside it.
+
+A goal only appears as a filter when it has at least one **published** product
+behind it. A filter that leads to an empty page is worse than no filter, so
+empty goals are hidden rather than shown as a dead end.
+
+**Goals and categories are different things, and it is worth keeping them
+different.** A goal says what a product is *for* (weight management, sleep and
+recovery). A category says how you *merchandise* it (GLP-1, peptides, HRT). If
+you create categories that repeat the goals, you will be maintaining the same
+information twice, and the two will disagree the first time someone edits one.
+
+**Renaming a goal is safe** — links using the old name keep working.
+
+## What happens when you delete a product or stack
+
+Deleting moves it to the bin. Everything about it is kept — its goals,
+ingredients, categories, tags, FAQs and reviews — so **restoring it brings it
+back complete**.
+
+Permanently deleting it removes all of that with it, and cannot be undone.

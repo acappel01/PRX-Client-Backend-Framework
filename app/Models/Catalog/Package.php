@@ -3,6 +3,8 @@
 namespace App\Models\Catalog;
 
 use App\Enums\CatalogStatus;
+use App\Models\Concerns\PurgesMorphRelationsOnForceDelete;
+use App\Models\Concerns\HasSlugHistory;
 use App\Models\Concerns\HasCardPriceExpression;
 use App\Models\Concerns\HasCatalogRelations;
 use App\Models\Concerns\HasCategories;
@@ -28,7 +30,33 @@ use Spatie\Sluggable\SlugOptions;
 
 class Package extends Model implements Sortable
 {
-    use HasCardPriceExpression, HasCatalogRelations, HasCategories, HasFactory, HasFaqs, HasFulfillmentCenter, HasItemSections, HasReviews, HasSlug, HasTags, SoftDeletes, SortableTrait;
+    use HasCardPriceExpression, HasCatalogRelations, HasCategories, HasFactory, HasFaqs, HasFulfillmentCenter, HasItemSections, HasReviews, HasSlug, HasSlugHistory, HasTags, PurgesMorphRelationsOnForceDelete, SoftDeletes, SortableTrait;
+
+    /**
+     * Polymorphic pivots with no foreign key to cascade through, cleared on a
+     * PERMANENT delete only. See PurgesMorphRelationsOnForceDelete.
+     *
+     * `reviews` and `catalog_item_sections` are morphMany (owned rows) rather
+     * than pivots, but the orphan hazard is identical — nothing removes them
+     * and a future record on the same id inherits them.
+     */
+    protected array $morphPivots = [
+        ['table' => 'categorizables', 'morph' => 'categorizable'],
+        ['table' => 'taggables', 'morph' => 'taggable'],
+        ['table' => 'faqables', 'morph' => 'faqable'],
+        ['table' => 'reviews', 'morph' => 'reviewable'],
+        ['table' => 'catalog_item_sections', 'morph' => 'sectionable'],
+        ['table' => 'fulfillment_center_skus', 'morph' => 'fulfillmentable'],
+
+        // catalog_relations is DOUBLE polymorphic and is the largest morph
+        // table keyed on these models — it drives the "Related" / "Pairs well
+        // with" rails. Both ends need clearing: the outgoing rail this record
+        // owns, AND every other record's rail that points AT it. Miss the
+        // second and a deleted product keeps appearing in other products' rails.
+        ['table' => 'catalog_relations', 'morph' => 'source'],
+        ['table' => 'catalog_relations', 'morph' => 'related'],
+    ];
+
 
     public function getSlugOptions(): SlugOptions
     {

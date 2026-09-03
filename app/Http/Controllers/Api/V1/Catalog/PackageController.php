@@ -50,6 +50,30 @@ class PackageController extends ApiController
                 'healthGoals',
                 'healthGoalSourceProducts.healthGoals',
             ])
+            // MATCHES THE EFFECTIVE GOAL SET, NOT THE OVERRIDE TABLE.
+            // `healthGoals` on a package is a badge OVERRIDE and is empty in
+            // the normal case; the badges a card actually shows are the union
+            // of its published products' goals (BuildsHealthGoalBadges). Query
+            // the override alone and the filter contradicts the badge: with no
+            // override rows anywhere, every stack displays goals and none is
+            // filterable by them.
+            //
+            // So: an override, when present, REPLACES the derived set — exactly
+            // as the badge builder treats it — and otherwise the contained
+            // products decide.
+            ->when($request->filled('goal'), function ($q) use ($request) {
+                $goal = $request->string('goal');
+
+                $q->where(function ($q) use ($goal) {
+                    $q->whereHas('healthGoals', fn ($q) => $q->where('slug', $goal))
+                        ->orWhere(fn ($q) => $q
+                            ->whereDoesntHave('healthGoals')
+                            ->whereHas(
+                                'healthGoalSourceProducts.healthGoals',
+                                fn ($q) => $q->where('slug', $goal)
+                            ));
+                });
+            })
             ->when($request->filled('category'), fn ($q) => $q->whereHas(
                 'categories',
                 fn ($q) => $q->where('slug', $request->string('category'))

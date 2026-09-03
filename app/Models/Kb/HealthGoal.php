@@ -2,7 +2,9 @@
 
 namespace App\Models\Kb;
 
+use App\Models\Concerns\HasSlugHistory;
 use App\Models\Catalog\Ingredient;
+use App\Models\Catalog\Package;
 use App\Models\Catalog\Product;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
@@ -40,7 +42,7 @@ use Spatie\Sluggable\SlugOptions;
  */
 class HealthGoal extends Model implements Sortable
 {
-    use HasFactory, HasSlug, SoftDeletes;
+    use HasFactory, HasSlug, HasSlugHistory, SoftDeletes;
 
     // Aliased rather than overridden: SortableTrait is a trait, so `parent::`
     // reaches Model and not the implementation being wrapped.

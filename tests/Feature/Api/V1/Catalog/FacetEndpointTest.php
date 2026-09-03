@@ -45,7 +45,10 @@ class FacetEndpointTest extends TestCase
         $response = $this->getJson('/api/v1/catalog/facets')->assertOk();
 
         $this->assertSame(
-            [['name' => 'Peptides', 'slug' => $peptides->slug, 'count' => 1]],
+            // `package_count` accompanies every facet row: one endpoint serves
+            // both listings, and the stacks filter needs its own figure or it
+            // offers options counted by products that return no packages.
+            [['name' => 'Peptides', 'slug' => $peptides->slug, 'count' => 1, 'package_count' => 0]],
             $response->json('data.classes')
         );
         $this->assertSame([], collect($response->json('data.classes'))->where('slug', $emptyClass->slug)->values()->all());
