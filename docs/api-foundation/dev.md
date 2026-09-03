@@ -290,3 +290,60 @@ curl -s -o /dev/null -H 'X-Forwarded-For: 203.0.113.55' https://<host>/api/v1/ca
 Then repeat from an **untrusted** host. The forged header must be ignored. If
 both give the forged value, the trust list is too wide and anyone can write
 whatever they like into a consent record.
+
+## Scheduled tasks
+
+`routes/console.php` holds them, and they need `schedule:run` on a per-minute
+cron. **Without the cron nothing here runs and nothing says so** — the app keeps
+serving and the work silently never happens. This install ran that way until
+2026-09-03: a scheduler cron existed for other apps on the box but never for
+this one, and no task had ever been defined either, so a cron alone would have
+run nothing.
+
+```cron
+* * * * * cd /path/to/app && php artisan schedule:run >> storage/logs/scheduler-$(date +\%Y-\%m-\%d).log 2>&1
+0 3 * * * find /path/to/app/storage/logs -name 'scheduler-*.log' -mtime +14 -delete 2>/dev/null
+```
+
+**QUEUED WORK DOES NOT DEPEND ON THIS, and conflating the two wastes a
+diagnosis.** Jobs, workflows, integration pushes and cache revalidation are
+processed by Horizon under supervisor. The scheduler covers only time-based
+recurring work. "Automations aren't running" is a Horizon question first.
+
+| Task | When | Why |
+|---|---|---|
+| `horizon:snapshot` | every 5 min | Horizon's Metrics tab is built entirely from these. Without it the dashboard is permanently empty — no throughput, no runtime trends, no queue visibility at all. |
+| `queue:prune-failed --hours=168` | weekly | `failed_jobs` grows without bound. A week is long enough to investigate, short enough that the table never becomes the problem. |
+| `queue:prune-batches --hours=168` | weekly | Same, for batch bookkeeping. |
+| `model:prune --model=…\Cart` | daily 03:20 | Abandoned carts, 90 days. See below. |
+| `sanctum:prune-expired --hours=24` | daily | Harmless until tokens exist; required the moment the API moves behind Sanctum, since an expired token still listed in the admin looks live. |
+
+Every task is `onOneServer()`. This box hosts several Laravel apps and may one
+day be more than one box; a duplicate prune or snapshot is wasteful at best.
+
+`model:prune` is called with an **explicit `--model`**. With no argument it
+discovers every Prunable model in the app, which would quietly widen the blast
+radius the day someone adds the trait somewhere else.
+
+### Cart pruning, and the guard that matters
+
+Every anonymous visitor mints a cart row, so the table grows with traffic and
+nothing else removes it. `expires_at` already governs whether a cart is
+*usable* — the cart endpoint treats an expired one as absent and mints a fresh
+one — so what was missing was only the reaping.
+
+**90 days, measured from `updated_at`**, so a cart someone is still touching is
+never in scope however old the row is.
+
+**A cart referenced by a lead is never pruned.** The checkout endpoint resolves
+the cart by ulid with `firstOrFail()` and `hash_equals()` it against
+`leads.cart_ulid` to prove cart and lead came from the same visitor. Reap one of
+those and that checkout 404s — and the reference is held remotely too, since the
+telehealth provider stores the lead uuid and returns it on its webhook. The
+guard is mutation-tested.
+
+**Attribution is not at risk today, and `Cart::prunable()` is the line to
+revisit when it is.** utm/referrer/landing_url live on `leads`, which nothing
+prunes, so a reaped cart destroys no marketing data. When a cart starts carrying
+a referral of its own, it needs the same style of "not referenced" guard: an
+unconverted click reaped at 90 days is a commission nobody can reconcile.
