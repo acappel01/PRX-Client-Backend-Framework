@@ -178,3 +178,115 @@ $middleware->alias([
     'abilities' => \Laravel\Sanctum\Http\Middleware\CheckAbilities::class,
 ]);
 ```
+
+## Trusted proxies — who the app believes the visitor is
+
+`$request->ip()` is not decoration here. It is written to `leads.ip_address`,
+`carts.ip_address`, and **`lead_consents.ip_address`** — the last being the
+record of *who* agreed to be contacted, which is the evidence a TCPA or
+CAN-SPAM question is answered with. `$request->userAgent()` accompanies it in
+all three. The `api` rate limiter keys on the same address:
+`Limit::perMinute(120)->by($request->user()?->id ?? $request->ip())`.
+
+**Put a reverse proxy in front with nothing trusted here and all of that
+silently becomes the proxy.** Nothing errors. The rows still write and the
+limiter still limits; they just describe the wrong party, and every visitor
+collapses into one bucket because they now share one address.
+
+### Configuring it
+
+`config/trustedproxy.php` is read natively by Laravel's `TrustProxies`
+middleware — there is no provider or middleware wiring to do. One env var:
+
+```dotenv
+TRUSTED_PROXIES=                        # empty: trust nothing
+TRUSTED_PROXIES=127.0.0.1               # app behind a local Apache/nginx
+TRUSTED_PROXIES=REMOTE_ADDR             # behind a load balancer with no fixed address
+TRUSTED_PROXIES=10.0.1.0/24,10.0.2.0/24 # known subnets
+```
+
+Laravel believes `X-Forwarded-*` **only when the connecting peer matches**. A
+forged header from the open internet is ignored, because the sender's own
+address is not on the list.
+
+### Do not use `*`
+
+It reads as "trust any proxy". It means
+`setTrustedProxies(['0.0.0.0/0', '::/0'])` — *every* address is a trusted
+proxy, so Symfony strips the entire `X-Forwarded-For` chain as trusted and
+falls back to its **leftmost** entry, which is precisely the part the client
+writes. Measured against the real middleware:
+
+```
+peer = 10.0.1.20 (ALB ENI)   X-Forwarded-For: "9.9.9.9, 203.0.113.55"
+  *              ->  9.9.9.9        forged by the visitor
+  REMOTE_ADDR    ->  203.0.113.55   correct
+  10.0.1.0/24    ->  203.0.113.55   correct
+```
+
+An appending proxy (an ALB in its default mode, Apache, nginx) puts the true
+client on the **right**. With `*`, anyone can prepend an address and have it
+recorded as the consenting party, and rotate it to defeat the rate limiter —
+the exact failures this setting exists to prevent.
+
+### Behind a load balancer (AWS ALB, GCP, Azure)
+
+**An ARN is a control-plane identifier and never appears on the wire, and the
+balancer needs no public IP for any of this.** What matters is the address of
+the **connecting peer**, which for an ALB is the private address of its ENI in
+your subnet. Those churn and cannot be enumerated, which is why naming them is
+not an option.
+
+```dotenv
+TRUSTED_PROXIES=REMOTE_ADDR
+```
+
+`REMOTE_ADDR` is a keyword Laravel substitutes for the actual peer, so it
+trusts exactly whoever connected — whatever address that turns out to be. **It
+is safe for one specific reason:** the target's security group admits traffic
+only from the load balancer's security group, so nothing else can ever be the
+peer. The network enforces what an address list otherwise would. **Treat that
+ingress rule and this setting as one decision** — widen the SG, or share it
+with another workload, and this stops being safe the same day.
+
+Prefer subnet CIDRs when the balancer's subnets are known and stable; it is the
+same guarantee without depending on the SG.
+
+**A second, public-facing load balancer is not needed and would not help.** The
+problem was never that the balancer lacks a public address; it is only ever
+about which peer to believe.
+
+### A layer-4 balancer is the "trust nothing" case
+
+An AWS NLB adds no `X-Forwarded-For` at all, and with client-IP preservation
+the visitor is already the peer. Trusting anything there means believing a
+header the visitor wrote. Leave `TRUSTED_PROXIES` empty.
+
+### More than one proxy in the chain
+
+The header is a list and each hop appends, so a CDN in front of a balancer
+arrives as `<visitor>, <cdn edge>`. Symfony walks that list from the right,
+discarding entries that match trusted proxies, and reports the first that does
+not. **Every** hop in front must therefore be trusted, or it stops early and
+reports the CDN. `REMOTE_ADDR` alone trusts one hop; add the CDN's published
+ranges for two.
+
+The reference storefront's proxy takes a different and deliberate approach: it
+replaces the header with a **single** value — the rightmost entry of what it
+received — so anything a visitor prepended is discarded before this app sees
+it. That is a second line of defence, not a substitute for configuring this
+correctly. Note also that if a CDN is placed in front of *that* storefront, its
+own rightmost-entry extraction has to change; this app's config does not.
+
+### Verifying it, rather than assuming
+
+From a host whose address is trusted:
+
+```bash
+curl -s -o /dev/null -H 'X-Forwarded-For: 203.0.113.55' https://<host>/api/v1/cart
+# read the row back — ip_address must be 203.0.113.55
+```
+
+Then repeat from an **untrusted** host. The forged header must be ignored. If
+both give the forged value, the trust list is too wide and anyone can write
+whatever they like into a consent record.
