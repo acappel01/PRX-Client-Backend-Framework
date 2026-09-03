@@ -3,6 +3,7 @@
 namespace App\Models\Blog;
 
 use App\Enums\PostStatus;
+use App\Models\Concerns\HasSlugHistory;
 use App\Models\Concerns\GeneratesUniqueSlug;
 use App\Models\Concerns\HasTags;
 use App\Models\User;
@@ -18,7 +19,7 @@ use Spatie\EloquentSortable\SortableTrait;
 
 class BlogPost extends Model implements Sortable
 {
-    use GeneratesUniqueSlug, HasFactory, HasTags, SoftDeletes, SortableTrait;
+    use GeneratesUniqueSlug, HasFactory, HasSlugHistory, HasTags, SoftDeletes, SortableTrait;
 
     protected $fillable = [
         'author_id',

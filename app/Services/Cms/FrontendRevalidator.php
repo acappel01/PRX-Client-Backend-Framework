@@ -9,6 +9,7 @@ use App\Models\Content\FaqCategory;
 use App\Models\Content\FaqItem;
 use App\Models\Kb\Compound;
 use App\Models\Catalog\Package;
+use App\Models\Catalog\Product;
 use App\Models\Catalog\Plan;
 use App\Models\Kb\HealthGoal;
 use App\Models\Quiz\Quiz;
@@ -122,6 +123,35 @@ class FrontendRevalidator
      *
      * @return list<string>
      */
+    /**
+     * Detail tags for a model with a public url: the slug it has now, and the
+     * slug it had a moment ago if this save changed it.
+     *
+     * Both are required. Tagging only the new slug refreshes a page nobody has
+     * visited yet while leaving the old url serving the record under its former
+     * name; tagging only the old one never picks up the rename.
+     *
+     * getOriginal() is read AFTER the write, which is exactly when it still
+     * holds the pre-save value — that is the whole reason this works from an
+     * observer's saved() hook rather than needing an updating() hook.
+     */
+    private function slugTags(Model $model, string $prefix): array
+    {
+        $tags = [];
+
+        if (filled($model->slug)) {
+            $tags[] = $prefix.':'.$model->slug;
+        }
+
+        $original = $model->getOriginal('slug');
+
+        if (filled($original) && $original !== $model->slug) {
+            $tags[] = $prefix.':'.$original;
+        }
+
+        return $tags;
+    }
+
     private function tagsFor(Model $model): array
     {
         return match (true) {
@@ -163,13 +193,31 @@ class FrontendRevalidator
             // itself being touched. Plans and packages therefore invalidate
             // `quiz` too — a plan's price, and a package's tier, both decide
             // which range an option shows.
+            $model instanceof Plan => [self::TAG_ALL, 'quiz'],
+
+            // Products and packages carry a PUBLIC URL, so they need the
+            // catalog listing tag and their own detail tag as well.
             //
-            // Narrow on purpose: catalog models are NOT otherwise observed,
-            // so this adds no general catalog invalidation. Making catalog
-            // writes invalidate `catalog` as well is a separate, larger
-            // decision about revalidation traffic.
-            $model instanceof Plan,
-            $model instanceof Package => [self::TAG_ALL, 'quiz'],
+            // `slugTags()` is what makes a RENAME work. The observer fires on
+            // saved(), so $model->slug is already the NEW value and tagging
+            // only that leaves the OLD url's cached render untouched — and a
+            // stale render is not merely stale here, it is unkillable: the
+            // frontend re-validates it on every request, the upstream answers
+            // 404, and notFound() during regeneration does not replace the
+            // cached 200. Measured on this deployment: a renamed product served
+            // its old url indefinitely, and a tag purge cleared it instantly.
+            $model instanceof Product => array_values(array_filter([
+                self::TAG_ALL,
+                'catalog',
+                ...$this->slugTags($model, 'product'),
+            ])),
+
+            $model instanceof Package => array_values(array_filter([
+                self::TAG_ALL,
+                'catalog',
+                'quiz',
+                ...$this->slugTags($model, 'package'),
+            ])),
 
             $model instanceof Quiz,
             $model instanceof QuizStep,

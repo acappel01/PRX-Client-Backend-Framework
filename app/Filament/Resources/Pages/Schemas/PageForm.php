@@ -47,7 +47,7 @@ class PageForm
                                     ->required()
                                     ->maxLength(255)
                                     ->alphaDash()
-                                    ->hintIcon(Heroicon::InformationCircle, 'URL path for this page, e.g. "about-us". Auto-generated; change with caution.')
+                                    ->hintIcon(Heroicon::InformationCircle, 'URL path for this page, e.g. "about-us". Safe to change: the old address keeps working and sends visitors here automatically.')
                                     ->helperText('URL path. Lowercase letters, numbers, hyphens.'),
                                 Select::make('status')
                                     ->options(PageStatus::class)

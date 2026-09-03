@@ -52,7 +52,7 @@ class PackageForm
                                     ->required()
                                     ->maxLength(255)
                                     ->alphaDash()
-                                    ->hintIcon(Heroicon::InformationCircle, 'URL-friendly identifier. Auto-generated; change with caution — breaks existing links.'),
+                                    ->hintIcon(Heroicon::InformationCircle, 'URL-friendly identifier. Safe to change: the old address keeps working and sends visitors here automatically.'),
                                 TextInput::make('subtitle')
                                     ->maxLength(255)
                                     ->hintIcon(Heroicon::InformationCircle, 'Short sub-headline shown below the package name on listing cards.')

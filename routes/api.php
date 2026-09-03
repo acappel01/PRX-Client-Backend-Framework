@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\V1\Catalog\TagController;
 use App\Http\Controllers\Api\V1\Checkout\CheckoutController;
 use App\Http\Controllers\Api\V1\Cms\LayoutController;
 use App\Http\Controllers\Api\V1\Cms\MenuController;
+use App\Http\Controllers\Api\V1\Content\SlugRedirectController;
 use App\Http\Controllers\Api\V1\Cms\PageController;
 use App\Http\Controllers\Api\V1\ConfigController;
 use App\Http\Controllers\Api\V1\Content\FaqController;
@@ -111,6 +112,15 @@ Route::prefix('v1')->name('api.v1.')->group(function (): void {
 
         Route::get('facets', [FacetController::class, 'index'])->name('facets.index');
     });
+
+    // ── Slug redirects ───────────────────────────────────────────────────
+    // Where a renamed record went. Called by the frontend ONLY after its own
+    // lookup 404'd, so a renamed URL can redirect (308) instead of dead-ending. Public
+    // for the same reason the catalog is: it answers about published content
+    // and reveals nothing a visitor could not already see by browsing.
+    Route::get('slug-redirect', SlugRedirectController::class)
+        ->name('slug-redirect')
+        ->middleware('throttle:api');
 
     // ── Blog ─────────────────────────────────────────────────────────────
     // Fully public — no auth required to read published posts.

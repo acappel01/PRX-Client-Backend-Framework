@@ -201,6 +201,11 @@ class AppServiceProvider extends ServiceProvider
         // narrower than "observe the catalog".
         Plan::observe(CmsCacheObserver::class);
         Package::observe(CmsCacheObserver::class);
+
+        // Products were the one public-url catalog model left unobserved, so a
+        // product edit — a rename above all — pushed NO invalidation at all and
+        // the old url kept serving. See FrontendRevalidator::slugTags().
+        Product::observe(CmsCacheObserver::class);
         QuizStep::observe(CmsCacheObserver::class);
         QuizQuestion::observe(CmsCacheObserver::class);
         QuizQuestionOption::observe(CmsCacheObserver::class);

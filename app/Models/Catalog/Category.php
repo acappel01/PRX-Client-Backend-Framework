@@ -2,6 +2,7 @@
 
 namespace App\Models\Catalog;
 
+use App\Models\Concerns\HasSlugHistory;
 use App\Models\Concerns\GeneratesUniqueSlug;
 use Database\Factories\Catalog\CategoryFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -15,7 +16,7 @@ use Spatie\EloquentSortable\SortableTrait;
 
 class Category extends Model implements Sortable
 {
-    use GeneratesUniqueSlug, HasFactory, SoftDeletes, SortableTrait;
+    use GeneratesUniqueSlug, HasFactory, HasSlugHistory, SoftDeletes, SortableTrait;
 
     protected $fillable = [
         'parent_id',

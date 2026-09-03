@@ -233,12 +233,17 @@ Route pattern: a catch-all route mapping URL path → page slug, plus `/` → sl
 | `GET /catalog/products` (+`/{slug}`) | Paginated; filters: `category`, `tag`, `search`, `price_min/max`, `featured`, `in_stock`, `per_page`. Prices as `{retail, sale, effective, suffix, currency}`. Stock: `is_in_stock` is the boolean to branch on; `inventory_status` is the raw enum case and `inventory_status_label` its display string — **render the label, never the bare value** — and both are null on the many products where an operator has not set one |
 | `GET /catalog/packages` (+`/{slug}`) | Packages with member products and `plans` (billing period, term, recurring flag, trial). Three separate price fields — see **Package pricing** below; do not derive one from another |
 | `GET /catalog/categories`, `/tags` | Taxonomy for navigation and filter facets |
-| `GET /catalog/facets` | Filter-sidebar option lists and counts, plus **two** price blocks: `price` spans published PRODUCTS, `package_price` spans published PACKAGES by the same `price_from` figure their cards show. **A package listing must read `package_price`** — feeding it `price` labels a product range while the endpoint filters package figures. Every other group in this payload is still product-scoped: counts are product counts, and a category or tag attached only to packages is omitted entirely |
-| `GET /blog/posts` (+`/{slug}`), `/blog/categories`, `/blog/tags` | `content` only on show route |
-| `GET /faq`, `/faq/categories` (+`/{slug}`) | Central FAQ dataset |
-| `GET /profiles` (+`/{slug}`) | People (doctors, executives, team) with typed roles |
-| `GET /health-goals` | The intake quiz's choices. Unpaginated; `all=1` includes goals withdrawn from the quiz, `tree=1` nests children. `prompt` is the visitor-facing wording and falls back to `name` — render it, not `name`. **The ingredient/product/compound mappings are deliberately absent**: recommendations are derived server-side |
-| `GET /kb/compounds` (+`/{slug}`) | Compound monographs. Paginated; filters: `search`, `peptides_only` (**defaults true**), `regulatory_status`, `sort`, `per_page` (1–100, default 24). The eight prose sections, `clinical_references` and `seo` are on the show route only — roughly 28,000 characters per compound. `provenance` ships on BOTH routes |
+| `GET /catalog/facets` | Filter-sidebar option lists and counts, plus **two** price blocks: `price` spans published PRODUCTS, `package_price` spans published PACKAGES by the same `price_from` figure their cards show. **A package listing must read `package_price`** — feeding it `price` labels a product range while the endpoint filters package figures. Every facet row now carries BOTH counts — `count` (published products, its
+original meaning) and `package_count` — because one endpoint serves two
+listings and a row with products behind it may have no packages at all. A row
+is kept when EITHER count is non-zero, so a package-only classification is no
+longer dropped. Each listing reads its own figure; reading the wrong one offers
+a filter that leads to an empty page.
+
+`goals` is a facet block, listed FIRST, and `goal={slug}` filters both listings.
+On packages it matches the EFFECTIVE goal set — a package's `healthGoals` is a
+badge override that is empty in the normal case, so the filter falls back to the
+goals of its published contents, exactly as the badges do
 
 **Package pricing — three fields, three questions, and they are not interchangeable.**
 
@@ -551,3 +556,69 @@ with a null heading. Render nothing when the record has no FAQs/reviews.
 They are absent from the CMS page picker (`contexts: ['catalog']`) because a
 page has no record for them to read — but that gates authoring only, so
 anything already stored keeps resolving.
+
+## Slug redirects — a renamed URL must not dead-end
+
+A slug is a public URL. Renaming one breaks every inbound link, bookmark, ad
+and indexed result pointing at the old name, and the frontend cannot rescue it
+alone: it keeps no registry of valid slugs, it asks this API and 404s when the
+answer is "no such record".
+
+`slug_histories` records the names a record used to answer to.
+
+### The endpoint
+
+```
+GET /api/v1/slug-redirect?type={type}&slug={slug}
+
+200  { "data": { "type": "product", "slug": "current-name" } }
+404  slug was never one of that record's names, or something live holds it
+422  unknown type
+```
+
+`type` is the same vocabulary link fields and menu items already use:
+`product`, `package`, `page`, `kb_compound`.
+
+**It answers with the entity and its current slug, never a URL.** The frontend
+owns URL structure; a path returned from here would be this package dictating
+routes to a frontend it has never seen. The caller maps `{type, slug}` through
+its own route table exactly as it already does for menu links.
+
+**Call it only after your own lookup has 404'd.** It is a miss handler, not
+part of a normal render, so it costs a round trip only on requests that were
+already going to fail.
+
+### Two properties worth relying on
+
+**A live slug always wins.** Each request checks live records first: if
+anything still answers to that slug, no redirect is offered. So a stale history
+row can never hijack a URL that legitimately exists, and a record that reclaims
+an abandoned name keeps it — the history row is deleted rather than left to
+compete.
+
+**Resolution is always one hop.** History rows point at the *record*, not at a
+successor slug, so renaming `a → b → c` leaves both `a` and `b` resolving
+directly to `c`. There is no chain to walk and no chain to rot.
+
+### What is not recorded
+
+Creating a record writes no history — there is no previous name. Saving without
+touching the slug writes nothing. Deleting a record, *including a soft delete*,
+drops its history: an unreachable record's old URLs should dead-end rather than
+redirect to a page that will itself 404.
+
+### Adding a type
+
+Add `HasSlugHistory` to the model and a line to `SlugRedirectController::TYPES`.
+Both halves are required — the trait without the map records history nobody can
+read, and the map without the trait resolves nothing.
+
+### Renames and caching are one problem, not two
+
+A consuming frontend caches renders per slug, so a rename must invalidate
+**both** names or the old URL keeps serving the record under its former title.
+`FrontendRevalidator::slugTags()` emits `{type}:{new}` and `{type}:{previous}`
+for exactly this reason. Getting this wrong is not merely stale: measured on a
+Next.js consumer, the old URL re-validated on every request, the API answered
+404 each time, and `notFound()` during regeneration never replaced the cached
+200 — the page served its old address indefinitely until the tag was purged.

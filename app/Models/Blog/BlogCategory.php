@@ -2,6 +2,7 @@
 
 namespace App\Models\Blog;
 
+use App\Models\Concerns\HasSlugHistory;
 use App\Models\Concerns\GeneratesUniqueSlug;
 use Database\Factories\Blog\BlogCategoryFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -13,7 +14,7 @@ use Spatie\EloquentSortable\SortableTrait;
 
 class BlogCategory extends Model implements Sortable
 {
-    use GeneratesUniqueSlug, HasFactory, SoftDeletes, SortableTrait;
+    use GeneratesUniqueSlug, HasFactory, HasSlugHistory, SoftDeletes, SortableTrait;
 
     protected $fillable = [
         'name',

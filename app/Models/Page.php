@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasSlugHistory;
 use App\Enums\PageStatus;
 use App\Models\Cms\PageRevision;
 use Illuminate\Database\Eloquent\Builder;
@@ -14,7 +15,7 @@ use Illuminate\Support\Str;
 
 class Page extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, HasSlugHistory, SoftDeletes;
 
     protected $fillable = [
         'title',

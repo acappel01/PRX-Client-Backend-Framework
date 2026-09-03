@@ -54,7 +54,7 @@ class ProductForm
                                     ->required()
                                     ->maxLength(255)
                                     ->alphaDash()
-                                    ->hintIcon(Heroicon::InformationCircle, 'URL-friendly identifier. Auto-generated; change with caution — breaks existing links.')
+                                    ->hintIcon(Heroicon::InformationCircle, 'URL-friendly identifier. Safe to change: the old address keeps working and sends visitors here automatically.')
                                     ->helperText('Lowercase letters, numbers, hyphens.'),
                                 TextInput::make('subtitle')
                                     ->maxLength(255)

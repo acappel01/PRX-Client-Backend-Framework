@@ -4,6 +4,7 @@ namespace App\Models\Kb;
 
 use App\Enums\Kb\RegulatoryStatus;
 use App\Models\Catalog\Ingredient;
+use App\Models\Concerns\HasSlugHistory;
 use App\Models\Concerns\HasItemSections;
 use App\Models\Content\Profile;
 use App\Models\User;
@@ -53,7 +54,7 @@ use Spatie\Sluggable\SlugOptions;
  */
 class Compound extends Model implements Sortable
 {
-    use HasFactory, HasItemSections, HasSlug, SoftDeletes, SortableTrait;
+    use HasFactory, HasItemSections, HasSlug, HasSlugHistory, SoftDeletes, SortableTrait;
 
     public function getSlugOptions(): SlugOptions
     {
