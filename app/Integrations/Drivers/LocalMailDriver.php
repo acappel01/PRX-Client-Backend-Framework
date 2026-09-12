@@ -8,6 +8,7 @@ use App\Models\Integrations\IntegrationInstance;
 use App\Services\Mail\MailConfigurator;
 use Illuminate\Support\Facades\Mail;
 use RuntimeException;
+use Symfony\Component\Mime\Header\Headers;
 
 /**
  * This installation's own mail stack, offered as an integration.
@@ -68,6 +69,10 @@ class LocalMailDriver implements SendsTransactionalEmail
 
         Mail::raw($message->body, function ($mail) use ($message): void {
             $mail->to($message->to, $message->toName)->subject($message->subject);
+
+            if (! $message->trackLinks) {
+                $this->disableTracking($mail->getSymfonyMessage()->getHeaders());
+            }
         });
 
         // Deliberately thin. Whatever a handler returns is written to
@@ -78,5 +83,27 @@ class LocalMailDriver implements SendsTransactionalEmail
             'delivered_to' => $message->to,
             'transport' => config('mail.default'),
         ];
+    }
+
+    /**
+     * Opt this one message out of the transport's link and open tracking.
+     *
+     * Per message, not per domain, because the domain setting lives in the
+     * vendor's dashboard where nothing here can see it change. Mailgun's API
+     * transport forwards `o:`-prefixed headers as sending options verbatim.
+     *
+     * Only Mailgun is mapped. An `o:` name is not a valid header for any other
+     * transport, and Postmark and SES each have their own tracking controls
+     * that are not wired here — an install on either must keep link tracking
+     * off at the vendor. `docs/integrations/dev.md` says so.
+     */
+    private function disableTracking(Headers $headers): void
+    {
+        if (config('mail.default') !== 'mailgun') {
+            return;
+        }
+
+        $headers->addTextHeader('o:tracking-clicks', 'no');
+        $headers->addTextHeader('o:tracking-opens', 'no');
     }
 }

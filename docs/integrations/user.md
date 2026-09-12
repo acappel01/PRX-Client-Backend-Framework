@@ -180,6 +180,14 @@ it cannot honour a marketing unsubscribe, so it is not offered for campaigns.
 If more than one integration can send email, the step asks you which. If only one can, it just
 uses it.
 
+**Patient portal links use this too.** When a patient asks to connect their record, the site
+emails a one-time link through the integration you have enabled for email. It is not a workflow
+step you can edit — the link is a password-strength secret — but you choose who delivers it, and
+you can build workflows on *Patient was emailed a link to connect their record*, *Patient
+connected their record* and *Patient verified their email*. For the link to send, exactly one
+integration must be enabled for email; with none, or with two, patients are told email is
+unavailable.
+
 ## When something does not work
 
 - **A step is missing from the workflow builder.** No enabled integration provides it. Check

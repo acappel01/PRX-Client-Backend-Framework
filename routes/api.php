@@ -319,8 +319,15 @@ Route::prefix('v1')->name('api.v1.')->group(function (): void {
         // PortalController::home() for why it is screen-shaped.
         // Account, not clinical data: the step between having a login and
         // having something to look at. Lives in this group for `no-store` and
-        // the patient guard.
-        Route::post('link-chart', [PatientAccountController::class, 'linkChart'])->name('link-chart');
+        // the patient guard. Two steps with an email between them — the link
+        // goes to the ORDER's mailbox, which is what proves the claim. There
+        // is deliberately no GET for a token: mail scanners follow links.
+        Route::post('claim-links', [PatientAccountController::class, 'requestClaimLink'])
+            ->middleware('throttle:claim-link')
+            ->name('claim-links.store');
+        Route::post('claim', [PatientAccountController::class, 'claim'])
+            ->middleware('throttle:claim')
+            ->name('claim');
 
         Route::get('home', [PortalController::class, 'home'])->name('home');
         Route::get('dashboard', [PortalController::class, 'dashboard'])->name('dashboard');

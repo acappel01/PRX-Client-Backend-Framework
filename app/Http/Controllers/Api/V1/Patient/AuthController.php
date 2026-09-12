@@ -24,12 +24,13 @@ class AuthController extends ApiController
      * Register a new patient account.
      *
      * Creates a local patient record and NOTHING ELSE. It deliberately does not
-     * link a PRX chart: an email typed into a registration form is asserted, not
-     * proven, and `patients.email_verified_at` is never set. Linking here would
-     * hand anyone who knows a customer's address their clinical record.
+     * link a PRX chart, and it does not verify the address: an email typed into
+     * a registration form is asserted, not proven. Linking here would hand
+     * anyone who knows a customer's address their clinical record.
      *
-     * Chart linkage is a separate, evidenced step — `POST /patient/link-chart`,
-     * which requires a session plus the uuid of an order that belongs to it.
+     * Chart linkage is a separate, evidenced step — `POST /patient/claim-links`
+     * emails a single-use link to the ORDER's address, and `POST /patient/claim`
+     * with that token links the record and stamps `email_verified_at`.
      * `PatientAuthTest::test_register_does_not_link_or_verify_a_prx_chart_from_unproven_identity`
      * pins this, including that a caller-supplied chart id in the body is
      * ignored.

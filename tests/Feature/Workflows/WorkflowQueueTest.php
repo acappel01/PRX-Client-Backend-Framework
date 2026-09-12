@@ -68,6 +68,37 @@ class WorkflowQueueTest extends TestCase
         $this->assertSame(0, WorkflowRun::query()->count());
     }
 
+    public function test_hidden_columns_never_enter_the_job_payload(): void
+    {
+        // The payload lives in Redis and, if the chain crashes, in `failed_jobs`
+        // where Horizon shows it. Patients became a workflow subject for the
+        // claim flow, and a Patient row carries a password hash. Assert on the
+        // SERIALISED job, which is what actually leaves the process.
+        $patient = \App\Models\Patient::factory()->create([
+            'password' => 'correct horse battery staple',
+            'remember_token' => 'remember-me-token-value',
+        ]);
+        $patient->password = 'a different password entirely';
+        $patient->syncOriginal();
+
+        $job = RunWorkflowChain::forContext(new \App\Workflows\WorkflowContext(
+            triggerType: 'model_updated',
+            triggerTarget: 'patient',
+            subject: $patient,
+            subjectKey: 'patient',
+            original: $patient->getOriginal(),
+            changed: ['password'],
+        ));
+
+        $payload = serialize($job);
+
+        $this->assertStringNotContainsString($patient->getAttributes()['password'], $payload);
+        $this->assertStringNotContainsString('remember-me-token-value', $payload);
+        $this->assertArrayNotHasKey('password', $job->subjectAttributes);
+        $this->assertArrayNotHasKey('password', $job->original);
+        $this->assertSame($patient->email, $job->subjectAttributes['email']);
+    }
+
     public function test_the_chain_lands_on_its_own_queue(): void
     {
         // Not decoration. `config/horizon.php` supervises this queue by name; a

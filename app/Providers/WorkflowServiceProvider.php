@@ -6,9 +6,13 @@ use App\Enums\Integrations\IntegrationCapability;
 use App\Enums\Privacy\DataClassification;
 use App\Events\Leads\LeadCreated;
 use App\Events\Leads\LeadDispositionChanged;
+use App\Events\Patient\ClaimLinkRequested;
+use App\Events\Patient\EmailVerified;
+use App\Events\Patient\RecordClaimed;
 use App\Events\Quiz\QuizCompleted;
 use App\Filament\Support\IntegrationActionForms;
 use App\Models\Lead;
+use App\Models\Patient;
 use App\Workflows\Actions\DispatchJobAction;
 use App\Workflows\Actions\PushToIntegrationAction;
 use App\Workflows\Actions\SendEmailAction;
@@ -55,6 +59,7 @@ class WorkflowServiceProvider extends ServiceProvider
         $this->registerActions($registry);
         $this->registerAtlasSubjects($registry);
         $this->registerAtlasEvents($registry);
+        $this->registerPortalSubjectsAndEvents($registry);
 
         $this->attachObservers($registry);
         $this->bridgeEvents($registry);
@@ -174,6 +179,36 @@ class WorkflowServiceProvider extends ServiceProvider
         $registry->registerEvent('lead.created', LeadCreated::class, 'Lead captured (any source)', 'lead');
         $registry->registerEvent('lead.disposition_changed', LeadDispositionChanged::class, 'Lead moved disposition', 'lead', changedField: 'status');
         $registry->registerEvent('quiz.completed', QuizCompleted::class, 'Quiz completed', 'lead');
+    }
+
+    /**
+     * The patient account, and the moments in its life a workflow may follow.
+     *
+     * NOT in the Atlas methods above: the patient portal is part of the shipped
+     * product, so an install replacing Atlas's lead and quiz registrations must
+     * not lose these by doing so.
+     *
+     * `prx_patient_chart_id` is deliberately absent. A chart id is not clinical,
+     * but it IS identifying, and this list is what a field mapper may send to a
+     * third party. So are `password` and every token column, which is what
+     * failing closed on an unregistered field protects.
+     *
+     * 🔴 None of these events carries the claim token, and none may. The link is
+     * delivered by the system, not by a workflow — see ClaimLinkRequested.
+     */
+    private function registerPortalSubjectsAndEvents(WorkflowRegistry $registry): void
+    {
+        $registry->registerSubject('patient', Patient::class, 'Patient account', [
+            'email' => ['label' => 'Email', 'class' => DataClassification::Sensitive],
+            'first_name' => ['label' => 'First name', 'class' => DataClassification::Sensitive],
+            'last_name' => ['label' => 'Last name', 'class' => DataClassification::Sensitive],
+            'phone' => ['label' => 'Phone', 'class' => DataClassification::Sensitive],
+            'email_verified_at' => 'Email verified at',
+        ]);
+
+        $registry->registerEvent('patient.claim_link_requested', ClaimLinkRequested::class, 'Patient was emailed a link to connect their record', 'patient');
+        $registry->registerEvent('patient.record_claimed', RecordClaimed::class, 'Patient connected their record', 'patient');
+        $registry->registerEvent('patient.email_verified', EmailVerified::class, 'Patient verified their email', 'patient');
     }
 
     private function attachObservers(WorkflowRegistry $registry): void

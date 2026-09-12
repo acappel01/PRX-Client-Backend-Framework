@@ -261,6 +261,20 @@ class AppServiceProvider extends ServiceProvider
         // Strict limit on auth endpoints to prevent brute-force.
         RateLimiter::for('auth', fn (Request $request) => Limit::perMinute(10)->by($request->ip()));
 
+        // Claim links send real email to a real mailbox, so the limit protects
+        // the RECIPIENT as much as us: without it, one account could mail-bomb
+        // the address its orders were placed under. Per account, not per IP,
+        // because the account is what chooses the recipient.
+        RateLimiter::for('claim-link', fn (Request $request) => [
+            Limit::perHour(3)->by('claim-link:'.($request->user()?->id ?? $request->ip())),
+            Limit::perDay(10)->by('claim-link-day:'.($request->user()?->id ?? $request->ip())),
+        ]);
+
+        // Guessing a 256-bit token is moot; this bounds noise in the logs.
+        RateLimiter::for('claim', fn (Request $request) => Limit::perMinute(10)->by(
+            'claim:'.($request->user()?->id ?? '').'|'.$request->ip()
+        ));
+
         // General API limit — generous enough for a React SPA, tight enough to block scrapers.
         RateLimiter::for('api', fn (Request $request) => Limit::perMinute(120)->by(
             $request->user()?->id ?? $request->ip()

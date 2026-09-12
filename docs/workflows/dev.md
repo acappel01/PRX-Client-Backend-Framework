@@ -159,6 +159,43 @@ Pinned by `test_original_survives_a_write_inside_a_transaction`,
 `test_the_event_fires_for_a_write_inside_a_transaction`. All three fail if the observers go
 back to `getOriginal()`.
 
+## Registered subjects and events
+
+| Subject | Model | Registered in |
+|---|---|---|
+| `lead` | `Lead` | `registerAtlasSubjects()` — Atlas's classifications |
+| `patient` | `Patient` | `registerPortalSubjectsAndEvents()` — part of the shipped portal, so an install replacing Atlas's registrations keeps it |
+
+| Event key | Subject | Fired |
+|---|---|---|
+| `lead.created` | lead | any lead capture |
+| `lead.disposition_changed` | lead | status move (`changedField: status`) |
+| `quiz.completed` | lead | quiz lead created |
+| `patient.claim_link_requested` | patient | a claim link was actually emailed |
+| `patient.record_claimed` | patient | a claim committed and the record is linked |
+| `patient.email_verified` | patient | first verification only |
+
+**The `patient` allow-list omits `prx_patient_chart_id`, `password` and every token column**
+on purpose: this list is what a field mapper may send to a third party, and a chart id is
+identifying even though it is not clinical.
+
+🔴 **The claim email itself is NOT a workflow action and must not become one.** It carries a
+single-use credential; workflow context is serialised into a job and written to
+`workflow_runs.context`. The system sends it (`RequestClaimLinkAction`) through the same
+capability routing `send_email` uses, and the `patient.*` events carry the patient and nothing
+else — hang follow-ups there. See `docs/portal/dev.md`.
+
+Registering `patient` also attaches `WorkflowSubjectObserver` to it, so `model_created` /
+`model_updated` triggers exist for patients too.
+
+**A queued chain carries no `$hidden` column.** `RunWorkflowChain::forContext()` strips the
+subject's `$hidden` keys from both `subjectAttributes` and `original` (values; the `changed`
+list may still NAME a hidden column, and `_changed.*` is bounded by the allow-list) before the job is
+serialised — the payload sits in Redis and, on a crash, in `failed_jobs` where Horizon shows it,
+and a Patient row carries a password hash. Nothing downstream needs them.
+`WorkflowQueueTest::test_hidden_columns_never_enter_the_job_payload` asserts on the serialised
+job. A new subject's secrets belong in `$hidden` for this to cover them.
+
 ## Shipped actions
 
 | Type | Config | Notes |

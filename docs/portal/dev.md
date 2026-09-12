@@ -37,22 +37,36 @@ there must be validated here first.
 An account with no `prx_patient_chart_id` sees nothing: `IssuePortalTokenAction`
 refuses to mint without one. Until 2026-09-08 the **only runtime writer of that
 column was a text input on the Filament patient form**, so every real patient
-needed an operator to paste a chart id by hand. Nothing in checkout, the embed
-intake path or the webhooks wrote it, and `leads.patient_id` had an FK and no
-writer at all.
+needed an operator to paste a chart id by hand.
 
-`POST /patient/link-chart` (session + `lead_uuid`) closes that, and
-`LinkPatientToPrxChartAction` is the single choke point.
+Linking now takes **two requests with an email between them**, and it needs two
+separate proofs:
+
+| Proof | Answers | Comes from |
+|---|---|---|
+| The order's **encounter** | "this order is real and created this chart" | a row only our server or a signed webhook can write |
+| A single-use **link sent to the order's mailbox** | "the person signed in placed this order" | the patient receiving and acting on our email |
+
+```
+POST /patient/claim-links   (session, empty body)
+   → RequestClaimLinkAction  → email to the ORDER's address: {portal}/claim/{token}
+POST /patient/claim         (session, { token })
+   → ClaimPatientRecordAction → LinkPatientToPrxChartAction  (inside one transaction)
+```
+
+`LinkPatientToPrxChartAction` is still the single place a chart is linked, and
+`ClaimPatientRecordAction` is its only caller. **Do not expose it to a request
+directly again** — see the history below.
 
 ### The evidence is the ENCOUNTER. A lead proves nothing.
 
 **The obvious implementation is the vulnerable one, and it was written and
 caught in review before it shipped.** That version resolved the chart from the
 lead's *email* against the provider. It is a complete account takeover, because
-**`POST /leads` is anonymous and returns the uuid** (`routes/api.php:193`,
-`LeadResource:20`) — it has to be, it is the checkout form itself:
+**`POST /leads` is anonymous and returns the uuid** — it has to be, it is the
+checkout form itself:
 
-1. register with the victim's address — nothing verifies it;
+1. register with the victim's address — registration verifies nothing;
 2. `POST /leads` with that address, read the uuid out of the 201;
 3. claim it — emails match, lead unclaimed, provider resolves the address to the
    victim's chart. Full portal on their clinical record.
@@ -69,16 +83,138 @@ caller:
 The chart id comes from there and nowhere else. **`leads.prescribe_rx_patient_id`
 is deliberately ignored** — it has four writers, and two of them
 (`LeadIntakeController::complete`, `EmbedCompleteController`) take it from the
-request body with no credential. A disagreement between it and the encounter is
-logged, and the encounter wins.
+request body with no credential. A disagreement is logged; the encounter wins.
 
-This design also removed the provider round-trip: the action makes no outbound
-call at all.
+### The mailbox is the second proof
+
+The encounter removed an attacker's ability to *manufacture* an order. It did not
+remove the value of a *leaked* one: the first shipped endpoint,
+`POST /patient/link-chart`, took an order uuid and checked it against the
+account's asserted address, so someone who knew a customer's email and held the
+uuid of their real, unclaimed order could still claim it. The uuid rides in the
+intake URL, so it leaks.
+
+That endpoint is **removed**, not kept alongside. Its checks were a strict subset
+of the new flow's, so leaving it reachable would have left the unverified path
+open. `RequestClaimLinkTest::test_the_old_uuid_endpoint_is_gone` pins the 404.
+
+**Requesting a link** (`RequestClaimLinkAction`):
+
+- **The caller supplies nothing.** No uuid, no address: the eligible order is the
+  newest lead whose email equals the session's (case-insensitive), with
+  `patient_id` null and an encounter carrying a chart id. The uuid stops
+  travelling.
+- **The answer is a uniform 202** whether or not an order matched. Anything else
+  tells a person who registered a stranger's address whether that stranger has a
+  completed consultation.
+- **"Can this install send at all" is asked BEFORE eligibility**, so a 503
+  describes the installation, never the order: `PATIENT_PORTAL_URL` set, exactly
+  one active integration offering `transactional_email`, and its `test()` passing
+  (for the site mailer that is `email_enabled` plus a real transport).
+- One live link per order — a new request deletes the outstanding one.
+- **Sent synchronously**, so the plain token never lands in a queue payload and a
+  failed send is reported (503, token deleted) rather than promised.
+- Limited to 3 an hour and 10 a day **per account** (`claim-link`): the account is
+  what chooses the recipient, so the limit protects the mailbox as much as us.
+
+**Using a link** (`ClaimPatientRecordAction`):
+
+- **Bound to the ORDER and the ADDRESS, not the requester.** The session's address
+  must equal `sent_to`. `patient_id` on the token row is audit only.
+- **The variant that must never be built** is "consume the link and attach the
+  record to whichever account holds that address", with no session. An attacker
+  who registered a victim's address requests a link; the victim clicks an email
+  that genuinely came from us; the victim's record lands on the attacker's
+  account. Requiring the clicker's own session means a click can only ever land
+  on an account the clicker can sign in to.
+- **One refusal for every token failure** — unknown, malformed, used, expired,
+  sent to a different address, order deleted: `errors.token[0]` is byte-identical.
+  Checked before any write, so a mismatched session never spends somebody else's
+  link.
+- **Consumption is a conditional UPDATE by primary key**
+  (`consumed_at IS NULL AND expires_at > now`) and exactly one affected row is the
+  proof this request won. A PK equality on an existing row takes a record lock
+  only, so no gap lock (see Guards). The lookup before it is non-locking. The race
+  is pinned deterministically by
+  `test_a_link_spent_between_the_read_and_the_write_is_refused`, which spends the
+  row from a `retrieved` hook between the read and the write.
+- **Linking runs inside the same transaction.** A refusal — record held by
+  another account, no chart back from the provider yet — rolls the consumption
+  back, so the link still works once the problem is fixed instead of being burned
+  by a failure that was not the patient's. Its sentences are kept; only the error
+  key moves from `lead_uuid` to `token`.
+- **`email_verified_at` is stamped only here**, inside that transaction, after the
+  link succeeded. Nothing else sets it. Nothing *reads* it for authorisation yet.
+- **On first verification every other Sanctum token for the patient is revoked**,
+  keeping the one the request arrived on: a session opened before the address was
+  proven may belong to someone who knew the password without holding the mailbox.
+
+**The link must never be spent by a GET.** Mail scanners (Outlook Safe Links,
+corporate gateways, Gmail prefetch) open links before the person does. The
+portal's `/claim/{token}` page renders a button and changes nothing; only the
+POST behind it consumes. There is no API route that accepts a token in a URL —
+`test_there_is_no_get_route_a_mail_scanner_could_spend_a_token_on`.
+
+### The email is system-owned, and routed like any other
+
+The claim email carries a live credential, so it is **not** a workflow step. As
+one, the token would sit in the workflow context, the queued job and the run log;
+a step could route it to a webhook or a vendor; and switching the workflow off
+would silently break linking. It still goes out through `CapabilityRouting`, so
+**which provider delivers it is the operator's choice** exactly as it is for
+`send_email`.
+
+Everything *around* it is configurable. Three token-free events are registered as
+workflow triggers on a new `patient` subject:
+
+| Event key | Fired |
+|---|---|
+| `patient.claim_link_requested` | only when a link actually went out — never for a request that matched nothing |
+| `patient.record_claimed` | after the claim transaction commits |
+| `patient.email_verified` | on the first verification only |
+
+🔴 **None of them carries the token, and none may.** Tests assert each event's
+only property is `patient`.
+
+The message is plain text and minimal: no product, no consultation language, no
+order uuid, no chart id, no address in the URL; it names the account's creation
+date so someone who did not create it can tell the link is not theirs.
+
+🔴 **It carries nothing the account holder wrote — not even a first name.** The
+email goes to the ORDER's mailbox, and the account asking may be exactly the
+stranger this flow exists to stop. Greeting by the account's `first_name` let that
+stranger put their own text ("your card was declined, call…") into an email from
+the brand's verified domain, three times an hour. Caught by review; pinned by
+`test_nothing_the_account_holder_wrote_reaches_the_order_mailbox`. Any future
+personalisation must come from settings or from the order, never the account. It is sent
+with `EmailMessage::$trackLinks = false`, which `LocalMailDriver` maps to
+Mailgun's `o:tracking-clicks` / `o:tracking-opens` = `no` — click tracking rewrites
+every link through the vendor's redirector (plain HTTP on this install's tracking
+domain), and a dashboard toggle must not be able to leak a token.
+
+### Configuration
+
+| What | Where | Unset means |
+|---|---|---|
+| Portal origin for the link | `PATIENT_PORTAL_URL` (`config/portal.php`) | 503 — never a link to the admin |
+| Link path | `PATIENT_PORTAL_CLAIM_PATH`, default `/claim/{token}` | — |
+| Who sends | exactly one active integration instance offering `transactional_email` | 503; two or more also 503 (the choice is the operator's to make) |
+| Whether the site mailer sends | Settings → Communications → email switched on, real transport | 503 |
+| Link lifetime | `PatientEmailToken::CLAIM_TTL_MINUTES` (60) | — |
+
+Tokens are stored as `sha256` in `patient_email_tokens.token_hash`; the plain value
+exists only in the email. 256 bits of entropy is why a fast hash is correct and
+why the lookup can be an indexed equality.
+
+**Portals must keep the token out of logs.** Atlas's portal vhost excludes
+`/claim/` request lines and any request whose Referer is a claim page from the
+access log, and sends `Referrer-Policy: no-referrer` there. A `combined` log keeps
+both the request line and the Referer.
 
 ### Guards
 
-- the lead's email must equal the account's — not the resolution key any more,
-  but it keeps a stray uuid from being enough on its own;
+- the lead's email must equal the account's (re-checked by the link action even
+  though the token already bound it — a lead's email is operator-editable);
 - the lead must have an encounter carrying a chart id, or it is refused rather
   than guessed at;
 - an account that already has a chart is refused — re-linking would silently
@@ -92,34 +228,47 @@ call at all.
   real arbiter, and **holding a lock to pre-empt it is what must not be done**:
   under `REPEATABLE-READ` a locking read on a unique index for a value that does
   not exist yet takes a **gap lock**, and two unrelated first-time claims then
-  deadlock each other on the insert-intention. That regression existed for about
-  an hour and is why the check is a `catch`;
-- an unknown uuid gives the byte-identical refusal to one belonging to someone
-  else, so uuids cannot be enumerated;
-- re-claiming the lead you already hold is a no-op, not a 422;
-- `prx_chart_verified_at` is stamped **only** here. It means a server-side check
-  agreed, which the Filament text input cannot say.
+  deadlock each other on the insert-intention;
+- `prx_chart_verified_at` is stamped **only** in the link action. It means a
+  server-side check agreed, which the Filament text input cannot say.
+
+The token pre-check (`isUsable()`) and the conditional UPDATE are the same kind of
+redundant pair: removing either alone leaves the suite green except for the race
+test, which pins the UPDATE.
 
 **A patient who checked out under a different address than they registered with
-is refused**, and that is the guard working rather than a gap. The Filament
+gets no link**, and that is the guard working rather than a gap. The Filament
 field remains, so an operator can link that case by hand after checking who they
 are.
 
-🔴 **Residual, and it must close before real patients use this.**
-`patients.email_verified_at` is never set — there is no verification flow — so
-the address is asserted, not proven. Someone who both knows a customer's address
-**and** holds the uuid of a real, completed, unclaimed order can still claim it.
-Requiring the encounter removes an attacker's ability to *manufacture* that
-order; it does not remove the value of a leaked one. Patient email verification
-is the fix and is not built. Registration deliberately does not link
-(`PatientAuthTest` pins that a chart id in the body is ignored), so this endpoint
-is the whole surface.
+### Known residuals
+
+- **Registration still does not verify an address**, and `patients.email` is
+  unique. Someone can register a customer's address first and squat it: they can
+  never receive the link, but the real customer cannot register. Pre-existing,
+  surfaced rather than solved here. The fix is account creation *by* the link.
+- The confused-deputy argument relies on `patients.email` being unique and there
+  being no self-serve email change. If a profile-update endpoint lands, the
+  `sent_to` equality at claim is what keeps it true.
+- **The 202 is uniform in body, not in latency.** A match writes a token and makes a
+  synchronous provider round-trip before answering; a non-match returns after one
+  SELECT. One timed request per registered address could tell them apart. Accepted
+  for now because the synchronous send is what keeps the token out of a queue and
+  lets a failed send be reported; closing it means answering first and sending from
+  an encrypted job, at the cost of that honesty. Needs an account registered under
+  the target address, and is rate-limited like every other request.
+- A send that fails after `test()` passed answers 503 only for an account that has
+  an eligible order. It needs a transient transport failure at that moment, and the
+  account's address already belongs to the order — accepted.
+- There is no system-initiated invite yet (mail the link when a chart id first
+  arrives). The table and action are shaped for it; nothing fires today.
 
 ## Endpoints
 
 | Route | Token | Notes |
 |---|---|---|
-| `POST /patient/link-chart` | **none** | Account, not clinical. Makes no provider call at all — the chart comes from an encounter row. See above. |
+| `POST /patient/claim-links` | **none** | Account, not clinical. Empty body; uniform 202; 503 when this install cannot send; 429 over 3/hour. Emails the order's address. |
+| `POST /patient/claim` | **none** | `{token}`. 200 with the patient; 422 `errors.token`. Links the record and verifies the address in one transaction. |
 | `GET /patient/home` | patient | **Screen-shaped and server-ranked.** One call, not six. |
 | `GET /patient/dashboard` | patient | Raw dashboard, filtered. |
 | `GET /patient/encounters` | patient | Raw model upstream — heavily filtered. |

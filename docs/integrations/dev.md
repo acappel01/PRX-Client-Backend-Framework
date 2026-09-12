@@ -420,6 +420,28 @@ Notes worth carrying, each of which shaped the code:
   attestation decide. Do not add a hardcoded refusal: it would be wrong for an install whose
   contract differs, and stale the moment their terms change.
 
+## Messages whose links are credentials
+
+`EmailMessage::$trackLinks` (default `true`) is `false` for a message whose links carry a
+secret — today the patient claim link. Provider click tracking rewrites every link through the
+vendor's redirector, which hands the token to a third host; on Mailgun that redirector is plain
+HTTP on the install's tracking CNAME by default. Each driver maps the flag to its vendor's
+per-message opt-out, so an operator switching tracking on in a dashboard cannot leak one.
+
+| Driver / transport | Mapping |
+|---|---|
+| `local_mail` on Mailgun | `o:tracking-clicks: no`, `o:tracking-opens: no` (the Symfony Mailgun API transport forwards `o:` headers as sending options) |
+| `local_mail` on SES, Postmark, SMTP | **not mapped** — an `o:` name is not a valid header there. Keep link tracking off at the vendor. |
+
+A vendor driver added later that offers `transactional_email` must honour the flag or say in
+its docblock that its vendor cannot track links.
+
+**System sends reuse the routing, not the workflow.** `RequestClaimLinkAction` calls
+`CapabilityRouting::resolve(..., TransactionalEmail, null, ...)` — no named instance — so the
+"exactly one" rule applies: two active instances offering `transactional_email` make the claim
+link unavailable (503) until one is switched off. A per-purpose default instance is the obvious
+next step if an install needs two.
+
 ## Adding a provider
 
 1. Implement `IntegrationDriver` plus the capability interfaces you can genuinely honour.

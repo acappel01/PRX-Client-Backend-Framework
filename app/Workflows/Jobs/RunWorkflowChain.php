@@ -109,13 +109,20 @@ class RunWorkflowChain implements ShouldQueue
     {
         $subject = $context->subject;
 
+        // The payload sits in Redis and, when a chain crashes, in `failed_jobs`
+        // where Horizon displays it. A model's `$hidden` columns — a patient's
+        // password hash and remember token — have no business in either. Nothing
+        // downstream reads them: conditions and mappers are allow-listed, and
+        // `update_field` saves only what it dirtied.
+        $hidden = $subject === null ? [] : array_flip($subject->getHidden());
+
         return new self(
             triggerType: $context->triggerType,
             triggerTarget: $context->triggerTarget,
             subjectClass: $subject === null ? null : $subject::class,
             subjectKey: $context->subjectKey,
-            subjectAttributes: $subject === null ? [] : $subject->getAttributes(),
-            original: $context->original,
+            subjectAttributes: $subject === null ? [] : array_diff_key($subject->getAttributes(), $hidden),
+            original: array_diff_key($context->original, $hidden),
             changed: $context->changed,
             payload: $context->payload,
         );

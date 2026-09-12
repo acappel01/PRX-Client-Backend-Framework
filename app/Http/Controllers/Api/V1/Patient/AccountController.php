@@ -2,53 +2,66 @@
 
 namespace App\Http\Controllers\Api\V1\Patient;
 
-use App\Actions\Patient\LinkPatientToPrxChartAction;
+use App\Actions\Exceptions\ActionException;
+use App\Actions\Patient\ClaimPatientRecordAction;
+use App\Actions\Patient\RequestClaimLinkAction;
 use App\Data\Patient\PatientResource;
 use App\Http\Controllers\Api\V1\ApiController;
-use App\Models\Lead;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Validation\ValidationException;
+use Laravel\Sanctum\PersonalAccessToken;
 
 /**
  * A patient's own account, as distinct from the clinical data PortalController
- * proxies. Nothing here talks to the provider except to verify a claim.
+ * proxies. Nothing here talks to the provider.
+ *
+ * Connecting a record is two requests with an email between them. There used to
+ * be one — `POST /patient/link-chart` with an order uuid — and it was removed
+ * rather than kept alongside: its checks were a strict subset of these, so
+ * leaving it reachable would have left the unverified path open.
  */
 class AccountController extends ApiController
 {
+    /** What the patient is told whether or not an order matched. */
+    public const LINK_SENT = 'If there is an order under your email address, we have sent a link to connect your record to it.';
+
     /**
-     * Claim the medical record created by one of this patient's orders.
+     * Email a link to connect the record an order created.
      *
-     * Until an account is linked to a PRX chart the portal has nothing to show
-     * it — `IssuePortalTokenAction` refuses to mint without one — so this is
-     * the step between "I have a login" and "I can see my care".
-     *
-     * The lead uuid is NOT proof of anything on its own — `POST /leads` is
-     * anonymous and hands back the uuid, so anyone can mint one for any
-     * address. `LinkPatientToPrxChartAction` takes the chart from the order's
-     * ENCOUNTER, a row only our own server or a signed webhook can write, and
-     * ignores the copy on the lead entirely.
+     * Takes no body. The order is resolved from the session's own account and
+     * the link goes to the address that order was placed under. The answer is
+     * the same 202 whether or not anything matched — see RequestClaimLinkAction.
      *
      * @tags PatientAuth
      */
-    public function linkChart(Request $request, LinkPatientToPrxChartAction $action): JsonResponse
+    public function requestClaimLink(Request $request, RequestClaimLinkAction $action): JsonResponse
     {
-        $validated = $request->validate([
-            'lead_uuid' => ['required', 'string', 'uuid'],
-        ]);
-
-        $lead = Lead::where('uuid', $validated['lead_uuid'])->first();
-
-        if ($lead === null) {
-            // Deliberately the same refusal the action gives for a lead that
-            // belongs to someone else. Whether a uuid exists is not something a
-            // caller should be able to enumerate.
-            throw ValidationException::withMessages([
-                'lead_uuid' => 'That order does not belong to this account.',
-            ]);
+        try {
+            $action->execute($request->user(), $request->ip());
+        } catch (ActionException $e) {
+            return $this->error($e->getMessage(), $e->getCode());
         }
 
-        $patient = $action->execute($request->user(), $lead);
+        return response()->json(['data' => ['sent' => true], 'message' => self::LINK_SENT], 202);
+    }
+
+    /**
+     * Use a claim link. The token arrives in the BODY of a POST, never a URL:
+     * mail scanners follow links, and a single-use token spent by a scanner is
+     * a link the patient can no longer use.
+     *
+     * @tags PatientAuth
+     */
+    public function claim(Request $request, ClaimPatientRecordAction $action): JsonResponse
+    {
+        $current = $request->user()->currentAccessToken();
+
+        $patient = $action->execute(
+            $request->user(),
+            $request->input('token'),
+            $current instanceof PersonalAccessToken ? $current->getKey() : null,
+            $request->ip(),
+        );
 
         return $this->success(['patient' => PatientResource::fromModel($patient)->toArray()]);
     }

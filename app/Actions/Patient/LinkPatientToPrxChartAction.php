@@ -45,12 +45,14 @@ use Illuminate\Validation\ValidationException;
  * `LeadIntakeController::complete` and `EmbedCompleteController` both write it
  * with no credential, from the request body.
  *
- * 🔴 **Residual.** `patients.email_verified_at` is never set — there is no
- * verification flow — so the address is asserted, not proven. Someone who
- * both knows a customer's address AND holds the uuid of a real, completed,
- * unclaimed order can still claim it. The encounter requirement removes the
- * attacker's ability to manufacture that order; it does not remove the value
- * of a leaked one. Patient email verification is the fix and is not built.
+ * ── Mailbox proof lives one level up ────────────────────────────────────────
+ *
+ * The encounter proves an order is real; it does not prove the account holder
+ * placed it, because registration does not verify an address. That proof is
+ * `ClaimPatientRecordAction`, the only caller: it consumes a single-use link
+ * emailed to the order's own address and calls this inside its transaction.
+ * Do not expose this action to a request directly again — the endpoint that
+ * did (`POST /patient/link-chart`) was removed for exactly that reason.
  */
 class LinkPatientToPrxChartAction
 {
