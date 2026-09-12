@@ -278,12 +278,18 @@ are.
 - A send that fails after `test()` passed answers 503 only for an account that has
   an eligible order. It needs a transient transport failure at that moment, and the
   account's address already belongs to the order — accepted.
-- **`requested_ip` / `consumed_ip` record the portal server, not the patient.** The portal
-  calls this API over its public URL, so the request's client is the portal host
-  (`34.196.82.220` on Atlas, measured on the first live claim). The columns are
-  honest about what they saw and useless as an audit of who. Fixing it means the
-  portal forwarding the visitor's address and this app trusting that header from
-  the portal only — a trusted-proxy decision of its own, not made here.
+- **`requested_ip` / `consumed_ip` are the patient's address only because the portal
+  forwards it.** The portal calls this API over its public URL, so the request's peer
+  is the portal host (`34.196.82.220` on Atlas — what the first live claim recorded).
+  The portal sends a single `X-Forwarded-For` value, the rightmost entry its own
+  reverse proxy appended, and this app honours it because `TRUSTED_PROXIES` names the
+  portal host. Every `$request->ip()` on the patient routes depends on this — the
+  columns above, and the `auth` and `claim` rate limiters, which otherwise put every
+  patient in one bucket (`claim-link` keys on the account). Trust is by network position: anything
+  egressing from a trusted address can assert a client IP. That holds while portal
+  and admin are co-hosted; a deployment where they are not needs a credential-bound
+  assertion instead, and a CDN in front changes both the portal's extraction and
+  `TRUSTED_PROXIES` together.
 - There is no system-initiated invite yet (mail the link when a chart id first
   arrives). The table and action are shaped for it; nothing fires today.
 
