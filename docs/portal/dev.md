@@ -219,6 +219,7 @@ afterwards against a verified snapshot):
 | Who sends | exactly one active integration instance offering `transactional_email` | 503; two or more also 503 (the choice is the operator's to make) |
 | Whether the site mailer sends | Settings → Communications → email switched on, real transport | 503 |
 | Link lifetime | `PatientEmailToken::CLAIM_TTL_MINUTES` (60) | — |
+| Where a reply goes | Settings → Communication → Reply-to address, else Contact → Support email, else `MAIL_REPLY_TO_ADDRESS` | no `Reply-To` header — a reply goes to the From address, normally a no-reply with no inbox |
 
 Tokens are stored as `sha256` in `patient_email_tokens.token_hash`; the plain value
 exists only in the email. 256 bits of entropy is why a fast hash is correct and

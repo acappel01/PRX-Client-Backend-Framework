@@ -127,4 +127,26 @@ return [
         'name' => env('MAIL_FROM_NAME', env('APP_NAME', 'Laravel')),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Global "Reply-To" Address
+    |--------------------------------------------------------------------------
+    |
+    | Where a recipient's reply goes. Notifications are sent From a do-not-reply
+    | address on the provider-verified sending domain (so SPF and DKIM stay
+    | aligned), and that address usually has no inbox — without a Reply-To, a
+    | patient answering their email writes into nothing. Reply-To plays no part
+    | in SPF, DKIM or DMARC, so it may name any mailbox, including the apex.
+    |
+    | This is the floor. MailConfigurator lays the operator's Communication
+    | setting over it, then Contact → Support email; a null address here sets
+    | no header at all (the mail manager skips an address-less entry).
+    |
+    */
+
+    'reply_to' => [
+        'address' => env('MAIL_REPLY_TO_ADDRESS'),
+        'name' => env('MAIL_REPLY_TO_NAME'),
+    ],
+
 ];

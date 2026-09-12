@@ -5,6 +5,7 @@ namespace App\Filament\Pages\Settings;
 use App\Actions\Settings\UpdateCommunicationSettingsAction;
 use App\Data\Settings\CommunicationSettingsData;
 use App\Settings\CommunicationSettings;
+use App\Settings\ContactSettings;
 use BackedEnum;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
@@ -68,15 +69,18 @@ class ManageCommunication extends BaseSettingsPage
 
                         TextInput::make('mailgun_domain')
                             ->label('Mailgun sending domain')
+                            ->maxLength(255)
                             ->visible(fn (Get $get): bool => $get('mail_provider') === 'mailgun')
                             ->helperText('The verified domain, e.g. mg.example.com — not your website address.'),
                         TextInput::make('mailgun_secret')
                             ->label('Mailgun API key')
+                            ->maxLength(255)
                             ->password()
                             ->revealable()
                             ->visible(fn (Get $get): bool => $get('mail_provider') === 'mailgun'),
                         TextInput::make('mailgun_endpoint')
                             ->label('Mailgun region endpoint')
+                            ->maxLength(255)
                             ->placeholder('api.mailgun.net')
                             ->visible(fn (Get $get): bool => $get('mail_provider') === 'mailgun')
                             ->columnSpanFull()
@@ -84,6 +88,7 @@ class ManageCommunication extends BaseSettingsPage
 
                         TextInput::make('postmark_token')
                             ->label('Postmark server token')
+                            ->maxLength(255)
                             ->password()
                             ->revealable()
                             ->columnSpanFull()
@@ -91,16 +96,19 @@ class ManageCommunication extends BaseSettingsPage
 
                         TextInput::make('ses_key')
                             ->label('AWS access key ID')
+                            ->maxLength(255)
                             ->password()
                             ->revealable()
                             ->visible(fn (Get $get): bool => $get('mail_provider') === 'ses'),
                         TextInput::make('ses_secret')
                             ->label('AWS secret access key')
+                            ->maxLength(255)
                             ->password()
                             ->revealable()
                             ->visible(fn (Get $get): bool => $get('mail_provider') === 'ses'),
                         TextInput::make('ses_region')
                             ->label('AWS region')
+                            ->maxLength(64)
                             ->placeholder('us-east-1')
                             ->visible(fn (Get $get): bool => $get('mail_provider') === 'ses')
                             ->columnSpanFull(),
@@ -108,10 +116,23 @@ class ManageCommunication extends BaseSettingsPage
                         TextInput::make('mail_from_address')
                             ->label('From address')
                             ->email()
-                            ->helperText('Must be on a domain the provider has verified, or mail is rejected or silently spam-filed.'),
+                            ->maxLength(255)
+                            ->helperText('Must be on a domain the provider has verified, or mail is rejected or silently spam-filed. Usually a no-reply address, e.g. no-reply@mg.example.com.'),
                         TextInput::make('mail_from_name')
                             ->label('From name')
+                            ->maxLength(255)
                             ->helperText('Defaults to your brand name.'),
+
+                        TextInput::make('mail_reply_to_address')
+                            ->label('Reply-to address')
+                            ->email()
+                            ->maxLength(255)
+                            ->placeholder(fn (): ?string => app(ContactSettings::class)->support_email)
+                            ->helperText('Where replies go. Any mailbox you read, on any domain — it does not affect deliverability. Leave blank to use the support email from Contact settings.'),
+                        TextInput::make('mail_reply_to_name')
+                            ->label('Reply-to name')
+                            ->maxLength(255)
+                            ->helperText('Optional, e.g. "Support".'),
                     ]),
 
                 Section::make('Twilio credentials')
@@ -175,7 +196,15 @@ class ManageCommunication extends BaseSettingsPage
     public function save(): void
     {
         try {
-            $data = CommunicationSettingsData::validateAndCreate($this->form->getState());
+            // A field hidden by the provider choice or a toggle is left out of
+            // getState(), and the action assigns every field — so without the
+            // stored values underneath, switching Mailgun → Postmark erased the
+            // Mailgun key and switching SMS off erased the opt-in message.
+            // Hidden means "not relevant right now", never "delete".
+            $data = CommunicationSettingsData::validateAndCreate(array_merge(
+                app(CommunicationSettings::class)->toArray(),
+                $this->form->getState(),
+            ));
             app(UpdateCommunicationSettingsAction::class)->execute($data);
         } catch (ValidationException $e) {
             // Rethrow ahead of the catch-all: a ValidationException knows which

@@ -13,6 +13,7 @@ The Settings area at `/admin/settings/*` controls the brand, look, contact info,
 | **Brand** | `/admin/settings/brand` | Brand name, tagline, logo, favicon, hero image |
 | **Theme** | `/admin/settings/theme` | Primary / accent / background / text colors, display & body fonts |
 | **Contact** | `/admin/settings/contact` | Support & sales emails, phone, mailing address, business hours, social links |
+| **Communication** | `/admin/settings/communication` | Whether email sends, mail provider, From and Reply-to addresses; Twilio SMS/voice; video consults |
 | **SEO & Analytics** | `/admin/settings/seo` | Default meta title & description, OG image, Google Analytics, Tag Manager, Facebook Pixel, search-engine indexing toggle |
 
 ## How to edit
@@ -78,6 +79,23 @@ colour used only by a hero highlight card is still protected.
 ### Contact
 
 Email and URL fields are validated. Country code is the ISO 3166-1 alpha-2 code (US, CA, GB, …). Social URLs that you leave blank are skipped in the rendered footer/nav.
+
+**Support email** is also where replies to the site's emails go, unless Communication → Reply-to address says otherwise (below).
+
+### Communication — Email
+
+`/admin/settings/communication`. Every field here is optional; a blank one means "keep what the server is configured with".
+
+| Field | Notes |
+|---|---|
+| Send email | The master switch. **Off means nothing is sent** — plan emails, and the patient portal's record-linking emails (which then answer "unavailable"). |
+| Provider + its credentials | Only the selected provider's fields are shown. Switching provider does **not** erase the other provider's saved key. |
+| From address | Must be on a domain your provider has verified, or mail is rejected or spam-filed. Use a no-reply address there, e.g. `no-reply@mg.example.com`. |
+| From name | Defaults to your brand name. |
+| Reply-to address | Where a recipient's reply lands. Any mailbox you actually read, on any domain — it has no effect on deliverability. **Blank uses Contact → Support email.** If both are blank, a reply goes to the From address, which normally nobody reads. Patients may reply with health details, so point this at a mailbox covered by your privacy agreements — not a helpdesk tool you have no BAA with. |
+| Reply-to name | Optional label for the reply address, e.g. "Support". It is not borrowed from the From name. |
+
+**Queued mail picks up a change after a worker restart.** Plan emails are sent by the background queue, which read these settings when it started; ask whoever runs the server to restart it (`php artisan horizon:terminate`) after changing the sender or reply-to. Record-linking emails are sent immediately and use the new values at once.
 
 ### SEO & Analytics
 

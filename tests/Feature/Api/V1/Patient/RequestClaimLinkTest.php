@@ -5,9 +5,12 @@ namespace Tests\Feature\Api\V1\Patient;
 use App\Events\Patient\ClaimLinkRequested;
 use App\Http\Controllers\Api\V1\Patient\AccountController;
 use App\Models\Integrations\IntegrationInstance;
+use App\Models\Patient;
 use App\Models\PatientEmailToken;
 use App\Settings\CommunicationSettings;
+use App\Settings\ContactSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Mail\Events\MessageSending;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Tests\Feature\Api\V1\Patient\Concerns\ClaimFixtures;
@@ -52,6 +55,30 @@ class RequestClaimLinkTest extends TestCase
         $this->assertSame('buyer@example.test', $token->sent_to);
         $this->assertSame(PatientEmailToken::hash($this->tokenFrom($mail)), $token->token_hash);
         $this->assertNull($token->consumed_at);
+    }
+
+    /**
+     * The claim mail comes From a no-reply with no inbox, and a patient's first
+     * instinct on an unexpected link is to reply and ask about it. The address
+     * is the operator's support email, resolved by MailConfigurator at send
+     * time — asserted on the message that left, not on config.
+     */
+    public function test_the_email_names_the_support_address_to_reply_to(): void
+    {
+        $contact = app(ContactSettings::class);
+        $contact->support_email = 'help@brand.example.test';
+        $contact->save();
+
+        $this->enableClaimMail();
+        $this->actingAsPatient();
+        $this->order();
+
+        $this->postJson('/api/v1/patient/claim-links')->assertStatus(202);
+
+        $this->assertCount(1, $this->sentMail);
+        $replyTo = $this->sentMail[0]->getReplyTo();
+        $this->assertCount(1, $replyTo);
+        $this->assertSame('help@brand.example.test', $replyTo[0]->getAddress());
     }
 
     public function test_the_plain_token_is_never_stored(): void
@@ -164,7 +191,7 @@ class RequestClaimLinkTest extends TestCase
     {
         $this->enableClaimMail();
         $this->actingAsPatient();
-        $other = \App\Models\Patient::factory()->create(['email' => 'other@example.test']);
+        $other = Patient::factory()->create(['email' => 'other@example.test']);
         $this->order(['patient_id' => $other->id]);
 
         $this->postJson('/api/v1/patient/claim-links')->assertStatus(202);
@@ -249,7 +276,7 @@ class RequestClaimLinkTest extends TestCase
         Event::fake([ClaimLinkRequested::class]);
         // No capture listener: it would cancel the send before this one throws.
         $this->enableClaimMail(capture: false);
-        Event::listen(\Illuminate\Mail\Events\MessageSending::class, function (): void {
+        Event::listen(MessageSending::class, function (): void {
             throw new \RuntimeException('transport exploded');
         });
         $this->actingAsPatient();

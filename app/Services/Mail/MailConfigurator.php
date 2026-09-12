@@ -3,6 +3,7 @@
 namespace App\Services\Mail;
 
 use App\Settings\CommunicationSettings;
+use App\Settings\ContactSettings;
 use Illuminate\Contracts\Config\Repository;
 
 /**
@@ -29,6 +30,7 @@ class MailConfigurator
     public function __construct(
         private readonly Repository $config,
         private readonly CommunicationSettings $settings,
+        private readonly ContactSettings $contact,
     ) {}
 
     public function apply(): void
@@ -53,6 +55,36 @@ class MailConfigurator
         if (filled($this->settings->mail_from_name)) {
             $this->config->set('mail.from.name', $this->settings->mail_from_name);
         }
+
+        $this->applyReplyTo();
+    }
+
+    /**
+     * Where replies go: the Communication setting, else Contact → Support
+     * email, else whatever MAIL_REPLY_TO_* left in config.
+     *
+     * The support email is in the chain because the From is normally a
+     * no-reply on the sending domain with no inbox behind it, so an install
+     * that has filled in its support address but never opened this page would
+     * otherwise send every patient's reply into nothing. It sits BELOW the
+     * explicit setting, so an operator who wants replies somewhere other than
+     * the public support address can say so.
+     *
+     * Only the address falls back. A name set here without an address is still
+     * applied — it labels whichever address won — but a name is never borrowed
+     * from anywhere else, since the From name ("Atlas Protocol") on a reply
+     * address reads as a second no-reply.
+     */
+    private function applyReplyTo(): void
+    {
+        $address = $this->settings->mail_reply_to_address;
+
+        if (blank($address)) {
+            $address = $this->contact->support_email;
+        }
+
+        $this->setIfFilled('mail.reply_to.address', $address);
+        $this->setIfFilled('mail.reply_to.name', $this->settings->mail_reply_to_name);
     }
 
     /**

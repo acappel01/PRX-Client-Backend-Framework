@@ -64,6 +64,19 @@ class CommunicationSettings extends Settings
     public ?string $mail_from_name = null;
 
     /**
+     * Where replies go. Overrides MAIL_REPLY_TO_* when set; when blank, the
+     * Contact settings' support email is used before falling back to `.env`.
+     *
+     * A separate field from the From address because they answer different
+     * questions: From must sit on the provider-verified domain or DMARC fails,
+     * and that address is normally a no-reply with no inbox. Reply-To is not
+     * checked by SPF, DKIM or DMARC, so it can be the real support mailbox.
+     */
+    public ?string $mail_reply_to_address = null;
+
+    public ?string $mail_reply_to_name = null;
+
+    /**
      * The master switch. Off means nothing is sent, and callers are told so
      * rather than silently succeeding — a funnel that believes it emailed a
      * plan it never sent is worse than one that knows it did not.

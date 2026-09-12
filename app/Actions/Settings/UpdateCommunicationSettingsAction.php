@@ -23,6 +23,21 @@ class UpdateCommunicationSettingsAction
             $this->settings->sms_opt_in_message = $data->sms_opt_in_message;
             $this->settings->voice_enabled = $data->voice_enabled;
             $this->settings->video_enabled = $data->video_enabled;
+
+            $this->settings->email_enabled = $data->email_enabled;
+            $this->settings->mail_provider = $data->mail_provider;
+            $this->settings->mailgun_domain = $data->mailgun_domain;
+            $this->settings->mailgun_secret = $data->mailgun_secret;
+            $this->settings->mailgun_endpoint = $data->mailgun_endpoint;
+            $this->settings->postmark_token = $data->postmark_token;
+            $this->settings->ses_key = $data->ses_key;
+            $this->settings->ses_secret = $data->ses_secret;
+            $this->settings->ses_region = $data->ses_region;
+            $this->settings->mail_from_address = $data->mail_from_address;
+            $this->settings->mail_from_name = $data->mail_from_name;
+            $this->settings->mail_reply_to_address = $data->mail_reply_to_address;
+            $this->settings->mail_reply_to_name = $data->mail_reply_to_name;
+
             $this->settings->save();
 
             // Invalidates BOTH caches between here and a visitor: this app's

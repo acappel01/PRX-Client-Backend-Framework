@@ -8,6 +8,7 @@ use App\Mail\PlanReadyMail;
 use App\Models\Lead;
 use App\Services\Mail\MailConfigurator;
 use App\Settings\CommunicationSettings;
+use App\Settings\ContactSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
 use Tests\TestCase;
@@ -130,7 +131,7 @@ class PlanEmailTest extends TestCase
         $settings->postmark_token = 'tok_123';
         $settings->save();
 
-        (new MailConfigurator(app('config'), $settings))->apply();
+        (new MailConfigurator(app('config'), $settings, app(ContactSettings::class)))->apply();
 
         $this->assertSame('postmark', config('mail.default'));
         $this->assertSame('tok_123', config('services.postmark.token'));
@@ -148,7 +149,7 @@ class PlanEmailTest extends TestCase
         $settings->ses_key = 'AKIA-should-not-be-applied';
         $settings->save();
 
-        (new MailConfigurator(app('config'), $settings))->apply();
+        (new MailConfigurator(app('config'), $settings, app(ContactSettings::class)))->apply();
 
         $this->assertSame('mg.example.com', config('services.mailgun.domain'));
         $this->assertNull(config('services.ses.key'));

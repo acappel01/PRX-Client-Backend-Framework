@@ -169,6 +169,24 @@ DTO validation throws `Illuminate\Validation\ValidationException` on bad input. 
 
 **To run them, you need either `pdo_sqlite` (in-memory test DB)** — install via `sudo apt install php8.5-sqlite3 && sudo systemctl reload php-fpm` — **or a dedicated MySQL test DB** named `protocol-hrt-website-test` plus a phpunit.xml override pointing to `mysql`. As of 2026-05-01 neither is set up; the tests are syntax-clean but un-run.
 
+## Mail sender and Reply-To (2026-09-12)
+
+`MailConfigurator::apply()` lays `CommunicationSettings` over `config/mail.php` on every boot (and again inside `LocalMailDriver` before a send). A null setting leaves config alone, so `.env` is the floor.
+
+| Header | Resolution, first filled wins |
+|---|---|
+| From address / name | `mail_from_address` / `mail_from_name` → brand name (name only, `AppServiceProvider::configureBrandMailFrom`) → `MAIL_FROM_*` |
+| Reply-To address | `mail_reply_to_address` → `ContactSettings::support_email` → `MAIL_REPLY_TO_ADDRESS` → no header |
+| Reply-To name | `mail_reply_to_name` → `MAIL_REPLY_TO_NAME`; **never** borrowed from the From name |
+
+`mail.reply_to` is Laravel's own global key: `MailManager::setGlobalAddress` calls `alwaysReplyTo()`, and `Mailer::createMessage` stamps it on `Mail::raw` and mailables alike, before `MessageSending` fires. It is skipped entirely when the address is null. **Mail::fake() cannot test it** — the fake intercepts the mailable before a message is built — so `ReplyToTest` sends through the `array` transport, and `RequestClaimLinkTest` asserts on the message captured from `MessageSending`.
+
+Why the split: From must sit on the provider-verified sending domain or SPF/DKIM alignment and DMARC fail, and that address is normally a no-reply with no inbox. Reply-To is checked by none of the three, so it can name the real support mailbox on any domain.
+
+**Workers hold the config they booted with.** `MailManager` caches the resolved mailer, and a Horizon worker boots once, so a queued send (`SendPlanEmail`) keeps the old sender/Reply-To until `horizon:terminate`. Request-path sends (claim links) see a change immediately.
+
+**The Email section of `ManageCommunication` saved nothing until this change.** `CommunicationSettingsData` and `UpdateCommunicationSettingsAction` carried only the Twilio/SMS/voice/video fields, so "Send email", the provider, credentials and From all reported success and wrote nothing (on Atlas, every Email value was still null when this was found). The page also now merges the form state **over the stored values**: Filament omits hidden fields from `getState()`, and the action assigns every field, so switching provider erased the previous provider's key and switching SMS off erased the opt-in message. `ManageCommunicationEmailSaveTest` drives all of it through the real form.
+
 ## Theme text classes (added 2026-08-16)
 
 ## Frontend behaviour flags
