@@ -192,6 +192,24 @@ Mailgun's `o:tracking-clicks` / `o:tracking-opens` = `no` — click tracking rew
 every link through the vendor's redirector (plain HTTP on this install's tracking
 domain), and a dashboard toggle must not be able to leak a token.
 
+### Verified live, 2026-09-12
+
+Two staged claims on the Atlas production install (a test order under a Gmail
+plus-address, with an encounter pointing at the sandbox test chart; all reverted
+afterwards against a verified snapshot):
+
+- Mailgun `accepted` → `delivered` 250 in ~2s, inbox, SPF/DKIM/DMARC pass, and the
+  link in the received message was the portal URL — not rewritten by tracking.
+- The token row matched the link's sha256; consumed once; `expires_at` unchanged by
+  the consuming UPDATE; chart, `prx_chart_verified_at`, `email_verified_at` and
+  `leads.patient_id` all written in the same second; every other session revoked.
+- The plain token appeared in no Apache, portal, storefront or Laravel log, and the
+  portal's sign-in and claim requests carried no Referer.
+- **Found live, fixed in the portal:** opened from Gmail, the claim page saw no
+  session — the portal cookie is `SameSite=Strict`, withheld on a cross-site
+  navigation — and demanded a second sign-in. The portal now re-requests the page
+  once from its own origin. The second live claim needed no sign-in.
+
 ### Configuration
 
 | What | Where | Unset means |
@@ -260,6 +278,12 @@ are.
 - A send that fails after `test()` passed answers 503 only for an account that has
   an eligible order. It needs a transient transport failure at that moment, and the
   account's address already belongs to the order — accepted.
+- **`requested_ip` / `consumed_ip` record the portal server, not the patient.** The portal
+  calls this API over its public URL, so the request's client is the portal host
+  (`34.196.82.220` on Atlas, measured on the first live claim). The columns are
+  honest about what they saw and useless as an audit of who. Fixing it means the
+  portal forwarding the visitor's address and this app trusting that header from
+  the portal only — a trusted-proxy decision of its own, not made here.
 - There is no system-initiated invite yet (mail the link when a chart id first
   arrives). The table and action are shaped for it; nothing fires today.
 
