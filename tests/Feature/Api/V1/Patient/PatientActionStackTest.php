@@ -224,32 +224,6 @@ class PatientActionStackTest extends TestCase
         }
     }
 
-    public function test_outstanding_items_are_split_by_what_the_patient_can_actually_finish(): void
-    {
-        // The live encounter's three slugs: one file, two text. The text ones
-        // cannot be satisfied over the API at all today — the only endpoint
-        // that writes intake answers writes a different key than the
-        // completeness gate reads. Presenting all three as "upload these"
-        // sends the patient into a loop they cannot exit.
-        $tasks = $this->service()->build([$this->heldEncounter()]);
-
-        $this->assertSame(['id_front'], $tasks[0]['outstanding_actionable']);
-        $this->assertSame(
-            ['drivers_license_number', 'drivers_license_or_identification_state_of_issue'],
-            $tasks[0]['outstanding_blocked']
-        );
-    }
-
-    public function test_an_unknown_slug_is_treated_as_blocked_not_actionable(): void
-    {
-        // Fail closed. Telling a patient to upload something we cannot map to a
-        // document type produces an upload that satisfies nothing.
-        $split = $this->service()->splitOutstanding(['id_back', 'some_future_slug']);
-
-        $this->assertSame(['id_back'], $split['actionable']);
-        $this->assertSame(['some_future_slug'], $split['blocked']);
-    }
-
     public function test_nothing_outstanding_produces_an_empty_stack(): void
     {
         // Empty is success. It must not be a synthesised "no data yet" task.

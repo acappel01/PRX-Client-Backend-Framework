@@ -198,27 +198,25 @@ class PatientActionStackService
      */
     private function blockingCopy(string $status, array $encounter, array $outstanding = []): array
     {
-        // Outstanding documents outrank the status, because they are the only
+        // Outstanding items outrank the status, because they are the only
         // thing here that says WHAT is missing. A held encounter with three
-        // named documents is a task the patient can finish; the same encounter
-        // described by its status is a dead end.
+        // named items is a task the patient can finish; the same encounter
+        // described by its status is a dead end. The copy says "item", not
+        // "document": the list mixes files with text answers (a licence
+        // number), and all of them are satisfiable on the intake page.
         if ($outstanding !== []) {
             $count = count($outstanding);
 
-            $split = $this->splitOutstanding($outstanding);
-
             return [
                 'title' => $count === 1
-                    ? 'One more document is needed'
-                    : "{$count} more documents are needed",
+                    ? 'One more item is needed for your visit'
+                    : "{$count} more items are needed for your visit",
                 'body' => $encounter['info_request_message']
-                    ?: 'Your provider cannot review your visit until these are uploaded.',
-                'cta_label' => 'Upload now',
+                    ?: 'Your provider cannot review your visit until these are provided.',
+                'cta_label' => 'Provide them now',
                 'chip_label' => 'Blocking your Rx',
                 'progress_pct' => $this->intakeProgress($encounter),
                 'outstanding' => $outstanding,
-                'outstanding_actionable' => $split['actionable'],
-                'outstanding_blocked' => $split['blocked'],
             ];
         }
 
@@ -312,42 +310,6 @@ class PatientActionStackService
     }
 
     /**
-     * Identity slugs the provider satisfies with an uploaded FILE.
-     *
-     * Mirrors IntakeDocumentCompleteness::FILE_SLUGS (prx-demo@07969f8). The
-     * split matters to the patient, not just to us: a file slug is something
-     * they can finish right now, and a text slug currently is not — the only
-     * API that writes intake answers persists them under a different key than
-     * the completeness gate reads, so submitting one changes nothing. Telling
-     * someone to "upload 3 documents" when two of them are text fields they
-     * cannot submit is worse than telling them nothing.
-     */
-    private const FILE_SLUGS = ['id_upload', 'id_front', 'id_back', 'selfie_photo', 'body_photo'];
-
-    /**
-     * Split outstanding items into what the patient can act on and what they
-     * cannot.
-     *
-     * @param  array<int, string>  $slugs
-     * @return array{actionable: array<int, string>, blocked: array<int, string>}
-     */
-    public function splitOutstanding(array $slugs): array
-    {
-        $actionable = [];
-        $blocked = [];
-
-        foreach ($slugs as $slug) {
-            if (in_array($slug, self::FILE_SLUGS, true)) {
-                $actionable[] = $slug;
-            } else {
-                $blocked[] = $slug;
-            }
-        }
-
-        return ['actionable' => $actionable, 'blocked' => $blocked];
-    }
-
-    /**
      * The items the provider is still waiting on.
      *
      * `metadata.needs_documents.slugs` is the authoritative marker over the API:
@@ -355,11 +317,14 @@ class PatientActionStackService
      * once nothing is outstanding, so a non-empty list means the patient really
      * does still owe something right now.
      *
-     * This is the only patient-actionable signal available today —
-     * `IntakeDocumentCompleteness` is not exposed by any endpoint, and
-     * `info_request_message` is frequently null (it was on the live encounter
-     * this was built against). Slugs are returned raw; turning them into
-     * readable labels is content and belongs to the admin, not here.
+     * It is the cheap signal for ranking the stack: it rides on the encounter
+     * list this service already has, where the full item list needs one
+     * provider call per encounter. The intake page makes that call
+     * (`GET /patient/encounters/{id}/requirements`), which answers per item
+     * whether it is satisfied and carries the operator's wording from
+     * `PortalSettings::requirement_labels`. `info_request_message` is frequently
+     * null (it was on the live encounter this was built against), so it is not
+     * a substitute. Slugs are returned raw here.
      *
      * @return array<int, string>
      */
