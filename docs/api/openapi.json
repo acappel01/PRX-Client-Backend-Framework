@@ -4152,10 +4152,22 @@
                                                                 "idle_minutes",
                                                                 "max_hours"
                                                             ]
+                                                        },
+                                                        "two_factor": {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "policy": {
+                                                                    "type": "string"
+                                                                }
+                                                            },
+                                                            "required": [
+                                                                "policy"
+                                                            ]
                                                         }
                                                     },
                                                     "required": [
-                                                        "session"
+                                                        "session",
+                                                        "two_factor"
                                                     ]
                                                 },
                                                 "provider": {
@@ -7751,36 +7763,88 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
+                                    "anyOf": [
+                                        {
                                             "type": "object",
                                             "properties": {
-                                                "token": {
-                                                    "type": "string"
-                                                },
-                                                "token_type": {
-                                                    "type": "string",
-                                                    "const": "Bearer"
-                                                },
-                                                "patient": {
+                                                "data": {
                                                     "type": "object",
-                                                    "additionalProperties": {}
+                                                    "properties": {
+                                                        "token": {
+                                                            "type": "string"
+                                                        },
+                                                        "token_type": {
+                                                            "type": "string",
+                                                            "const": "Bearer"
+                                                        },
+                                                        "patient": {
+                                                            "type": "object",
+                                                            "additionalProperties": {}
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "token",
+                                                        "token_type",
+                                                        "patient"
+                                                    ]
+                                                },
+                                                "meta": {
+                                                    "type": "string"
                                                 }
                                             },
                                             "required": [
-                                                "token",
-                                                "token_type",
-                                                "patient"
+                                                "data",
+                                                "meta"
                                             ]
                                         },
-                                        "meta": {
-                                            "type": "string"
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "data": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "two_factor_required": {
+                                                            "type": "boolean"
+                                                        },
+                                                        "challenge": {
+                                                            "type": "string"
+                                                        },
+                                                        "expires_at": {
+                                                            "type": "string"
+                                                        },
+                                                        "methods": {
+                                                            "type": "array",
+                                                            "prefixItems": [
+                                                                {
+                                                                    "type": "string",
+                                                                    "const": "totp"
+                                                                },
+                                                                {
+                                                                    "type": "string",
+                                                                    "const": "recovery_code"
+                                                                }
+                                                            ],
+                                                            "minItems": 2,
+                                                            "maxItems": 2,
+                                                            "additionalItems": false
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "two_factor_required",
+                                                        "challenge",
+                                                        "expires_at",
+                                                        "methods"
+                                                    ]
+                                                },
+                                                "meta": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "data",
+                                                "meta"
+                                            ]
                                         }
-                                    },
-                                    "required": [
-                                        "data",
-                                        "meta"
                                     ]
                                 }
                             }
@@ -7791,6 +7855,102 @@
                     },
                     "401": {
                         "$ref": "#/components/responses/AuthenticationException"
+                    }
+                },
+                "security": []
+            }
+        },
+        "/patient/auth/two-factor": {
+            "post": {
+                "operationId": "v1.patient.auth.two-factor",
+                "description": "Send the `challenge` from `login` with either `code` (6 digits from the\nauthenticator app) or `recovery_code`. Returns a session exactly as\n`login` does without two-step verification. Every refusal is the same 422\non `code`; too many wrong codes for the account is a 429. A challenge\nlasts five minutes and allows five attempts.",
+                "summary": "Finish a two-step sign-in",
+                "tags": [
+                    "PatientAuth"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "challenge": {
+                                        "type": "string",
+                                        "maxLength": 64
+                                    },
+                                    "code": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 16
+                                    },
+                                    "recovery_code": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 32
+                                    }
+                                },
+                                "required": [
+                                    "challenge"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "anyOf": [
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "data": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "token": {
+                                                            "type": "string"
+                                                        },
+                                                        "token_type": {
+                                                            "type": "string",
+                                                            "const": "Bearer"
+                                                        },
+                                                        "patient": {
+                                                            "type": "object",
+                                                            "additionalProperties": {}
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "token",
+                                                        "token_type",
+                                                        "patient"
+                                                    ]
+                                                },
+                                                "meta": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "data",
+                                                "meta"
+                                            ]
+                                        },
+                                        {
+                                            "type": "string"
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
                     }
                 },
                 "security": []
@@ -7871,6 +8031,442 @@
                                 }
                             }
                         }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/patient/session": {
+            "get": {
+                "operationId": "v1.patient.portal.session",
+                "description": "`idle_expires_at` is when the session ends if it is not used again;\n`expires_at` is when it ends regardless. Calling this IS a use \u2014 it moves\n`idle_expires_at` forward \u2014 which is what makes it the portal's \"stay\n     * signed in\" call. It sits in the patient group's `api` limiter, not the\nsign-in limiter, so a keep-alive cannot lock anyone out of signing in.",
+                "summary": "The current session's deadlines",
+                "tags": [
+                    "PatientPortal"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "idle_minutes": {
+                                                    "type": "integer"
+                                                },
+                                                "idle_expires_at": {
+                                                    "type": "string"
+                                                },
+                                                "expires_at": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "idle_minutes",
+                                                "idle_expires_at",
+                                                "expires_at"
+                                            ]
+                                        },
+                                        "meta": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "meta"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/patient/two-factor": {
+            "get": {
+                "operationId": "v1.patient.portal.two-factor.show",
+                "description": "`setup_required` is true when the install requires it and the account\ndoes not have it yet. `offered` is false only under the `off` policy for\nan account without it.",
+                "summary": "Two-step verification status for this account",
+                "tags": [
+                    "PatientPortal"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "policy": {
+                                                    "type": "string"
+                                                },
+                                                "enabled": {
+                                                    "type": "string"
+                                                },
+                                                "offered": {
+                                                    "type": "string"
+                                                },
+                                                "setup_required": {
+                                                    "type": "string"
+                                                },
+                                                "can_disable": {
+                                                    "type": "string"
+                                                },
+                                                "confirmed_at": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ]
+                                                },
+                                                "recovery_codes_remaining": {
+                                                    "type": "integer"
+                                                }
+                                            },
+                                            "required": [
+                                                "policy",
+                                                "enabled",
+                                                "offered",
+                                                "setup_required",
+                                                "can_disable",
+                                                "confirmed_at",
+                                                "recovery_codes_remaining"
+                                            ]
+                                        },
+                                        "meta": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "meta"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/patient/two-factor/setup": {
+            "post": {
+                "operationId": "v1.patient.portal.two-factor.setup",
+                "description": "Returns a new secret (for manual entry), its `otpauth://` URI, and a QR\ncode as an SVG data URI. Nothing changes until `confirm`. A first setup\nrequires `password`; replacing an existing authenticator requires `code` \u2014\na current code or a recovery code.",
+                "summary": "Start setting up an authenticator app",
+                "tags": [
+                    "PatientPortal"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "code": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 32
+                                    },
+                                    "password": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 255
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "anyOf": [
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "data": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "secret": {
+                                                            "type": "string"
+                                                        },
+                                                        "otpauth_uri": {
+                                                            "type": "string"
+                                                        },
+                                                        "qr_code": {
+                                                            "type": "string"
+                                                        },
+                                                        "expires_at": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "secret",
+                                                        "otpauth_uri",
+                                                        "qr_code",
+                                                        "expires_at"
+                                                    ]
+                                                },
+                                                "meta": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "data",
+                                                "meta"
+                                            ]
+                                        },
+                                        {
+                                            "type": "string"
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/patient/two-factor/confirm": {
+            "post": {
+                "operationId": "v1.patient.portal.two-factor.confirm",
+                "description": "Turns two-step verification on and returns eight recovery codes. They are\nshown ONCE \u2014 this is the only response that ever contains them.",
+                "summary": "Confirm setup with a code from the new authenticator",
+                "tags": [
+                    "PatientPortal"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "code": {
+                                        "type": "string",
+                                        "maxLength": 16
+                                    }
+                                },
+                                "required": [
+                                    "code"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "enabled": {
+                                                    "type": "boolean"
+                                                },
+                                                "recovery_codes": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "string"
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "enabled",
+                                                "recovery_codes"
+                                            ]
+                                        },
+                                        "meta": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "meta"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/patient/two-factor/recovery-codes": {
+            "post": {
+                "operationId": "v1.patient.portal.two-factor.recovery-codes",
+                "summary": "Replace every recovery code. Requires a current authenticator code (not a\nrecovery code). The new codes are returned once",
+                "tags": [
+                    "PatientPortal"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "code": {
+                                        "type": "string",
+                                        "maxLength": 32
+                                    }
+                                },
+                                "required": [
+                                    "code"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "recovery_codes": {
+                                                    "type": "array",
+                                                    "items": {}
+                                                }
+                                            },
+                                            "required": [
+                                                "recovery_codes"
+                                            ]
+                                        },
+                                        "meta": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "meta"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/patient/two-factor/disable": {
+            "post": {
+                "operationId": "v1.patient.portal.two-factor.disable",
+                "summary": "Turn two-step verification off. Requires the password AND a current code\n(authenticator or recovery). Signs out other sessions. 403 when the install\nrequires it",
+                "tags": [
+                    "PatientPortal"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "password": {
+                                        "type": "string",
+                                        "maxLength": 255
+                                    },
+                                    "code": {
+                                        "type": "string",
+                                        "maxLength": 32
+                                    }
+                                },
+                                "required": [
+                                    "password",
+                                    "code"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "anyOf": [
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "data": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "enabled": {
+                                                            "type": "boolean"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "enabled"
+                                                    ]
+                                                },
+                                                "meta": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "data",
+                                                "meta"
+                                            ]
+                                        },
+                                        {
+                                            "type": "string"
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
                     },
                     "401": {
                         "$ref": "#/components/responses/AuthenticationException"
@@ -8052,59 +8648,6 @@
                     },
                     "422": {
                         "$ref": "#/components/responses/ValidationException"
-                    },
-                    "401": {
-                        "$ref": "#/components/responses/AuthenticationException"
-                    }
-                }
-            }
-        },
-        "/patient/session": {
-            "get": {
-                "operationId": "v1.patient.portal.session",
-                "description": "`idle_expires_at` is when the session ends if it is not used again;\n`expires_at` is when it ends regardless. Calling this IS a use \u2014 it moves\n`idle_expires_at` forward \u2014 which is what makes it the portal's \"stay\n     * signed in\" call. It sits in the patient group's `api` limiter, not the\nsign-in limiter, so a keep-alive cannot lock anyone out of signing in.",
-                "summary": "The current session's deadlines",
-                "tags": [
-                    "PatientPortal"
-                ],
-                "responses": {
-                    "200": {
-                        "description": "",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "type": "object",
-                                            "properties": {
-                                                "idle_minutes": {
-                                                    "type": "integer"
-                                                },
-                                                "idle_expires_at": {
-                                                    "type": "string"
-                                                },
-                                                "expires_at": {
-                                                    "type": "string"
-                                                }
-                                            },
-                                            "required": [
-                                                "idle_minutes",
-                                                "idle_expires_at",
-                                                "expires_at"
-                                            ]
-                                        },
-                                        "meta": {
-                                            "type": "string"
-                                        }
-                                    },
-                                    "required": [
-                                        "data",
-                                        "meta"
-                                    ]
-                                }
-                            }
-                        }
                     },
                     "401": {
                         "$ref": "#/components/responses/AuthenticationException"
