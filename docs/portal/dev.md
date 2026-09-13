@@ -754,7 +754,7 @@ the screen that needs it most.
 | Upstream | What happened | What the client must do |
 |---|---|---|
 | **422** | The patient mistyped a value. Nothing was written. | Name the field. Let them fix it and resubmit. |
-| **5xx** | P0-7 — the provider inserts the row and *then* crashes. | **Never invite a retry.** The reading is probably saved; a second one duplicates it. |
+| **5xx** | The write may have committed before the failure (P0-7 did this on every call until PRX fixed it on its sandbox, 2026-09-13). | **Never invite a retry.** The reading may be saved; a second one duplicates it. |
 
 So `bootstrap/app.php` renders the exception for `api/*` requests: a 422's field-keyed `errors`
 array is passed through, 403/404/409/429 keep their status with a message of ours, and everything
