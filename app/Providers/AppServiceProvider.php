@@ -331,8 +331,10 @@ class AppServiceProvider extends ServiceProvider
         ));
 
         // General API limit — generous enough for a React SPA, tight enough to block scrapers.
+        // Keyed by account TYPE and id: operators and patients are separate tables,
+        // so a bare id would put User #5 and Patient #5 in one bucket.
         RateLimiter::for('api', fn (Request $request) => Limit::perMinute(120)->by(
-            $request->user()?->id ?? $request->ip()
+            $request->user() ? class_basename($request->user()).':'.$request->user()->getKey() : $request->ip()
         ));
     }
 }

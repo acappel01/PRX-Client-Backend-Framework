@@ -58,8 +58,8 @@ Registered in `AppServiceProvider::configureRateLimiters()`:
 
 | Limiter | Route group | Limit |
 |---|---|---|
-| `auth` | `/api/v1/auth/*` | 10 req/min per IP |
-| `api` | All authenticated routes | 120 req/min per user (IP fallback) |
+| `auth` | `POST /api/v1/auth/login` and the anonymous `/api/v1/patient/auth/*` routes | 10 req/min per IP |
+| `api` | All authenticated routes, including `auth/me` and `auth/logout` | 120 req/min per account — keyed by account type and id (`User:5`, `Patient:5`), IP fallback |
 
 ---
 
@@ -135,7 +135,9 @@ Public. Rate-limited to 10/min per IP.
 
 ### `POST /api/v1/auth/logout`
 
-Requires: `Authorization: Bearer {token}`
+Requires: `Authorization: Bearer {token}` from an **operator** (`operator` middleware — a patient or API-client token is a 401). Limited by the general per-account `api` limiter (120/min),
+**not** the 10/min-per-IP sign-in limiter — a 429 there left the token alive after the client had
+discarded it. Same for `me`.
 
 Revokes the **current token only**. Other tokens for the same user remain valid (useful when a user is logged in on multiple devices).
 
@@ -186,7 +188,7 @@ $middleware->alias([
 record of *who* agreed to be contacted, which is the evidence a TCPA or
 CAN-SPAM question is answered with. `$request->userAgent()` accompanies it in
 all three. The `api` rate limiter keys on the same address:
-`Limit::perMinute(120)->by($request->user()?->id ?? $request->ip())`.
+`$request->ip()` when no one is signed in (signed-in requests key on `User:<id>` / `Patient:<id>`).
 
 **Put a reverse proxy in front with nothing trusted here and all of that
 silently becomes the proxy.** Nothing errors. The rows still write and the

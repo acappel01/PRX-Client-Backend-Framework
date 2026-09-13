@@ -236,15 +236,18 @@ Route::prefix('v1')->name('api.v1.')->group(function (): void {
     });
 
     // ── Auth ────────────────────────────────────────────────────────────
-    // Token issue / revoke endpoints. Rate-limited to prevent brute-force.
+    // Operator tokens. Issuing one is rate-limited per IP to slow password guessing.
 
     Route::prefix('auth')->name('auth.')->middleware('throttle:auth')->group(function (): void {
         Route::post('login', LoginController::class)->name('login');
+    });
 
-        Route::middleware('auth:sanctum')->group(function (): void {
-            Route::post('logout', LogoutController::class)->name('logout');
-            Route::get('me', MeController::class)->name('me');
-        });
+    // Outside the sign-in limiter for the same reason as the patient pair below:
+    // a live token cannot guess a password, and a 429 on logout left the token
+    // alive after the client had discarded it.
+    Route::prefix('auth')->name('auth.')->middleware(['auth:sanctum', 'operator', 'throttle:api'])->group(function (): void {
+        Route::post('logout', LogoutController::class)->name('logout');
+        Route::get('me', MeController::class)->name('me');
     });
 
     // ── Orders ───────────────────────────────────────────────────────────

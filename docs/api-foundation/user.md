@@ -71,8 +71,8 @@ The React app uses this to render the site header (logo, name), apply theme colo
 
 | Endpoint group | Limit |
 |---|---|
-| `/api/v1/auth/*` | 10 requests per minute per IP |
-| All authenticated routes | 120 requests per minute per user |
+| Signing in (`/api/v1/auth/login`, patient sign-in) | 10 requests per minute per IP |
+| All authenticated routes, including sign-out | 120 requests per minute per account |
 
 If you exceed the limit you'll receive a `429 Too Many Requests` response. Retry after the `Retry-After` header value (seconds).
 

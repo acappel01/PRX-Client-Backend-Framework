@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\AssignRequestId;
+use App\Http\Middleware\EnsureOperatorToken;
 use App\Http\Middleware\EnsurePatientToken;
 use App\Http\Middleware\EnsurePatientTwoFactorEnrolled;
 use App\Http\Middleware\NoStorePhiResponse;
@@ -41,6 +42,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->alias([
             'patient' => EnsurePatientToken::class,
+            'operator' => EnsureOperatorToken::class,
             'patient.2fa' => EnsurePatientTwoFactorEnrolled::class,
             'no-store' => NoStorePhiResponse::class,
         ]);
