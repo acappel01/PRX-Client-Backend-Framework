@@ -97,6 +97,24 @@ Email and URL fields are validated. Country code is the ISO 3166-1 alpha-2 code 
 
 **Queued mail picks up a change after a worker restart.** Plan emails are sent by the background queue, which read these settings when it started; ask whoever runs the server to restart it (`php artisan horizon:terminate`) after changing the sender or reply-to. Record-linking emails are sent immediately and use the new values at once.
 
+#### Where every email setting lives
+
+Admin settings win over the server file (`.env`); a blank admin field falls through to the next fallback in the same row, ending at the server column. Server-file values need someone with server access, then a Horizon restart.
+
+| What | Set it in the admin | Server fallback (`.env`) | Elsewhere |
+|---|---|---|---|
+| Whether anything sends | Settings → Communication → **Send email** | — (off until switched on) | Also counts as off: no Provider chosen while the server mailer is `log` or `array`, which accept mail and deliver nothing |
+| Which service sends | Settings → Communication → **Provider** + credentials | `MAIL_MAILER`, `MAILGUN_DOMAIN`, `MAILGUN_SECRET`, … | Sending domain verified in the provider's dashboard (SPF/DKIM DNS records) |
+| From address | Settings → Communication → **From address** | `MAIL_FROM_ADDRESS` | Must be on the verified sending domain |
+| From name | Settings → Communication → **From name**, else Settings → Brand → **Brand name** | `MAIL_FROM_NAME` | |
+| Reply-to address | Settings → Communication → **Reply-to address**, else Settings → Contact → **Support email** | `MAIL_REPLY_TO_ADDRESS` | If the reply address is on a domain whose MX records point at the provider, the provider receives its mail: add an inbound **route** there (Mailgun: Receiving → Routes) forwarding it to a real inbox, or replies are dropped |
+| Reply-to name | Settings → Communication → **Reply-to name** | `MAIL_REPLY_TO_NAME` | |
+| Which integration sends portal mail | Automation → **Integrations**: exactly one integration switched **On** (Enabled) offering transactional email | — | The same one-only rule applies to workflow email steps that don't name an integration |
+| Link in the plan email | — | `CMS_FRONTEND_URL` | Unset: the email still sends, but its link points at the admin, not the site |
+| Link in the record-linking email | — | `PATIENT_PORTAL_URL` | Unset: no link is sent; the portal is told email is unavailable |
+
+Mail the provider receives for a no-reply address is not forwarded anywhere unless a route says so. That is the intent for a no-reply, but a route that forwards it to support (or auto-answers "this inbox isn't monitored") catches patients who reply to the From address anyway.
+
 ### SEO & Analytics
 
 | Field | Notes |
