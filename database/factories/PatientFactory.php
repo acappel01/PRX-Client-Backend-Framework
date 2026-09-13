@@ -35,6 +35,9 @@ class PatientFactory extends Factory
         return $this->state(fn () => [
             'prx_patient_chart_id' => fake()->uuid(),
             'prx_patient_id' => fake()->uuid(),
+            // Set, so minting a token in a test does not look it up from the
+            // provider. ProviderIdentifiersTest covers the lookup explicitly.
+            'prx_patient_number' => 'PAT-'.fake()->unique()->numerify('##########'),
             'prx_chart_verified_at' => now(),
         ]);
     }
