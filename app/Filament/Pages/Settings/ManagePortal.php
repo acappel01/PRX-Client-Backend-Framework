@@ -38,6 +38,30 @@ class ManagePortal extends BaseSettingsPage
     {
         return $schema
             ->components([
+                Section::make('Sessions')
+                    ->description('How long a patient stays signed in to the portal. A shorter value applies to patients already signed in on their next request; a longer maximum applies from their next sign-in.')
+                    ->columns(2)
+                    ->components([
+                        TextInput::make('session_idle_minutes')
+                            ->label('Sign out after inactivity')
+                            ->numeric()
+                            ->integer()
+                            ->required()
+                            ->minValue(PortalSettingsData::IDLE_MIN_MINUTES)
+                            ->maxValue(PortalSettingsData::IDLE_MAX_MINUTES)
+                            ->suffix('minutes')
+                            ->helperText('A session unused for this long ends. The portal warns two minutes before. 5 to 240.'),
+                        TextInput::make('session_max_hours')
+                            ->label('Always sign out after')
+                            ->numeric()
+                            ->integer()
+                            ->required()
+                            ->minValue(PortalSettingsData::MAX_MIN_HOURS)
+                            ->maxValue(PortalSettingsData::MAX_MAX_HOURS)
+                            ->suffix('hours')
+                            ->helperText('Every session ends this long after sign-in, however active. 1 to 720.'),
+                    ]),
+
                 Section::make('Security history')
                     ->description('Every sign-in, failed sign-in, sign-out and account change is recorded with the IP address and browser it came from. Patients see their own history in the portal; operators see it on the patient record.')
                     ->components([

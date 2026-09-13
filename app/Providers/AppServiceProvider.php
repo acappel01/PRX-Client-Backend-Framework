@@ -35,6 +35,7 @@ use App\Services\Cms\FrontendRevalidator;
 use App\Services\Cms\PageRevisionService;
 use App\Services\Cms\SectionRegistry;
 use App\Services\Mail\MailConfigurator;
+use App\Services\Patient\PatientSessionLifetime;
 use App\Services\Payments\PaymentGatewayManager;
 use App\Settings\BrandSettings;
 use Awcodes\Curator\Config\GlideManager;
@@ -51,6 +52,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
+use Laravel\Sanctum\PersonalAccessToken;
+use Laravel\Sanctum\Sanctum;
 use League\Flysystem\Filesystem;
 use League\Flysystem\Local\LocalFilesystemAdapter;
 use League\Flysystem\Visibility;
@@ -73,6 +76,13 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->configureRateLimiters();
         $this->configureApiDocs();
+
+        // Patient sessions end after the portal's idle limit and absolute cap.
+        // Every token passes through this after Sanctum's own checks; only
+        // patient tokens are judged. See PatientSessionLifetime.
+        Sanctum::authenticateAccessTokensUsing(
+            static fn (PersonalAccessToken $token, bool $isValid): bool => app(PatientSessionLifetime::class)->allows($token, $isValid)
+        );
         $this->configureCmsObservers();
         $this->configureBrandMailFrom();
         $this->configureMailProvider();

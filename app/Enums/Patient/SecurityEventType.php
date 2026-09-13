@@ -16,6 +16,7 @@ enum SecurityEventType: string
     case LoginSucceeded = 'login_succeeded';
     case LoginFailed = 'login_failed';
     case Logout = 'logout';
+    case SessionExpired = 'session_expired';
     case SessionsRevoked = 'sessions_revoked';
     case ClaimLinkSent = 'claim_link_sent';
     case ResetLinkSent = 'reset_link_sent';
@@ -37,6 +38,7 @@ enum SecurityEventType: string
             self::LoginSucceeded => 'Signed in',
             self::LoginFailed => 'Sign-in attempt failed',
             self::Logout => 'Signed out',
+            self::SessionExpired => 'Signed out automatically',
             self::SessionsRevoked => 'Signed out of other sessions',
             self::ClaimLinkSent => 'Link to connect a record sent',
             self::ResetLinkSent => 'Password reset link sent',

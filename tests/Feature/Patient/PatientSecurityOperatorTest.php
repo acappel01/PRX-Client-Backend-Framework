@@ -159,12 +159,15 @@ class PatientSecurityOperatorTest extends TestCase
         $this->actingAs($this->operator);
 
         Livewire::test(ManagePortal::class)
-            ->assertFormSet(['security_events_retention_days' => 730])
-            ->fillForm(['security_events_retention_days' => 400])
+            ->assertFormSet(['security_events_retention_days' => 730, 'session_idle_minutes' => 30, 'session_max_hours' => 12])
+            ->fillForm(['security_events_retention_days' => 400, 'session_idle_minutes' => 15, 'session_max_hours' => 8])
             ->call('save')
             ->assertHasNoFormErrors();
 
-        $this->assertSame(400, app(PortalSettings::class)->refresh()->security_events_retention_days);
+        $stored = app(PortalSettings::class)->refresh();
+        $this->assertSame(400, $stored->security_events_retention_days);
+        $this->assertSame(15, $stored->session_idle_minutes);
+        $this->assertSame(8, $stored->session_max_hours);
     }
 
     public function test_the_retention_setting_refuses_values_outside_its_bounds(): void
@@ -179,5 +182,18 @@ class PatientSecurityOperatorTest extends TestCase
         }
 
         $this->assertSame(730, app(PortalSettings::class)->refresh()->security_events_retention_days);
+
+        foreach (['session_idle_minutes' => [4, 241], 'session_max_hours' => [0, 721]] as $field => $values) {
+            foreach ($values as $value) {
+                Livewire::test(ManagePortal::class)
+                    ->fillForm([$field => $value])
+                    ->call('save')
+                    ->assertHasFormErrors([$field]);
+            }
+        }
+
+        $stored = app(PortalSettings::class)->refresh();
+        $this->assertSame(30, $stored->session_idle_minutes);
+        $this->assertSame(12, $stored->session_max_hours);
     }
 }

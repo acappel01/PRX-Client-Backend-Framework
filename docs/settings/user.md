@@ -14,7 +14,7 @@ The Settings area at `/admin/settings/*` controls the brand, look, contact info,
 | **Theme** | `/admin/settings/theme` | Primary / accent / background / text colors, display & body fonts |
 | **Contact** | `/admin/settings/contact` | Support & sales emails, phone, mailing address, business hours, social links |
 | **Communication** | `/admin/settings/communication` | Whether email sends, mail provider, From and Reply-to addresses; Twilio SMS/voice; video consults |
-| **Patient portal** | `/admin/settings/portal` | How long patients' sign-in and account security history is kept |
+| **Patient portal** | `/admin/settings/portal` | How long patients stay signed in, and how long their security history is kept |
 | **SEO & Analytics** | `/admin/settings/seo` | Default meta title & description, OG image, Google Analytics, Tag Manager, Facebook Pixel, search-engine indexing toggle |
 
 ## How to edit
@@ -120,6 +120,12 @@ Mail the provider receives for a no-reply address is not forwarded anywhere unle
 
 ### Patient portal
 
+- **Sign out after inactivity** — minutes, 5 to 240, default 30. A patient session unused for this long
+  ends; the portal warns two minutes before. Shortening it applies to patients already signed in.
+- **Always sign out after** — hours, 1 to 720, default 12. Every session ends this long after sign-in,
+  however active. Shortening applies at once; lengthening applies from the next sign-in.
+  These defaults match NIST's guidance for two-factor accounts. Whatever you choose, state it in your
+  security policy.
 - **Keep security history for** — days, 30 to 2555, default 730 (two years). Every patient sign-in,
   failed sign-in, sign-out and account change is recorded with the IP address and browser it came
   from. Entries older than this are deleted every night. IP addresses identify people, so keep

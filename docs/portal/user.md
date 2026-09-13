@@ -51,6 +51,20 @@ Accounts registered the old way (before 2026-09-13) still sign in normally. If s
 was registered by someone other than the inbox owner, the real owner can take it over with
 **Forgot password**: the reset proves their inbox and signs everyone else out.
 
+## How long patients stay signed in
+
+A patient is signed out of the portal automatically after **30 minutes without using it**, and
+always **12 hours after signing in**, however active. Two minutes before the inactivity limit the
+portal asks "Still there?" with a **Stay signed in** button; typing in a form counts as activity. After
+an automatic sign-out the sign-in page explains why. Both limits are set under
+**Settings → Patient portal → Sessions**. A shorter value applies to patients already signed in; a
+longer maximum applies from their next sign-in. If you change them, update your written security
+policy to match — auditors check that the two agree.
+
+| The patient says | What to do |
+|---|---|
+| "It keeps signing me out" | Expected after 30 minutes idle or 12 hours. Tell them about the **Stay signed in** prompt. |
+
 ## Sign-in activity and signing a patient out
 
 Every sign-in to a patient account is recorded — with the time, the IP address and the browser —

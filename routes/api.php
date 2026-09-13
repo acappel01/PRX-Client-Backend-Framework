@@ -351,6 +351,7 @@ Route::prefix('v1')->name('api.v1.')->group(function (): void {
         // The account's own security history. Not clinical, but it is who
         // signed in from where, so it lives behind `no-store` like the rest.
         Route::get('security/events', [PatientSecurityController::class, 'events'])->name('security.events');
+        Route::get('session', [PatientSecurityController::class, 'session'])->name('session');
 
         Route::get('home', [PortalController::class, 'home'])->name('home');
         Route::get('dashboard', [PortalController::class, 'dashboard'])->name('dashboard');

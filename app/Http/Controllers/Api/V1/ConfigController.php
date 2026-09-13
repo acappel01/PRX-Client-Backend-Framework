@@ -6,6 +6,7 @@ use App\Services\Telehealth\TelehealthManager;
 use App\Settings\BillingSettings;
 use App\Settings\BrandSettings;
 use App\Settings\ContactSettings;
+use App\Settings\PortalSettings;
 use App\Settings\SeoSettings;
 use App\Settings\ThemeSettings;
 use Illuminate\Http\JsonResponse;
@@ -41,9 +42,10 @@ class ConfigController extends ApiController
         ContactSettings $contact,
         SeoSettings $seo,
         BillingSettings $billing,
+        PortalSettings $portal,
         TelehealthManager $telehealth,
     ): JsonResponse {
-        $config = Cache::remember('api.v1.config', (int) config('api.config_ttl', 300), function () use ($brand, $theme, $contact, $seo, $billing, $telehealth): array {
+        $config = Cache::remember('api.v1.config', (int) config('api.config_ttl', 300), function () use ($brand, $theme, $contact, $seo, $billing, $portal, $telehealth): array {
             $provider = $telehealth->provider();
 
             return [
@@ -148,6 +150,14 @@ class ConfigController extends ApiController
                     'upsells' => [
                         'enabled' => $billing->upsells_enabled,
                         'limit' => $billing->upsells_limit,
+                    ],
+                ],
+                'portal' => [
+                    // Public on purpose: the portal warns before the idle limit,
+                    // and knowing it gives nobody anything a session doesn't.
+                    'session' => [
+                        'idle_minutes' => $portal->session_idle_minutes,
+                        'max_hours' => $portal->session_max_hours,
                     ],
                 ],
                 'provider' => [

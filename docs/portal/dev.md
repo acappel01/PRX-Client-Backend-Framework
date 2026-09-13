@@ -435,6 +435,7 @@ carries the user agent next to the IP inside its encrypted payload.
 | `login_succeeded` | `LoginPatientAction` | patient | `token_id` = the session it opened |
 | `login_failed` | `LoginPatientAction` | anonymous | `context.reason` = `unknown_account` / `bad_password`; unknown address has no patient, only `subject_hash` |
 | `logout` | `LogoutPatientAction` | patient | `token_id` = the session ended |
+| `session_expired` | `PatientSessionLifetime` | system | `context.reason` = `idle` / `max_age`; see "Session lifetime" |
 | `sessions_revoked` | reset, first claim, `RevokePatientSessionsAction` | varies | `context.revoked` = count, `context.reason`; written only when a reset or claim actually ended one |
 | `claim_link_sent` | `RequestClaimLinkAction` | patient | only when a link actually went out |
 | `reset_link_sent` / `create_account_link_sent` | `RequestAccountLinkAction` (queued) | anonymous | create has no patient, only `subject_hash` |
@@ -514,8 +515,7 @@ Found on the way and fixed: the patient **view** page had thrown since it was ad
 **Reserved for later increments** (names only, not built): `two_factor_enrolled`,
 `two_factor_removed`, `two_factor_challenge_failed`, `recovery_code_used`, `device_trusted`,
 `device_revoked`, `step_up_succeeded`. Trusted devices must be revoked on password change and first
-verification when they exist. Sanctum patient tokens still never expire (`sanctum.expiration`
-null) — do not build trusted devices on "sessions end".
+verification when they exist. Patient sessions now end — see "Session lifetime".
 
 **Deploy:** `php artisan migrate` (table + settings row), `php artisan horizon:terminate`
 (`SendAccountLinkJob` gained a constructor argument), Shield ritual for `ManagePortal`. A
@@ -524,6 +524,49 @@ null) — do not build trusted devices on "sessions end".
 
 Not covered by tests: the IP and user agent on observer and "Sign out everywhere" events — the
 observer passes no client while `runningInConsole()`, which PHPUnit is. Verified live instead.
+
+## Session lifetime
+
+**Added 2026-09-13.** Before this a patient session never ended: `sanctum.expiration` is null, no
+patient token had `expires_at`, and the portal cookie has no max-age. Now a patient token is refused
+after **30 minutes unused** or **12 hours after sign-in**, whichever comes first (`PortalSettings::
+session_idle_minutes` / `session_max_hours`, Settings → Patient portal; bounds 5–240 min and 1–720 h,
+no "never"). Operator's decision; the defaults are NIST SP 800-63B rev 3 AAL2 reauthentication.
+HIPAA §164.312(a)(2)(iii) automatic logoff names no number — the install's written security policy
+should state these values, because that is what an auditor compares.
+
+`App\Services\Patient\PatientSessionLifetime`, registered with
+`Sanctum::authenticateAccessTokensUsing()` in `AppServiceProvider`:
+
+- **Only patient tokens are judged** (`tokenable_type`). The global `sanctum.expiration` was not used:
+  it would also expire the storefront's machine tokens.
+- **Both limits read the current settings**, so shortening either reaches live sessions on their next
+  request. `expires_at` is also stamped at issue (`LoginPatientAction`, `CreatePatientAccountAction`)
+  so `sanctum:prune-expired` removes abandoned tokens — which means **lengthening the cap reaches only
+  sessions signed in afterwards**.
+- Idle is measured from `last_used_at` (Sanctum sets it on every accepted request, never on a refused
+  one), falling back to `created_at`.
+- Sanctum refuses a token past its stamped `expires_at` **before** the callback runs; the callback
+  still recognises that case, so it is recorded rather than a silent 401.
+- An expired token is deleted with a conditional delete and one `session_expired` event is written
+  (`actor: system`, `context.reason` = `idle` / `max_age`). Concurrent requests on the same token
+  cannot double-record; this is pinned by reasoning, not by a concurrency test.
+
+`GET /patient/session` returns `{idle_minutes, idle_expires_at, expires_at}` and, being an
+authenticated request, **is itself a use** — it is the portal's keep-alive. It lives in the patient
+group's `api` limiter, not `throttle:auth`, so keep-alives cannot lock anyone out of signing in.
+`/config` publishes `portal.session.{idle_minutes, max_hours}` (not secret) so the portal can warn
+before the idle limit; `UpdatePortalSettingsAction` invalidates the config cache.
+
+**Deploy:** `php artisan migrate` (two settings rows) — **before** the code, on a host that serves its
+working tree: `PortalSettings` throws `MissingSettings` for a declared property with no row, which
+500s `/config` and every signed-in patient request (it did, for 4 minutes, on 2026-09-13). Existing
+patient tokens have no `expires_at` and are judged on the settings: any idle over 30 minutes or older
+than 12 hours ends on its next use. They are not removed until presented — `sanctum:prune-expired`
+only sees stamped tokens.
+
+The `session_expired` event carries the IP and user agent of the request that presented the dead
+token (operators see it; the patient resource strips it on system events).
 
 ## Endpoints
 
@@ -534,6 +577,7 @@ observer passes no client while `runningInConsole()`, which PHPUnit is. Verified
 | `POST /patient/auth/create-account` | anonymous | `{token, password}`. 201 with a session; 422 `errors.token`. |
 | `POST /patient/auth/password/reset` | anonymous | `{token, password}`. 200, no session; every session revoked. |
 | `POST /patient/claim-links` | **none** | Account, not clinical. Empty body; uniform 202; 503 when this install cannot send; 429 over 3/hour. Emails the order's address. |
+| `GET /patient/session` | **none** | Current session's `idle_expires_at` / `expires_at`. Counts as use — the portal's keep-alive. |
 | `GET /patient/security/events` | **none** | The account's own security history. `?limit=` 1–100. `meta.retention_days`. See "Security history". |
 | `POST /patient/claim` | **none** | `{token}`. 200 with the patient; 422 `errors.token`. Links the record and verifies the address in one transaction. |
 | `GET /patient/home` | patient | **Screen-shaped and server-ranked.** One call, not six. |

@@ -191,7 +191,10 @@ Why the split: From must sit on the provider-verified sending domain or SPF/DKIM
 
 ## Patient portal settings (2026-09-13)
 
-Group `portal`, one key: `security_events_retention_days` (int, default 730). `PortalSettings` →
+Group `portal`: `security_events_retention_days` (int, default 730), `session_idle_minutes` (int,
+default 30, 5–240), `session_max_hours` (int, default 12, 1–720). The two session keys are enforced by
+`PatientSessionLifetime` and published in `/config` as `portal.session`, so the action invalidates the
+config cache. `PortalSettings` →
 `PortalSettingsData` (`Between(30, 2555)`, constants on the DTO) → `UpdatePortalSettingsAction` →
 `ManagePortal` at `/admin/settings/portal`. Read by `PatientSecurityEvent::prunable()`, which also
 floors it at 30 whatever is stored, and returned to the portal as `meta.retention_days` on

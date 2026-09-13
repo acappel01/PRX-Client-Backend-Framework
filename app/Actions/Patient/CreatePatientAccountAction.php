@@ -11,6 +11,7 @@ use App\Events\Patient\RecordClaimed;
 use App\Models\Patient;
 use App\Models\PatientEmailToken;
 use App\Services\Patient\PatientSecurityLog;
+use App\Services\Patient\PatientSessionLifetime;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -52,6 +53,7 @@ class CreatePatientAccountAction
     public function __construct(
         private readonly LinkPatientToPrxChartAction $link,
         private readonly PatientSecurityLog $log,
+        private readonly PatientSessionLifetime $lifetime,
     ) {}
 
     /**
@@ -124,7 +126,7 @@ class CreatePatientAccountAction
             throw $this->rekeyed($e);
         }
 
-        $session = $patient->createToken($deviceName, ['patient:*']);
+        $session = $patient->createToken($deviceName, ['patient:*'], $this->lifetime->expiresAt());
 
         // No separate `email_verified`: an account created by the link is
         // verified by being created.

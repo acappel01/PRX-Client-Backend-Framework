@@ -7,6 +7,7 @@ use App\Enums\Patient\SecurityEventActor;
 use App\Enums\Patient\SecurityEventType;
 use App\Models\Patient;
 use App\Services\Patient\PatientSecurityLog;
+use App\Services\Patient\PatientSessionLifetime;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Support\Facades\Hash;
 
@@ -31,7 +32,10 @@ use Illuminate\Support\Facades\Hash;
  */
 class LoginPatientAction
 {
-    public function __construct(private readonly PatientSecurityLog $log) {}
+    public function __construct(
+        private readonly PatientSecurityLog $log,
+        private readonly PatientSessionLifetime $lifetime,
+    ) {}
 
     /**
      * @return array{patient: Patient, token: string}
@@ -56,7 +60,7 @@ class LoginPatientAction
         // `patient:*`, the same as every other patient session. It was `['*']`,
         // which nothing checks today (EnsurePatientToken tests the model type),
         // but a token that claims every ability is one refactor from meaning it.
-        $session = $patient->createToken($deviceName, ['patient:*']);
+        $session = $patient->createToken($deviceName, ['patient:*'], $this->lifetime->expiresAt());
 
         $this->log->record(
             SecurityEventType::LoginSucceeded,
