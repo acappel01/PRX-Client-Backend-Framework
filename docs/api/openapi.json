@@ -9442,6 +9442,16 @@
                             "minimum": 1,
                             "maximum": 200
                         }
+                    },
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "description": "A poll asks \"what is newer than this\"; a page asks \"what is older\".\nBoth at once has no single meaning, so it is refused, not guessed.",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 10000
+                        }
                     }
                 ],
                 "responses": {
@@ -9450,19 +9460,51 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "type": "array",
-                                            "items": {}
+                                    "anyOf": [
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "data": {
+                                                    "type": "array",
+                                                    "items": {}
+                                                },
+                                                "meta": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "current_page": {
+                                                            "type": "string"
+                                                        },
+                                                        "last_page": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "current_page",
+                                                        "last_page"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "data",
+                                                "meta"
+                                            ]
                                         },
-                                        "meta": {
-                                            "type": "string"
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "data": {
+                                                    "type": "array",
+                                                    "items": {}
+                                                },
+                                                "meta": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "data",
+                                                "meta"
+                                            ]
                                         }
-                                    },
-                                    "required": [
-                                        "data",
-                                        "meta"
                                     ]
                                 }
                             }

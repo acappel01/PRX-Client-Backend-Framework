@@ -197,9 +197,39 @@ class ProvideInformationTest extends TestCase
         Sanctum::actingAs(Patient::factory()->create(['prx_patient_chart_id' => null]), ['*']);
         $this->fake($this->requirements());
 
-        $this->getJson('/api/v1/patient/encounters/'.self::ENCOUNTER.'/requirements')->assertStatus(409);
+        // The code is what lets the portal say "connect your record" without
+        // reading every 409 that way — the provider's own conflicts are 409s too.
+        $this->getJson('/api/v1/patient/encounters/'.self::ENCOUNTER.'/requirements')
+            ->assertStatus(409)
+            ->assertJsonPath('code', 'no_linked_chart');
 
         Http::assertNothingSent();
+    }
+
+    /**
+     * Each request may carry 40 MB this server buffers and relays, so the
+     * general 120/min limit bounds nothing. The eleventh inside ten minutes is
+     * refused before it is relayed anywhere.
+     */
+    public function test_sending_is_limited_per_account(): void
+    {
+        $this->fake(['success' => true, 'data' => ['released' => true, 'missing' => []]]);
+
+        for ($i = 0; $i < 10; $i++) {
+            $this->post('/api/v1/patient/encounters/'.self::ENCOUNTER.'/provide-information', ['drivers_license_state' => 'TX'], ['Accept' => 'application/json'])
+                ->assertOk();
+        }
+
+        $sent = count(Http::recorded());
+
+        $this->post('/api/v1/patient/encounters/'.self::ENCOUNTER.'/provide-information', ['drivers_license_state' => 'TX'], ['Accept' => 'application/json'])
+            ->assertTooManyRequests();
+
+        $this->assertCount($sent, Http::recorded());
+
+        // Reading what is needed is not an upload and stays unaffected.
+        $this->fake($this->requirements());
+        $this->getJson('/api/v1/patient/encounters/'.self::ENCOUNTER.'/requirements')->assertOk();
     }
 
     public function test_the_label_setting_saves_only_real_slugs_and_plain_text(): void

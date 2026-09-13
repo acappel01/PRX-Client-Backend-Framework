@@ -31,6 +31,14 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->appendToGroup('api', VerifyApiClientOrigin::class);
         $middleware->appendToGroup('api', AssignRequestId::class);
 
+        // An unauthenticated API caller gets a 401, never a redirect. Laravel's
+        // default guest redirect is `route('login')`, computed EAGERLY inside the
+        // authenticator whenever the request does not ask for JSON — and this
+        // app defines no `login` route, so a request without `Accept:
+        // application/json` became a 500 before any renderer ran. Outside the
+        // API the default is kept exactly as it was.
+        $middleware->redirectGuestsTo(fn (Request $request) => $request->is('api/*') ? null : route('login'));
+
         $middleware->alias([
             'patient' => EnsurePatientToken::class,
             'patient.2fa' => EnsurePatientTwoFactorEnrolled::class,
@@ -63,6 +71,17 @@ return Application::configure(basePath: dirname(__DIR__))
         );
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        // The API answers in JSON whatever the caller put in `Accept`: a 401 on
+        // a missing token (with `redirectGuestsTo` above — reproduced as a 500
+        // "Route [login] not defined" on the live admin 2026-09-13), and a 422
+        // rather than a 302 back to a page on a validation failure. This also
+        // covers the two `api/*` paths registered in routes/web.php (the embed
+        // completion callback and the provider webhook): machine callers, so a
+        // CSRF 419 or signature failure there is now JSON too.
+        $exceptions->shouldRenderJsonWhen(
+            fn (Request $request, Throwable $e) => $request->is('api/*') || $request->expectsJson()
+        );
+
         // Every upstream failure arrives here as one exception type, and until
         // now every one of them rendered as a bare 500 "Server Error". That
         // collapsed two outcomes a client MUST tell apart:

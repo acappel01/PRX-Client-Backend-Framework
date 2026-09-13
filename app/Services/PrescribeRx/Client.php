@@ -394,8 +394,9 @@ class Client
     /**
      * Messages in one of the patient's conversations.
      *
-     * Without `after`: a page, newest first. With `after` (a message id from this
-     * conversation, or an ISO-8601 time — second-granular, so prefer the id):
+     * Without `after`: a page, newest first — use `getConversationMessagesPage()`
+     * when the caller needs to know which page. With `after` (a message id from
+     * this conversation, or an ISO-8601 time — second-granular, so prefer the id):
      * `{messages: [...oldest first], count, latest_cursor, has_more}`, where
      * `latest_cursor` is null when nothing is new, so a poller must keep its
      * previous cursor.
@@ -414,6 +415,43 @@ class Client
                 array_intersect_key($query, array_flip(['after', 'per_page']))
             )
         );
+    }
+
+    /**
+     * One page of a conversation, newest first, with where it sits.
+     *
+     * The page is the only request that carries a position: the provider has no
+     * `before` cursor, so "load older" is page numbers, and `extractData()`
+     * drops the `meta.pagination` block that says how many pages there are.
+     * Pages are OFFSET-based — a message arriving between two requests shifts
+     * every row one place older — so a caller stitching pages together must
+     * de-duplicate by id.
+     *
+     * @return array{messages: array<int, mixed>, current_page: int, last_page: int}
+     */
+    public function getConversationMessagesPage(string $patientToken, string $conversationId, int $page = 1, ?int $perPage = null): array
+    {
+        if (config('prescribe-rx.stub')) {
+            return ['messages' => [], 'current_page' => 1, 'last_page' => 1];
+        }
+
+        $response = $this->patientRequest($patientToken)->get(
+            "/me/patient/conversations/{$conversationId}/messages",
+            // Page 1 is the provider's default and is not sent, so the first
+            // request is byte-identical to what it was before pages existed.
+            array_filter(['page' => $page > 1 ? $page : null, 'per_page' => $perPage], fn ($value) => $value !== null)
+        );
+
+        $messages = $this->extractData($response);
+        $pagination = $response->json('meta.pagination');
+
+        return [
+            'messages' => array_is_list($messages) ? $messages : [],
+            'current_page' => (int) ($pagination['current_page'] ?? $page),
+            // Absent pagination reads as "this is the last page": offering a
+            // "Load older" that returns nothing is worse than not offering it.
+            'last_page' => (int) ($pagination['last_page'] ?? $page),
+        ];
     }
 
     /**

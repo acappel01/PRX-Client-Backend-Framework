@@ -320,11 +320,17 @@ Route::prefix('v1')->name('api.v1.')->group(function (): void {
         // plus a code, for a session. Anonymous; `throttle:auth` per IP here,
         // and a per-challenge and per-account limit inside the action.
         Route::post('two-factor', [PatientAuthController::class, 'twoFactor'])->name('two-factor');
+    });
 
-        Route::middleware(['auth:sanctum', 'patient'])->group(function (): void {
-            Route::post('logout', [PatientAuthController::class, 'logout'])->name('logout');
-            Route::get('me', [PatientAuthController::class, 'me'])->name('me');
-        });
+    // Signed-in account calls: OUTSIDE `throttle:auth`. That limiter is 10/min
+    // per IP and exists to slow credential guessing, which these cannot do —
+    // they need a live token. Inside it, a clinic's patients behind one NAT
+    // shared a bucket with every sign-in attempt, and a 429 on logout left the
+    // token alive while the portal had already dropped its cookie (seen in the
+    // 2FA end-to-end run, 2026-09-13). `throttle:api` is per account.
+    Route::prefix('patient/auth')->name('patient.auth.')->middleware(['no-store', 'auth:sanctum', 'patient', 'throttle:api'])->group(function (): void {
+        Route::post('logout', [PatientAuthController::class, 'logout'])->name('logout');
+        Route::get('me', [PatientAuthController::class, 'me'])->name('me');
     });
 
     // ── Patient Portal ────────────────────────────────────────────────────
@@ -392,7 +398,7 @@ Route::prefix('v1')->name('api.v1.')->group(function (): void {
         Route::post('conversations/{conversationId}/messages', [PortalController::class, 'sendMessage'])->whereUuid('conversationId')->name('conversations.messages.store');
         Route::post('encounters/{encounterId}/conversation', [PortalController::class, 'openConversation'])->whereUuid('encounterId')->name('encounters.conversation.store');
         Route::get('encounters/{encounterId}/requirements', [PortalController::class, 'encounterRequirements'])->whereUuid('encounterId')->name('encounters.requirements');
-        Route::post('encounters/{encounterId}/provide-information', [PortalController::class, 'provideInformation'])->whereUuid('encounterId')->name('encounters.provide-information');
+        Route::post('encounters/{encounterId}/provide-information', [PortalController::class, 'provideInformation'])->whereUuid('encounterId')->middleware('throttle:upload')->name('encounters.provide-information');
         Route::get('scheduling/slots', [PortalController::class, 'availabilitySlots'])->name('scheduling.slots');
         Route::post('scheduling/appointments', [PortalController::class, 'bookAppointment'])->name('scheduling.appointments.store');
     });

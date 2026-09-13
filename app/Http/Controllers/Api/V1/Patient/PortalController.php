@@ -303,18 +303,32 @@ class PortalController extends ApiController
                 }
             }],
             'per_page' => ['sometimes', 'integer', 'between:1,200'],
+            // A poll asks "what is newer than this"; a page asks "what is older".
+            // Both at once has no single meaning, so it is refused, not guessed.
+            'page' => ['sometimes', 'integer', 'between:1,10000', 'prohibits:after'],
         ]);
         $patient = $request->user();
-        $query = array_filter([
-            'after' => $validated['after'] ?? null,
-            'per_page' => isset($validated['per_page']) ? (int) $validated['per_page'] : null,
-        ], fn ($value) => $value !== null);
+        $perPage = isset($validated['per_page']) ? (int) $validated['per_page'] : null;
+
+        if (isset($validated['after'])) {
+            $query = array_filter(['after' => $validated['after'], 'per_page' => $perPage], fn ($value) => $value !== null);
+
+            return $this->success($this->filter->apply(
+                'messages-poll',
+                $this->withPatientToken($patient, fn ($t) => $this->prx->getConversationMessages($t, $conversationId, $query))
+            ));
+        }
+
+        // `data` stays the bare list it always was; where the page sits goes in
+        // `meta`, so a caller that never asks for page 2 sees no change.
+        $page = $this->withPatientToken(
+            $patient,
+            fn ($t) => $this->prx->getConversationMessagesPage($t, $conversationId, (int) ($validated['page'] ?? 1), $perPage)
+        );
 
         return $this->success(
-            $this->filter->apply(
-                isset($query['after']) ? 'messages-poll' : 'messages',
-                $this->withPatientToken($patient, fn ($t) => $this->prx->getConversationMessages($t, $conversationId, $query))
-            )
+            $this->filter->apply('messages', $page['messages']),
+            ['current_page' => $page['current_page'], 'last_page' => $page['last_page']]
         );
     }
 
@@ -603,7 +617,9 @@ class PortalController extends ApiController
     {
         if (! $patient->hasPrxChart()) {
             abort(response()->json(
-                ['message' => 'No clinical record is linked to this account yet.'],
+                // `code` lets a screen offer "connect your record" rather than
+                // read every 409 that way — a provider conflict is also a 409.
+                ['message' => 'No clinical record is linked to this account yet.', 'code' => 'no_linked_chart'],
                 409
             ));
         }
@@ -615,10 +631,18 @@ class PortalController extends ApiController
      * On 401: evicts the cached token, re-mints via issue-token, retries once.
      * If the re-mint call itself fails (chart deleted / org access revoked), propagates.
      *
+     * An unlinked account is refused here, once, for every endpoint: minting a
+     * token for it throws a RuntimeException, which rendered as a 500 and an
+     * ERROR log line on every screen an unlinked patient opened (measured live
+     * 2026-09-13) — only the endpoints that called assertLinkedChart()
+     * themselves answered the 409 the portal can show a way forward from.
+     *
      * @param  callable(string $token): mixed  $call
      */
     private function withPatientToken(Patient $patient, callable $call): mixed
     {
+        $this->assertLinkedChart($patient);
+
         try {
             return $call($this->tokenAction->execute($patient));
         } catch (PrescribeRxException $e) {

@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Services\PrescribeRx\Client;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Route;
 use Tests\TestCase;
 
 class PatientAuthTest extends TestCase
@@ -97,5 +98,63 @@ class PatientAuthTest extends TestCase
             ->assertOk();
 
         $this->assertSame(0, $patient->fresh()->tokens()->count());
+    }
+
+    /**
+     * A 429 on logout left the admin token alive while the portal had already
+     * dropped its cookie. Exhaust the per-IP sign-in bucket first, so a logout
+     * still counted against it fails here.
+     */
+    public function test_logout_and_me_are_not_counted_against_the_sign_in_limiter(): void
+    {
+        $patient = Patient::factory()->create();
+        $token = $patient->createToken('test', ['patient:*'])->plainTextToken;
+
+        for ($i = 0; $i < 10; $i++) {
+            $this->postJson('/api/v1/patient/auth/login', ['email' => 'nobody@example.com', 'password' => 'x']);
+        }
+        $this->postJson('/api/v1/patient/auth/login', ['email' => 'nobody@example.com', 'password' => 'x'])
+            ->assertTooManyRequests();
+
+        $this->getJson('/api/v1/patient/auth/me', ['Authorization' => "Bearer {$token}"])->assertOk();
+        $this->postJson('/api/v1/patient/auth/logout', [], ['Authorization' => "Bearer {$token}"])->assertOk();
+        $this->assertSame(0, $patient->fresh()->tokens()->count());
+    }
+
+    /** Over the route table, so a later regroup cannot quietly put them back. */
+    public function test_signed_in_account_routes_carry_the_per_account_limiter_and_no_store(): void
+    {
+        foreach (['api.v1.patient.auth.logout', 'api.v1.patient.auth.me'] as $name) {
+            $middleware = Route::getRoutes()->getByName($name)->gatherMiddleware();
+
+            $this->assertNotContains('throttle:auth', $middleware, $name);
+            $this->assertContains('throttle:api', $middleware, $name);
+            $this->assertContains('no-store', $middleware, $name);
+        }
+
+        foreach (['api.v1.patient.auth.login', 'api.v1.patient.auth.two-factor'] as $name) {
+            $this->assertContains('throttle:auth', Route::getRoutes()->getByName($name)->gatherMiddleware(), $name);
+        }
+    }
+
+    /**
+     * Was a 500 "Route [login] not defined": the framework computes a guest
+     * redirect eagerly for any request that does not ask for JSON.
+     */
+    public function test_an_unauthenticated_request_without_a_json_accept_header_is_a_401_not_a_500(): void
+    {
+        $this->get('/api/v1/patient/auth/me')
+            ->assertUnauthorized()
+            ->assertExactJson(['message' => 'Unauthenticated.']);
+
+        $this->get('/api/v1/patient/session')->assertUnauthorized();
+    }
+
+    /** And a validation failure without the header is a 422, not a 302. */
+    public function test_a_validation_failure_without_a_json_accept_header_is_a_422(): void
+    {
+        $this->post('/api/v1/patient/auth/login', [])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['email']);
     }
 }

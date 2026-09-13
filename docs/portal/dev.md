@@ -351,7 +351,7 @@ POST /patient/auth/password/reset  { token, password } → new password, all ses
   values only; link tracking off.
 - Rate limits (`account-link`): 3/hour and 10/day **per address** — normalised in
   the limiter itself, which runs before the controller, and hashed — plus 20/hour
-  per IP. `throttle:auth` (10/min per IP) also applies to the whole prefix. A 429
+  per IP. `throttle:auth` (10/min per IP) also applies to every anonymous route under the prefix. A 429
   counts requests, not sends, so it says nothing about whether an account or order
   exists. Because the per-address bucket is shared across callers, a 429 on
   someone's *first* try does reveal that the address was asked for three times this
@@ -722,6 +722,7 @@ are never copied from the provider, so there is no second copy of PHI identifier
 | `POST /patient/auth/password/forgot` | anonymous | Identical to register. |
 | `POST /patient/auth/create-account` | anonymous | `{token, password}`. 201 with a session; 422 `errors.token`. |
 | `POST /patient/auth/password/reset` | anonymous | `{token, password}`. 200, no session; every session revoked. |
+| `GET /patient/auth/me`, `POST /patient/auth/logout` | **none** | Same `patient/auth` prefix, but **outside `throttle:auth`** — `throttle:api` (per account) and `no-store`. Inside the sign-in limiter, patients behind one NAT shared its 10/min bucket, and a 429 on logout left the token alive after the portal had dropped its cookie. `PatientAuthTest` pins the route table. |
 | `POST /patient/claim-links` | **none** | Account, not clinical. Empty body; uniform 202; 503 when this install cannot send; 429 over 3/hour. Emails the order's address. |
 | `POST /patient/auth/two-factor` | anonymous | `{challenge, code \| recovery_code}` → session. See "Two-step verification". |
 | `GET /patient/trusted-devices`, `POST …/{uuid}/revoke`, `POST …/revoke-all` | **none** | Trusted browsers; see "Trusted browsers". |
@@ -737,11 +738,11 @@ are never copied from the provider, so there is no second copy of PHI identifier
 | `GET /patient/orders` | patient | Raw model upstream — heavily filtered. |
 | `GET /patient/prescriptions` | patient | ⚠️ the dose is nested under `items[]`. |
 | `GET /patient/conversations` | patient | Polled; real-time is unavailable upstream. |
-| `GET|POST /patient/conversations/{id}/messages` | patient | Our field is **`content`**, max 5000. GET takes `after` (message id or ISO-8601 time) and `per_page` (1–200), validated here so a bad cursor never reaches the provider; with `after` the response is `{messages, count, latest_cursor, has_more}` (spec `messages-poll`; `latest_cursor` null when nothing is new). `{id}` must be a uuid. |
+| `GET|POST /patient/conversations/{id}/messages` | patient | Our field is **`content`**, max 5000. GET takes `after` (message id or ISO-8601 time) and `per_page` (1–200), validated here so a bad cursor never reaches the provider; with `after` the response is `{messages, count, latest_cursor, has_more}` (spec `messages-poll`; `latest_cursor` null when nothing is new). Without it, `data` is one page newest first and `meta` is `{current_page, last_page}`; `page` (1–10000) asks for an older one. The provider has no `before` cursor and its pages are **offset-based**, so a message arriving between requests shifts rows one page older — merge pages by id. No pagination block upstream reads as the last page. `page` with `after` is a 422. `{id}` must be a uuid. |
 | `GET /patient/profile` | patient | The patient's details as the provider holds them (`patient_number`, names, `dob`, `email`, `phone`) — read live from `/me/patient` every time, spec `profile`; never copied into our database. |
 | `GET\|POST /patient/vitals/goals` | patient | Weight goal `{goal_weight, goal_date}` on the provider's chart settings (PUT upstream). POST validates the provider's bounds (80–500 lbs, date after today). The provider keeps a value sent as null, so a goal can be changed but not cleared. Home's `weight_goal` reads it. |
 | `GET /patient/encounters/{id}/requirements` | patient | What a held visit needs: `{resolvable_via_api, completeness_pct, info_request_message, items:[{slug,label,type,satisfied}], missing}`. `label` is the operator's wording from `PortalSettings::requirement_labels` when set, else the provider's. |
-| `POST /patient/encounters/{id}/provide-information` | patient | Multipart: text fields and `id_front`/`id_back`/`selfie_photo`/`body_photo` (`id_upload` → `id_front`), JPEG/PNG/WebP ≤ 10 MB, nothing stored. Only validated keys are forwarded. `{released, missing, missing_fields, missing_docs}` — the provider's "still missing" **422 is a committed partial save** and becomes our 200 `released: false`. Upstream 409 → `409 {code: not_awaiting_completion}`. Every Atlas-originated sandbox intake is held `on_hold` (hard-sandboxed), so `resolvable_via_api` is false on them and the form never shows. Built on `patientRequest(json: false)` — `asJson()`'s explicit Content-Type survives `attach()` and would label the multipart body as JSON. **Deployment:** four 10 MB photos need `upload_max_filesize`/`post_max_size` ≥ 42 M on the admin's PHP SAPI — this box's mod_php 8.4 has 64 M via `conf.d/99-protocol-hrt-uploads.ini`, but the FPM and 8.5 inis are at the 2 M/8 M defaults, so moving SAPI or PHP version silently breaks every phone photo. |
+| `POST /patient/encounters/{id}/provide-information` | patient | `throttle:upload`: 10 per 10 minutes per account (each request can carry ~40 MB this server buffers and relays). Multipart: text fields and `id_front`/`id_back`/`selfie_photo`/`body_photo` (`id_upload` → `id_front`), JPEG/PNG/WebP ≤ 10 MB, nothing stored. Only validated keys are forwarded. `{released, missing, missing_fields, missing_docs}` — the provider's "still missing" **422 is a committed partial save** and becomes our 200 `released: false`. Upstream 409 → `409 {code: not_awaiting_completion}`. Every Atlas-originated sandbox intake is held `on_hold` (hard-sandboxed), so `resolvable_via_api` is false on them and the form never shows. Built on `patientRequest(json: false)` — `asJson()`'s explicit Content-Type survives `attach()` and would label the multipart body as JSON. **Deployment:** four 10 MB photos need `upload_max_filesize`/`post_max_size` ≥ 42 M on the admin's PHP SAPI — this box's mod_php 8.4 has 64 M via `conf.d/99-protocol-hrt-uploads.ini`, but the FPM and 8.5 inis are at the 2 M/8 M defaults, so moving SAPI or PHP version silently breaks every phone photo. |
 | `POST /patient/encounters/{id}/conversation` | patient | Opens or reuses the conversation for one of the patient's visits → `{conversation_id, encounter_id, subject}`. The provider scopes the encounter to the token's chart. |
 | `GET /patient/scheduling/slots` | **sales-org** | Chart id injected from the session. |
 | `POST /patient/scheduling/appointments` | **sales-org** | Encounter ownership proven first. |
@@ -779,6 +780,17 @@ the screen that needs it most.
 |---|---|---|
 | **422** | The patient mistyped a value. Nothing was written. | Name the field. Let them fix it and resubmit. |
 | **5xx** | The write may have committed before the failure (P0-7 did this on every call until PRX fixed it on its sandbox, 2026-09-13). | **Never invite a retry.** The reading may be saved; a second one duplicates it. |
+
+**Unlinked accounts.** Every patient-token endpoint answers `409 {code: "no_linked_chart"}` for an
+account with no provider chart — `withPatientToken()` checks before minting, because the mint throws
+for such an account and that rendered as a 500 plus an ERROR log line on every screen an unlinked
+patient opened (measured live, 2026-09-13). The `code` is what a screen keys on: the provider's own
+conflicts are 409s too, and those carry no code or a different one (`not_awaiting_completion`).
+
+**Every API response is JSON, whatever `Accept` says.** `redirectGuestsTo` returns null for `api/*`
+and `shouldRenderJsonWhen` covers `api/*`: without them a request with no JSON `Accept` header and no
+token became a 500 `Route [login] not defined` (Laravel computes a guest redirect eagerly and this app
+has no `login` route), and a validation failure a 302.
 
 So `bootstrap/app.php` renders the exception for `api/*` requests: a 422's field-keyed `errors`
 array is passed through, 403/404/409/429 keep their status with a message of ours, and everything

@@ -117,6 +117,63 @@ class MessagingTest extends TestCase
         $this->assertSame([], $query);
     }
 
+    public function test_the_first_page_says_where_it_sits_so_the_thread_can_offer_older_messages(): void
+    {
+        $this->fake([
+            'success' => true,
+            'data' => [$this->message()],
+            'meta' => ['request_id' => 'x', 'pagination' => ['current_page' => 1, 'last_page' => 3, 'per_page' => 50, 'total' => 120]],
+        ]);
+
+        $this->getJson('/api/v1/patient/conversations/'.self::CONVERSATION.'/messages')
+            ->assertOk()
+            ->assertJsonPath('data.0.id', self::MESSAGE)
+            ->assertExactJson([
+                'data' => [collect($this->message())->except('sender_id')->all()],
+                'meta' => ['current_page' => 1, 'last_page' => 3],
+            ]);
+    }
+
+    public function test_an_older_page_is_forwarded_by_number(): void
+    {
+        $this->fake([
+            'success' => true,
+            'data' => [$this->message()],
+            'meta' => ['pagination' => ['current_page' => 2, 'last_page' => 3]],
+        ]);
+
+        $this->getJson('/api/v1/patient/conversations/'.self::CONVERSATION.'/messages?page=2&per_page=50')
+            ->assertOk()
+            ->assertJsonPath('meta.current_page', 2)
+            ->assertJsonPath('meta.last_page', 3);
+
+        parse_str((string) parse_url($this->upstreamMessagesRequest()->url(), PHP_URL_QUERY), $query);
+        $this->assertSame(['page' => '2', 'per_page' => '50'], $query);
+    }
+
+    /** No pagination block reads as the last page — never an endless "Load older". */
+    public function test_a_page_without_pagination_is_treated_as_the_last(): void
+    {
+        $this->fake(['success' => true, 'data' => [$this->message()]]);
+
+        $this->getJson('/api/v1/patient/conversations/'.self::CONVERSATION.'/messages?page=4')
+            ->assertOk()
+            ->assertJsonPath('meta.current_page', 4)
+            ->assertJsonPath('meta.last_page', 4);
+    }
+
+    public function test_a_page_and_a_cursor_together_are_refused_before_the_provider(): void
+    {
+        $this->fake(['success' => true, 'data' => []]);
+
+        $this->getJson('/api/v1/patient/conversations/'.self::CONVERSATION.'/messages?page=2&after='.self::MESSAGE)
+            ->assertJsonValidationErrors('page');
+        $this->getJson('/api/v1/patient/conversations/'.self::CONVERSATION.'/messages?page=0')
+            ->assertJsonValidationErrors('page');
+
+        Http::assertNotSent(fn (HttpRequest $request) => str_contains($request->url(), '/messages'));
+    }
+
     /** Assert NOTHING was sent: a faked upstream 422 would otherwise make this pass on its own. */
     public function test_a_malformed_cursor_is_refused_before_the_provider(): void
     {

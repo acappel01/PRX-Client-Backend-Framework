@@ -290,4 +290,30 @@ class PortalLeakAndOwnershipTest extends TestCase
         $this->getJson('/api/v1/patient/scheduling/slots?encounter_type_id=019d2842-0000-4000-8000-00000000abcd')
             ->assertStatus(409);
     }
+
+    /**
+     * Every patient-token screen, not only the three that checked for
+     * themselves: minting a token for an unlinked account threw, which was a
+     * 500 and an ERROR log line per screen an unlinked patient opened.
+     */
+    public function test_an_unlinked_account_gets_the_connect_your_record_answer_from_every_clinical_read(): void
+    {
+        Sanctum::actingAs(Patient::factory()->create(), ['*']); // no PRX chart
+
+        // Not even the token mint may be attempted.
+        $this->mock(Client::class, fn ($mock) => $mock->shouldNotReceive('issuePatientToken'));
+
+        $conversation = '9f1c2d3e-4b5a-4c6d-8e7f-0a1b2c3d4e5f';
+        $encounter = '01a07dfe-6307-727b-8ef4-acddfeebcafa';
+
+        foreach ([
+            'dashboard', 'encounters', 'vitals', 'profile', 'vitals/goals', 'orders', 'prescriptions',
+            'conversations', "conversations/{$conversation}/messages", "encounters/{$encounter}/requirements",
+            "encounters/{$encounter}/video-token",
+        ] as $path) {
+            $this->getJson("/api/v1/patient/{$path}")
+                ->assertStatus(409)
+                ->assertJsonPath('code', 'no_linked_chart');
+        }
+    }
 }

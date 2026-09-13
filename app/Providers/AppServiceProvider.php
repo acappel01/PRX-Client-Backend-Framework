@@ -322,6 +322,14 @@ class AppServiceProvider extends ServiceProvider
             'claim:'.($request->user()?->id ?? '').'|'.$request->ip()
         ));
 
+        // Sending a held visit's photos. Each request may carry four 10 MB files
+        // that this server buffers and relays, so the general API limit (120/min)
+        // bounds nothing useful. Ten in ten minutes is several honest retries.
+        // Per account; an unauthenticated request never reaches it.
+        RateLimiter::for('upload', fn (Request $request) => Limit::perMinutes(10, 10)->by(
+            'upload:'.($request->user()?->id ?? $request->ip())
+        ));
+
         // General API limit — generous enough for a React SPA, tight enough to block scrapers.
         RateLimiter::for('api', fn (Request $request) => Limit::perMinute(120)->by(
             $request->user()?->id ?? $request->ip()
