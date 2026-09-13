@@ -4158,10 +4158,14 @@
                                                             "properties": {
                                                                 "policy": {
                                                                     "type": "string"
+                                                                },
+                                                                "trusted_device_days": {
+                                                                    "type": "integer"
                                                                 }
                                                             },
                                                             "required": [
-                                                                "policy"
+                                                                "policy",
+                                                                "trusted_device_days"
                                                             ]
                                                         }
                                                     },
@@ -7747,6 +7751,13 @@
                                     "device_name": {
                                         "type": "string",
                                         "maxLength": 255
+                                    },
+                                    "trusted_device_token": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 64
                                     }
                                 },
                                 "required": [
@@ -7780,12 +7791,24 @@
                                                         "patient": {
                                                             "type": "object",
                                                             "additionalProperties": {}
+                                                        },
+                                                        "trusted_device": {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "expires_at": {
+                                                                    "type": "string"
+                                                                }
+                                                            },
+                                                            "required": [
+                                                                "expires_at"
+                                                            ]
                                                         }
                                                     },
                                                     "required": [
                                                         "token",
                                                         "token_type",
-                                                        "patient"
+                                                        "patient",
+                                                        "trusted_device"
                                                     ]
                                                 },
                                                 "meta": {
@@ -7863,7 +7886,7 @@
         "/patient/auth/two-factor": {
             "post": {
                 "operationId": "v1.patient.auth.two-factor",
-                "description": "Send the `challenge` from `login` with either `code` (6 digits from the\nauthenticator app) or `recovery_code`. Returns a session exactly as\n`login` does without two-step verification. Every refusal is the same 422\non `code`; too many wrong codes for the account is a 429. A challenge\nlasts five minutes and allows five attempts.",
+                "description": "Send the `challenge` from `login` with either `code` (6 digits from the\nauthenticator app) or `recovery_code`. Returns a session exactly as\n`login` does without two-step verification. Every refusal is the same 422\non `code`; too many wrong codes for the account is a 429. A challenge\nlasts five minutes and allows five attempts. `trust_device: true` also\nreturns `trusted_device.token` (once) \u2014 sent with the password at `login`\nas `trusted_device_token`, it skips the code on that browser for the\ninstall's trusted-device days, renewed on each use.",
                 "summary": "Finish a two-step sign-in",
                 "tags": [
                     "PatientAuth"
@@ -7892,6 +7915,9 @@
                                             "null"
                                         ],
                                         "maxLength": 32
+                                    },
+                                    "trust_device": {
+                                        "type": "boolean"
                                     }
                                 },
                                 "required": [
@@ -7924,12 +7950,32 @@
                                                         "patient": {
                                                             "type": "object",
                                                             "additionalProperties": {}
+                                                        },
+                                                        "trusted_device": {
+                                                            "type": [
+                                                                "object",
+                                                                "null"
+                                                            ],
+                                                            "description": "Shown once. The client keeps it (httpOnly) and sends it with the\npassword next time as `trusted_device_token`.",
+                                                            "properties": {
+                                                                "token": {
+                                                                    "type": "string"
+                                                                },
+                                                                "expires_at": {
+                                                                    "type": "string"
+                                                                }
+                                                            },
+                                                            "required": [
+                                                                "token",
+                                                                "expires_at"
+                                                            ]
                                                         }
                                                     },
                                                     "required": [
                                                         "token",
                                                         "token_type",
-                                                        "patient"
+                                                        "patient",
+                                                        "trusted_device"
                                                     ]
                                                 },
                                                 "meta": {
@@ -8133,6 +8179,9 @@
                                                 },
                                                 "recovery_codes_remaining": {
                                                     "type": "integer"
+                                                },
+                                                "trusted_device_days": {
+                                                    "type": "integer"
                                                 }
                                             },
                                             "required": [
@@ -8142,8 +8191,45 @@
                                                 "setup_required",
                                                 "can_disable",
                                                 "confirmed_at",
-                                                "recovery_codes_remaining"
+                                                "recovery_codes_remaining",
+                                                "trusted_device_days"
                                             ]
+                                        },
+                                        "meta": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "meta"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/patient/trusted-devices": {
+            "get": {
+                "operationId": "v1.patient.portal.trusted-devices.index",
+                "summary": "Browsers trusted to skip the code on this account, newest first. Only live\nones (unrevoked, unexpired)",
+                "tags": [
+                    "PatientPortal"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "string"
                                         },
                                         "meta": {
                                             "type": "string"
@@ -8467,6 +8553,127 @@
                     },
                     "422": {
                         "$ref": "#/components/responses/ValidationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/patient/trusted-devices/revoke-all": {
+            "post": {
+                "operationId": "v1.patient.portal.trusted-devices.revoke-all",
+                "summary": "Stop trusting every browser on this account",
+                "tags": [
+                    "PatientPortal"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "revoked": {
+                                                    "type": "integer"
+                                                }
+                                            },
+                                            "required": [
+                                                "revoked"
+                                            ]
+                                        },
+                                        "meta": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "meta"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/patient/trusted-devices/{device}/revoke": {
+            "post": {
+                "operationId": "v1.patient.portal.trusted-devices.revoke",
+                "summary": "Stop trusting one browser. It will be asked for a code next time",
+                "tags": [
+                    "PatientPortal"
+                ],
+                "parameters": [
+                    {
+                        "name": "device",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "revoked": {
+                                                    "type": "boolean"
+                                                }
+                                            },
+                                            "required": [
+                                                "revoked"
+                                            ]
+                                        },
+                                        "meta": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "meta"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "const": "Not found."
+                                        },
+                                        "errors": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "message",
+                                        "errors"
+                                    ]
+                                }
+                            }
+                        }
                     },
                     "401": {
                         "$ref": "#/components/responses/AuthenticationException"
