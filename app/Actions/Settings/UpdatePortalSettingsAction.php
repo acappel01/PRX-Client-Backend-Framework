@@ -20,6 +20,7 @@ class UpdatePortalSettingsAction
             $this->settings->session_idle_minutes = $data->session_idle_minutes;
             $this->settings->session_max_hours = $data->session_max_hours;
             $this->settings->two_factor_policy = $data->two_factor_policy;
+            $this->settings->trusted_device_days = $data->trusted_device_days;
             $this->settings->save();
 
             // The portal reads the idle limit from /config to warn before it.

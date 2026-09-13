@@ -12,6 +12,7 @@ use App\Models\Patient;
 use App\Models\PatientAuthChallenge;
 use App\Models\PatientEmailToken;
 use App\Services\Patient\PatientSecurityLog;
+use App\Services\Patient\TrustedDevices;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
@@ -48,7 +49,10 @@ class ResetPatientPasswordAction
 
     public const REASON = 'password_reset';
 
-    public function __construct(private readonly PatientSecurityLog $log) {}
+    public function __construct(
+        private readonly PatientSecurityLog $log,
+        private readonly TrustedDevices $trustedDevices,
+    ) {}
 
     /**
      * @throws ValidationException keyed `token`.
@@ -133,6 +137,8 @@ class ResetPatientPasswordAction
         if ($firstVerification) {
             $this->log->record(SecurityEventType::EmailVerified, patient: $patient, client: $client);
         }
+
+        $this->trustedDevices->revokeAll($patient, 'password_reset', $client);
 
         PasswordChanged::dispatch($patient);
 

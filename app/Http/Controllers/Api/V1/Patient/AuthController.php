@@ -134,6 +134,7 @@ class AuthController extends ApiController
             'email' => ['required', 'email'],
             'password' => ['required', 'string'],
             'device_name' => ['sometimes', 'string', 'max:255'],
+            'trusted_device_token' => ['sometimes', 'nullable', 'string', 'max:64'],
         ]);
 
         try {
@@ -142,6 +143,7 @@ class AuthController extends ApiController
                 $validated['password'],
                 $validated['device_name'] ?? ($request->userAgent() ?? 'api'),
                 RequestContext::fromRequest($request),
+                $validated['trusted_device_token'] ?? null,
             );
         } catch (AuthenticationException $e) {
             throw ValidationException::withMessages(['email' => [$e->getMessage()]]);
@@ -158,11 +160,19 @@ class AuthController extends ApiController
             ]);
         }
 
-        return $this->success([
+        $session = [
             'token' => $result['token'],
             'token_type' => 'Bearer',
             'patient' => PatientResource::fromModel($result['patient'])->toArray(),
-        ]);
+        ];
+
+        // Present only when a trusted browser skipped the code: its renewed
+        // expiry, so the client can extend its stored token to match.
+        if ($result['trusted_device_expires_at'] !== null) {
+            $session['trusted_device'] = ['expires_at' => $result['trusted_device_expires_at']->toIso8601String()];
+        }
+
+        return $this->success($session);
     }
 
     /**
@@ -172,7 +182,10 @@ class AuthController extends ApiController
      * authenticator app) or `recovery_code`. Returns a session exactly as
      * `login` does without two-step verification. Every refusal is the same 422
      * on `code`; too many wrong codes for the account is a 429. A challenge
-     * lasts five minutes and allows five attempts.
+     * lasts five minutes and allows five attempts. `trust_device: true` also
+     * returns `trusted_device.token` (once) — sent with the password at `login`
+     * as `trusted_device_token`, it skips the code on that browser for the
+     * install's trusted-device days, renewed on each use.
      *
      * @tags PatientAuth
      *
@@ -184,14 +197,16 @@ class AuthController extends ApiController
             'challenge' => ['required', 'string', 'max:64'],
             'code' => ['required_without:recovery_code', 'nullable', 'string', 'max:16'],
             'recovery_code' => ['required_without:code', 'nullable', 'string', 'max:32'],
+            'trust_device' => ['sometimes', 'boolean'],
         ]);
 
         try {
-            ['patient' => $patient, 'token' => $token] = $action->execute(
+            ['patient' => $patient, 'token' => $token, 'trusted_device' => $trusted] = $action->execute(
                 $request->input('challenge'),
                 $request->input('code'),
                 $request->input('recovery_code'),
                 RequestContext::fromRequest($request),
+                $request->boolean('trust_device'),
             );
         } catch (ActionException $e) {
             return $this->error($e->getMessage(), $e->getCode());
@@ -201,6 +216,12 @@ class AuthController extends ApiController
             'token' => $token,
             'token_type' => 'Bearer',
             'patient' => PatientResource::fromModel($patient)->toArray(),
+            // Shown once. The client keeps it (httpOnly) and sends it with the
+            // password next time as `trusted_device_token`.
+            'trusted_device' => $trusted === null ? null : [
+                'token' => $trusted['token'],
+                'expires_at' => $trusted['expires_at']->toIso8601String(),
+            ],
         ]);
     }
 

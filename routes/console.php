@@ -3,6 +3,7 @@
 use App\Models\Commerce\Cart;
 use App\Models\PatientAuthChallenge;
 use App\Models\PatientSecurityEvent;
+use App\Models\PatientTrustedDevice;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -72,6 +73,11 @@ Schedule::command('model:prune', ['--model' => [PatientSecurityEvent::class]])
 // Two-step sign-in challenges live five minutes; the dead ones go after a day.
 Schedule::command('model:prune', ['--model' => [PatientAuthChallenge::class]])
     ->dailyAt('03:35')
+    ->onOneServer();
+
+// Trusted browsers a month past expiry or revocation.
+Schedule::command('model:prune', ['--model' => [PatientTrustedDevice::class]])
+    ->dailyAt('03:40')
     ->onOneServer();
 
 // Signatures on that history. Weekly is enough to learn that a row was edited;

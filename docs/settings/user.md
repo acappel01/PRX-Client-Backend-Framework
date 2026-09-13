@@ -124,6 +124,8 @@ Mail the provider receives for a no-reply address is not forwarded anywhere unle
   removes it from patients who turned it on. Required sends patients without it to set it up on their
   next screen; nobody is signed out. See `docs/portal/user.md` → "Two-step verification", including
   how support resets it for a patient who lost their phone.
+- **"Trust this browser" lasts** — days, 0 to 90, default 30. How long a browser a patient trusted can
+  skip the code (never the password), renewed on use. 0 removes the option.
 - **Sign out after inactivity** — minutes, 5 to 240, default 30. A patient session unused for this long
   ends; the portal warns two minutes before. Shortening it applies to patients already signed in.
 - **Always sign out after** — hours, 1 to 720, default 12. Every session ends this long after sign-in,

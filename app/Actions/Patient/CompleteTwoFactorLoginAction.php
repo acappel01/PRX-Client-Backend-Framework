@@ -11,7 +11,9 @@ use App\Models\PatientAuthChallenge;
 use App\Models\PatientEmailToken;
 use App\Services\Patient\PatientSecurityLog;
 use App\Services\Patient\PatientSessionLifetime;
+use App\Services\Patient\TrustedDevices;
 use App\Services\Patient\TwoFactor;
+use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Validation\ValidationException;
 
@@ -55,15 +57,16 @@ class CompleteTwoFactorLoginAction
         private readonly TwoFactor $twoFactor,
         private readonly PatientSecurityLog $log,
         private readonly PatientSessionLifetime $lifetime,
+        private readonly TrustedDevices $trustedDevices,
     ) {}
 
     /**
-     * @return array{patient: Patient, token: string}
+     * @return array{patient: Patient, token: string, trusted_device: array{token: string, expires_at: CarbonInterface}|null}
      *
      * @throws ValidationException keyed `code`
      * @throws ActionException 429
      */
-    public function execute(mixed $plainChallenge, mixed $code, mixed $recoveryCode, ?RequestContext $client = null): array
+    public function execute(mixed $plainChallenge, mixed $code, mixed $recoveryCode, ?RequestContext $client = null, bool $trustDevice = false): array
     {
         if (! PatientEmailToken::looksValid($plainChallenge)) {
             throw $this->refusal();
@@ -138,7 +141,10 @@ class CompleteTwoFactorLoginAction
             );
         }
 
-        return ['patient' => $patient, 'token' => $session->plainTextToken];
+        // Only after a real second factor — a trusted browser never trusts itself.
+        $trusted = $trustDevice ? $this->trustedDevices->trust($patient, $client) : null;
+
+        return ['patient' => $patient, 'token' => $session->plainTextToken, 'trusted_device' => $trusted];
     }
 
     private function failed(PatientAuthChallenge $challenge, Patient $patient, string $limiterKey, ?RequestContext $client): never

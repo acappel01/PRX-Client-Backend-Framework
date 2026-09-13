@@ -103,6 +103,11 @@ class Patient extends Authenticatable
         return $this->hasMany(PatientRecoveryCode::class);
     }
 
+    public function trustedDevices(): HasMany
+    {
+        return $this->hasMany(PatientTrustedDevice::class);
+    }
+
     public function authChallenges(): HasMany
     {
         return $this->hasMany(PatientAuthChallenge::class);

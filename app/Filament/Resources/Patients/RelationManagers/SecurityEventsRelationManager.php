@@ -75,7 +75,7 @@ class SecurityEventsRelationManager extends RelationManager
 
                 TextColumn::make('context')
                     ->label('Detail')
-                    ->state(fn ($record): ?string => self::detail($record->context))
+                    ->state(fn ($record): ?string => self::detail($record->context, $record->type))
                     ->placeholder('—'),
 
                 TextColumn::make('ip_address')
@@ -109,7 +109,7 @@ class SecurityEventsRelationManager extends RelationManager
     /**
      * @param  array<string, scalar|null>|null  $context
      */
-    private static function detail(?array $context): ?string
+    private static function detail(?array $context, ?SecurityEventType $type = null): ?string
     {
         if (empty($context)) {
             return null;
@@ -120,7 +120,9 @@ class SecurityEventsRelationManager extends RelationManager
 
         return collect([
             'reason' => $reason !== null ? str_replace('_', ' ', (string) $reason) : null,
-            'revoked' => isset($context['revoked']) ? "{$context['revoked']} session(s) ended" : null,
+            'revoked' => isset($context['revoked'])
+                ? ($type === SecurityEventType::DeviceRevoked ? "{$context['revoked']} browser(s) no longer trusted" : "{$context['revoked']} session(s) ended")
+                : null,
             'method' => isset($context['method']) ? 'via '.str_replace('_', ' ', (string) $context['method']) : null,
         ])->filter()->implode(' · ');
     }

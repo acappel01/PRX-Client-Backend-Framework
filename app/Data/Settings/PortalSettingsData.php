@@ -21,6 +21,8 @@ class PortalSettingsData extends Data
 
     public const MAX_MAX_HOURS = 720;
 
+    public const TRUSTED_DEVICE_MAX_DAYS = 90;
+
     public function __construct(
         // No "keep forever": identifying data needs an end date.
         #[Required, Between(self::RETENTION_MIN_DAYS, self::RETENTION_MAX_DAYS)]
@@ -32,5 +34,7 @@ class PortalSettingsData extends Data
         public int $session_max_hours,
         #[Required, In(['off', 'optional', 'required'])]
         public string $two_factor_policy,
+        #[Required, Between(0, self::TRUSTED_DEVICE_MAX_DAYS)]
+        public int $trusted_device_days,
     ) {}
 }

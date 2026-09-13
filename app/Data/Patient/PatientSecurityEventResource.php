@@ -3,6 +3,7 @@
 namespace App\Data\Patient;
 
 use App\Enums\Patient\SecurityEventActor;
+use App\Enums\Patient\SecurityEventType;
 use App\Models\PatientSecurityEvent;
 use Spatie\LaravelData\Data;
 
@@ -49,7 +50,8 @@ class PatientSecurityEventResource extends Data
                 SecurityEventActor::Anonymous => 'unverified',
             },
             is_current_session: $currentTokenId !== null && $event->token_id === $currentTokenId,
-            sessions_revoked: isset($event->context['revoked']) ? (int) $event->context['revoked'] : null,
+            // Sessions only: on `device_revoked` the count is browsers, not sessions.
+            sessions_revoked: $event->type !== SecurityEventType::DeviceRevoked && isset($event->context['revoked']) ? (int) $event->context['revoked'] : null,
         );
     }
 }

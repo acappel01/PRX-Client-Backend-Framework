@@ -10,6 +10,7 @@ use App\Events\Patient\TwoFactorRemoved;
 use App\Jobs\Patient\SendTwoFactorNoticeJob;
 use App\Models\Patient;
 use App\Services\Patient\PatientSecurityLog;
+use App\Services\Patient\TrustedDevices;
 
 /**
  * Support turns off two-step verification for a patient who lost their phone and
@@ -27,7 +28,10 @@ class ResetPatientTwoFactorAction
 {
     use Transacts;
 
-    public function __construct(private readonly PatientSecurityLog $log) {}
+    public function __construct(
+        private readonly PatientSecurityLog $log,
+        private readonly TrustedDevices $trustedDevices,
+    ) {}
 
     public function execute(Patient $patient, int $operatorId, ?RequestContext $client = null): void
     {
@@ -54,6 +58,8 @@ class ResetPatientTwoFactorAction
             actorUserId: $operatorId,
             context: ['reason' => 'two_factor_reset', 'revoked' => $revoked],
         );
+
+        $this->trustedDevices->revokeAll($patient, 'two_factor_reset', $client, SecurityEventActor::Operator, $operatorId);
 
         TwoFactorRemoved::dispatch($patient);
         SendTwoFactorNoticeJob::dispatch($patient->getKey(), SendTwoFactorNoticeJob::RESET_BY_SUPPORT);

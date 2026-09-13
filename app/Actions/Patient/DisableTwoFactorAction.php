@@ -12,6 +12,7 @@ use App\Jobs\Patient\SendTwoFactorNoticeJob;
 use App\Models\Patient;
 use App\Models\PatientAuthChallenge;
 use App\Services\Patient\PatientSecurityLog;
+use App\Services\Patient\TrustedDevices;
 use App\Services\Patient\TwoFactor;
 use App\Settings\PortalSettings;
 use Illuminate\Support\Facades\Hash;
@@ -36,6 +37,7 @@ class DisableTwoFactorAction
         private readonly TwoFactor $twoFactor,
         private readonly PatientSecurityLog $log,
         private readonly PortalSettings $settings,
+        private readonly TrustedDevices $trustedDevices,
     ) {}
 
     /**
@@ -74,6 +76,10 @@ class DisableTwoFactorAction
         if ($revoked > 0) {
             $this->log->record(SecurityEventType::SessionsRevoked, patient: $patient, client: $client, tokenId: $currentTokenId, context: ['reason' => 'two_factor_removed', 'revoked' => $revoked]);
         }
+
+        // With no second factor there is nothing for a trusted browser to skip,
+        // and turning it back on later must not inherit old trust.
+        $this->trustedDevices->revokeAll($patient, 'two_factor_removed', $client);
 
         TwoFactorRemoved::dispatch($patient);
         SendTwoFactorNoticeJob::dispatch($patient->getKey(), SendTwoFactorNoticeJob::DISABLED);

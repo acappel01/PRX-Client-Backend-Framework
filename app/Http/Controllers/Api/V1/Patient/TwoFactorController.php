@@ -8,8 +8,11 @@ use App\Actions\Patient\DisableTwoFactorAction;
 use App\Actions\Patient\RegenerateRecoveryCodesAction;
 use App\Actions\Patient\StartTwoFactorSetupAction;
 use App\Data\Patient\RequestContext;
+use App\Enums\Patient\SecurityEventActor;
 use App\Enums\Patient\TwoFactorPolicy;
 use App\Http\Controllers\Api\V1\ApiController;
+use App\Models\PatientTrustedDevice;
+use App\Services\Patient\TrustedDevices;
 use App\Services\Patient\TwoFactor;
 use App\Settings\PortalSettings;
 use Illuminate\Http\JsonResponse;
@@ -34,7 +37,7 @@ class TwoFactorController extends ApiController
      *
      * @tags PatientAuth
      */
-    public function show(Request $request, TwoFactor $twoFactor, PortalSettings $settings): JsonResponse
+    public function show(Request $request, TwoFactor $twoFactor, PortalSettings $settings, TrustedDevices $trustedDevices): JsonResponse
     {
         $patient = $request->user();
         $policy = $settings->twoFactorPolicy();
@@ -48,6 +51,54 @@ class TwoFactorController extends ApiController
             'can_disable' => $enabled && $policy !== TwoFactorPolicy::Required,
             'confirmed_at' => $patient->two_factor_confirmed_at?->toIso8601String(),
             'recovery_codes_remaining' => $enabled ? $twoFactor->remainingRecoveryCodes($patient) : 0,
+            'trusted_device_days' => $trustedDevices->days(),
+        ]);
+    }
+
+    /**
+     * Browsers trusted to skip the code on this account, newest first. Only live
+     * ones (unrevoked, unexpired).
+     *
+     * @tags PatientAuth
+     */
+    public function trustedDevices(Request $request): JsonResponse
+    {
+        return $this->success(
+            $request->user()->trustedDevices()->active()->latest('last_used_at')->get()
+                ->map(fn (PatientTrustedDevice $device): array => [
+                    'id' => $device->uuid,
+                    'label' => $device->label,
+                    'created_at' => $device->created_at?->toIso8601String(),
+                    'last_used_at' => $device->last_used_at?->toIso8601String(),
+                    'last_used_ip' => $device->last_used_ip,
+                    'expires_at' => $device->expires_at->toIso8601String(),
+                ])->all()
+        );
+    }
+
+    /**
+     * Stop trusting one browser. It will be asked for a code next time.
+     *
+     * @tags PatientAuth
+     */
+    public function revokeTrustedDevice(Request $request, string $device, TrustedDevices $trustedDevices): JsonResponse
+    {
+        if (! $trustedDevices->revokeOne($request->user(), $device, RequestContext::fromRequest($request))) {
+            return $this->error('Not found.', 404);
+        }
+
+        return $this->success(['revoked' => true]);
+    }
+
+    /**
+     * Stop trusting every browser on this account.
+     *
+     * @tags PatientAuth
+     */
+    public function revokeAllTrustedDevices(Request $request, TrustedDevices $trustedDevices): JsonResponse
+    {
+        return $this->success([
+            'revoked' => $trustedDevices->revokeAll($request->user(), 'patient', RequestContext::fromRequest($request), SecurityEventActor::Patient),
         ]);
     }
 

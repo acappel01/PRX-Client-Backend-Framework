@@ -10,6 +10,7 @@ use App\Events\Patient\RecordClaimed;
 use App\Models\Patient;
 use App\Models\PatientEmailToken;
 use App\Services\Patient\PatientSecurityLog;
+use App\Services\Patient\TrustedDevices;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -64,6 +65,7 @@ class ClaimPatientRecordAction
     public function __construct(
         private readonly LinkPatientToPrxChartAction $link,
         private readonly PatientSecurityLog $log,
+        private readonly TrustedDevices $trustedDevices,
     ) {}
 
     /**
@@ -141,6 +143,10 @@ class ClaimPatientRecordAction
 
         if ($firstVerification) {
             $this->log->record(SecurityEventType::EmailVerified, patient: $patient, client: $client, tokenId: $currentTokenId);
+        }
+
+        if ($firstVerification) {
+            $this->trustedDevices->revokeAll($patient, self::REASON_FIRST_VERIFICATION, $client);
         }
 
         if ($revoked > 0) {

@@ -346,11 +346,14 @@ Route::prefix('v1')->name('api.v1.')->group(function (): void {
         Route::get('session', [PatientSecurityController::class, 'session'])->name('session');
 
         Route::get('two-factor', [PatientTwoFactorController::class, 'show'])->name('two-factor.show');
+        Route::get('trusted-devices', [PatientTwoFactorController::class, 'trustedDevices'])->name('trusted-devices.index');
         Route::middleware('throttle:two-factor-manage')->group(function (): void {
             Route::post('two-factor/setup', [PatientTwoFactorController::class, 'setup'])->name('two-factor.setup');
             Route::post('two-factor/confirm', [PatientTwoFactorController::class, 'confirm'])->name('two-factor.confirm');
             Route::post('two-factor/recovery-codes', [PatientTwoFactorController::class, 'recoveryCodes'])->name('two-factor.recovery-codes');
             Route::post('two-factor/disable', [PatientTwoFactorController::class, 'disable'])->name('two-factor.disable');
+            Route::post('trusted-devices/revoke-all', [PatientTwoFactorController::class, 'revokeAllTrustedDevices'])->name('trusted-devices.revoke-all');
+            Route::post('trusted-devices/{device}/revoke', [PatientTwoFactorController::class, 'revokeTrustedDevice'])->whereUuid('device')->name('trusted-devices.revoke');
         });
     });
 

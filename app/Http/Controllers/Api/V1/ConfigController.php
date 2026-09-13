@@ -161,6 +161,7 @@ class ConfigController extends ApiController
                     ],
                     'two_factor' => [
                         'policy' => $portal->twoFactorPolicy()->value,
+                        'trusted_device_days' => $portal->trusted_device_days,
                     ],
                 ],
                 'provider' => [

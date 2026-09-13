@@ -512,9 +512,8 @@ Found on the way and fixed: the patient **view** page had thrown since it was ad
 (`PatientInfolist` imported `Filament\Infolists\Components\Section`, which Filament 4 moved to
 `Filament\Schemas\Components`). Nothing tested it.
 
-**Reserved for later increments** (names only, not built): `device_trusted`, `device_revoked`,
-`step_up_succeeded`. The two-step events are built — see "Two-step verification". Trusted devices must be revoked on password change and first
-verification when they exist. Patient sessions now end — see "Session lifetime".
+**Reserved for later increments** (names only, not built): `step_up_succeeded`. The two-step and
+trusted-browser events are built — see "Two-step verification". Patient sessions now end — see "Session lifetime".
 
 **Deploy:** `php artisan migrate` (table + settings row), `php artisan horizon:terminate`
 (`SendAccountLinkJob` gained a constructor argument), Shield ritual for `ManagePortal`. A
@@ -664,7 +663,36 @@ the password-changed notice) and `enrolled`/`removed` fire token-free workflow e
 - Account soft delete voids challenges (observer); the secret stays on the row so a restore keeps
   the owner's choice.
 
-**Deploy order used:** schema + settings row migrated first (`085970b`), then code. The portal's
+### Trusted browsers ("trust this browser")
+
+**Added 2026-09-13.** After a code sign-in a patient may tick *Trust this browser*; that browser then
+skips the **code** — never the password — for `PortalSettings::trusted_device_days` (default 30,
+0–90, 0 = option off), renewed on each use. `App\Services\Patient\TrustedDevices`,
+`patient_trusted_devices`.
+
+- `POST /patient/auth/two-factor` with `trust_device: true` returns `trusted_device.token` once (256
+  bits; stored as sha256 with a public `uuid` and a label **derived from the user agent server-side**).
+  The portal keeps it in an httpOnly cookie and sends it with the password at `login` as
+  `trusted_device_token`.
+- `LoginPatientAction` checks the password first, then `recognise()`s the token only for that patient,
+  unrevoked, unexpired, and only while days > 0; a hit slides the expiry to now + days, returns it as
+  `trusted_device.expires_at` (so the client extends its cookie — without that the browser would drop
+  the token at the original expiry however often it was used), and mints
+  the session directly with `login_succeeded {method: trusted_device}` and **no** `two_factor_verified_at` (skipping a code is
+  not a fresh second factor — a future step-up must not count it). A miss gets the normal challenge.
+- **Revoked on:** password reset, first email verification (claim), two-step turned off, reset by
+  support or moved to a new authenticator, *Sign out everywhere*, account deletion — each writes one
+  `device_revoked {reason, revoked}` when any were live. `device_trusted` on issue.
+- Patient: `GET /patient/trusted-devices` (label, last used, IP, expiry — never the hash),
+  `POST /patient/trusted-devices/{uuid}/revoke` (another patient's uuid is a 404),
+  `POST /patient/trusted-devices/revoke-all`. Operators see the live count on the patient record.
+- `device_revoked` is recorded as the patient for their own acts (reset, disable, replace, claim,
+  their own Remove) and as operator/system otherwise — the portal hides IP/browser only on staff
+  events, so a wrong actor would strip the patient's own device from their history.
+- Stealing the cookie AND the password skips the code for up to the configured days — the accepted
+  cost of the feature. The checkbox says "only on your own device".
+
+**Deploy order used:** schema + settings row migrated first (`085970b`, `2effd46`), then code. The portal's
 `prx_challenge` cookie and screens are documented in the portal repo's `docs/security/dev.md`.
 
 ## Endpoints
@@ -677,6 +705,7 @@ the password-changed notice) and `enrolled`/`removed` fire token-free workflow e
 | `POST /patient/auth/password/reset` | anonymous | `{token, password}`. 200, no session; every session revoked. |
 | `POST /patient/claim-links` | **none** | Account, not clinical. Empty body; uniform 202; 503 when this install cannot send; 429 over 3/hour. Emails the order's address. |
 | `POST /patient/auth/two-factor` | anonymous | `{challenge, code \| recovery_code}` → session. See "Two-step verification". |
+| `GET /patient/trusted-devices`, `POST …/{uuid}/revoke`, `POST …/revoke-all` | **none** | Trusted browsers; see "Trusted browsers". |
 | `GET\|POST /patient/two-factor*` | **none** | Status, setup, confirm, recovery codes, disable. Reachable while `required` confines a session. |
 | `GET /patient/session` | **none** | Current session's `idle_expires_at` / `expires_at`. Counts as use — the portal's keep-alive. |
 | `GET /patient/security/events` | **none** | The account's own security history. `?limit=` 1–100. `meta.retention_days`. See "Security history". |

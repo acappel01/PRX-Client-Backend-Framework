@@ -10,6 +10,7 @@ use App\Models\PatientAuthChallenge;
 use App\Models\PatientEmailToken;
 use App\Services\Patient\PatientSecurityLog;
 use App\Services\Patient\PatientSessionLifetime;
+use App\Services\Patient\TrustedDevices;
 use Carbon\CarbonInterface;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Support\Facades\Hash;
@@ -47,14 +48,15 @@ class LoginPatientAction
     public function __construct(
         private readonly PatientSecurityLog $log,
         private readonly PatientSessionLifetime $lifetime,
+        private readonly TrustedDevices $trustedDevices,
     ) {}
 
     /**
-     * @return array{patient: Patient, token: string}|array{patient: Patient, challenge: string, expires_at: CarbonInterface}
+     * @return array{patient: Patient, token: string, trusted_device_expires_at: CarbonInterface|null}|array{patient: Patient, challenge: string, expires_at: CarbonInterface}
      *
      * @throws AuthenticationException
      */
-    public function execute(string $email, string $password, string $deviceName = 'api', ?RequestContext $client = null): array
+    public function execute(string $email, string $password, string $deviceName = 'api', ?RequestContext $client = null, mixed $trustedDeviceToken = null): array
     {
         $patient = Patient::where('email', $email)->first();
 
@@ -69,8 +71,19 @@ class LoginPatientAction
             $this->failed($patient, $email, $client, 'bad_password');
         }
 
+        $method = null;
+        $trusted = null;
+
         if ($patient->hasTwoFactor()) {
-            return $this->challenge($patient, $deviceName, $client);
+            // A browser the patient trusted after an earlier code skips the code
+            // — only ever after the password above has been checked.
+            $trusted = $this->trustedDevices->recognise($patient, $trustedDeviceToken, $client);
+
+            if ($trusted === null) {
+                return $this->challenge($patient, $deviceName, $client);
+            }
+
+            $method = 'trusted_device';
         }
 
         // `patient:*`, the same as every other patient session. It was `['*']`,
@@ -83,9 +96,13 @@ class LoginPatientAction
             patient: $patient,
             client: $client,
             tokenId: $session->accessToken->getKey(),
+            context: $method === null ? [] : ['method' => $method],
         );
 
-        return ['patient' => $patient, 'token' => $session->plainTextToken];
+        // The renewed expiry goes back to the client, so the browser's copy of the
+        // trust lives as long as the admin's does — otherwise the cookie would
+        // lapse at the ORIGINAL expiry however often it was used.
+        return ['patient' => $patient, 'token' => $session->plainTextToken, 'trusted_device_expires_at' => $trusted?->expires_at];
     }
 
     /**

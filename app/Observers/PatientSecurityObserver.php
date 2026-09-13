@@ -9,6 +9,7 @@ use App\Models\Patient;
 use App\Models\PatientAuthChallenge;
 use App\Models\User;
 use App\Services\Patient\PatientSecurityLog;
+use App\Services\Patient\TrustedDevices;
 
 /**
  * Security events for changes made to a patient account from OUTSIDE the
@@ -63,6 +64,15 @@ class PatientSecurityObserver
 
         $revoked = $patient->tokens()->delete();
         PatientAuthChallenge::voidOutstandingFor($patient);
+
+        $operator = $this->operator();
+        app(TrustedDevices::class)->revokeAll(
+            $patient,
+            self::REASON_ACCOUNT_DELETED,
+            null,
+            $operator === null ? SecurityEventActor::System : SecurityEventActor::Operator,
+            $operator?->getKey(),
+        );
 
         $this->record(SecurityEventType::AccountDeleted, $patient, $this->operator(), [
             'reason' => self::REASON_ACCOUNT_DELETED,

@@ -194,7 +194,8 @@ Why the split: From must sit on the provider-verified sending domain or SPF/DKIM
 Group `portal`: `security_events_retention_days` (int, default 730), `session_idle_minutes` (int,
 default 30, 5–240), `session_max_hours` (int, default 12, 1–720), `two_factor_policy` (string `off|optional|required`, default
 `off`, read through `PortalSettings::twoFactorPolicy()`, which falls back to `Off` on an unknown value, and published
-in `/config` as `portal.two_factor.policy`). The two session keys are enforced by
+in `/config` as `portal.two_factor.policy`), `trusted_device_days` (int 0–90, default 30; `/config`
+`portal.two_factor.trusted_device_days`). The two session keys are enforced by
 `PatientSessionLifetime` and published in `/config` as `portal.session`, so the action invalidates the
 config cache. `PortalSettings` →
 `PortalSettingsData` (`Between(30, 2555)`, constants on the DTO) → `UpdatePortalSettingsAction` →

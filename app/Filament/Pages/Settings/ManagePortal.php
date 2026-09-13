@@ -49,6 +49,15 @@ class ManagePortal extends BaseSettingsPage
                             ->native(false)
                             ->options(collect(TwoFactorPolicy::cases())->mapWithKeys(fn (TwoFactorPolicy $policy): array => [$policy->value => $policy->label()])->all())
                             ->helperText('Off: not offered, but patients who already turned it on keep it. Optional: every patient is invited to set it up and can skip. Required: patients without it are sent to set it up on their next screen — they are not signed out.'),
+                        TextInput::make('trusted_device_days')
+                            ->label('"Trust this browser" lasts')
+                            ->numeric()
+                            ->integer()
+                            ->required()
+                            ->minValue(0)
+                            ->maxValue(PortalSettingsData::TRUSTED_DEVICE_MAX_DAYS)
+                            ->suffix('days')
+                            ->helperText('After entering a code, a patient can trust their browser and skip the code (never the password) for this long, renewed each time they sign in there. 0 turns the option off. Trust is removed when their password is reset, their email is first verified, two-step verification is turned off, reset or moved to a new phone, you sign them out everywhere, or the account is deleted. 0 to 90.'),
                     ]),
 
                 Section::make('Sessions')

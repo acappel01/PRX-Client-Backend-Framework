@@ -10,6 +10,7 @@ use App\Jobs\Patient\SendTwoFactorNoticeJob;
 use App\Models\Patient;
 use App\Models\PatientAuthChallenge;
 use App\Services\Patient\PatientSecurityLog;
+use App\Services\Patient\TrustedDevices;
 use App\Services\Patient\TwoFactor;
 use Illuminate\Validation\ValidationException;
 
@@ -32,6 +33,7 @@ class ConfirmTwoFactorSetupAction
     public function __construct(
         private readonly TwoFactor $twoFactor,
         private readonly PatientSecurityLog $log,
+        private readonly TrustedDevices $trustedDevices,
     ) {}
 
     /**
@@ -76,6 +78,11 @@ class ConfirmTwoFactorSetupAction
             client: $client,
             context: ['method' => $replacing ? 'replaced' : 'new'],
         );
+
+        if ($replacing) {
+            // Trust was granted against the old authenticator.
+            $this->trustedDevices->revokeAll($patient, 'two_factor_replaced', $client);
+        }
 
         TwoFactorEnrolled::dispatch($patient);
         SendTwoFactorNoticeJob::dispatch($patient->getKey(), $replacing ? SendTwoFactorNoticeJob::REPLACED : SendTwoFactorNoticeJob::ENABLED);

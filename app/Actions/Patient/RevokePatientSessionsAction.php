@@ -7,6 +7,7 @@ use App\Enums\Patient\SecurityEventActor;
 use App\Enums\Patient\SecurityEventType;
 use App\Models\Patient;
 use App\Services\Patient\PatientSecurityLog;
+use App\Services\Patient\TrustedDevices;
 
 /**
  * Sign a patient out of every session — the operator's answer to "I think
@@ -20,7 +21,10 @@ class RevokePatientSessionsAction
 {
     public const REASON_OPERATOR = 'operator';
 
-    public function __construct(private readonly PatientSecurityLog $log) {}
+    public function __construct(
+        private readonly PatientSecurityLog $log,
+        private readonly TrustedDevices $trustedDevices,
+    ) {}
 
     /**
      * @return int How many sessions were ended.
@@ -37,6 +41,9 @@ class RevokePatientSessionsAction
             actorUserId: $operatorId,
             context: ['reason' => self::REASON_OPERATOR, 'revoked' => $revoked],
         );
+
+        // "Someone else may be in the account": their browser must not skip the code.
+        $this->trustedDevices->revokeAll($patient, self::REASON_OPERATOR, $client, SecurityEventActor::Operator, $operatorId);
 
         return $revoked;
     }

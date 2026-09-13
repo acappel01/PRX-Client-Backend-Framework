@@ -8,7 +8,7 @@ namespace App\Enums\Patient;
  * without a migration.
  *
  * Reserved for later increments, deliberately not built yet:
- * `device_trusted`, `device_revoked`, `step_up_succeeded`.
+ * `step_up_succeeded`.
  */
 enum SecurityEventType: string
 {
@@ -35,6 +35,8 @@ enum SecurityEventType: string
     case TwoFactorRemoved = 'two_factor_removed';
     case RecoveryCodeUsed = 'recovery_code_used';
     case RecoveryCodesRegenerated = 'recovery_codes_regenerated';
+    case DeviceTrusted = 'device_trusted';
+    case DeviceRevoked = 'device_revoked';
 
     /** Written for the patient as much as the operator — the portal shows it. */
     public function label(): string
@@ -63,6 +65,8 @@ enum SecurityEventType: string
             self::TwoFactorRemoved => 'Two-step verification turned off',
             self::RecoveryCodeUsed => 'Recovery code used',
             self::RecoveryCodesRegenerated => 'New recovery codes created',
+            self::DeviceTrusted => 'Browser trusted',
+            self::DeviceRevoked => 'Trusted browsers removed',
         };
     }
 

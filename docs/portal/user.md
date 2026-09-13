@@ -68,10 +68,16 @@ they lose their phone. They can create a new set, switch to a new phone (with a 
 app or a recovery code), or turn it off (password and a code; not allowed under Required). The
 patient is emailed whenever any of this changes.
 
+After entering a code a patient can tick **Trust this browser**: that browser then skips the code (not
+the password) for 30 days by default, renewed each time they sign in there. Set the length, or 0 to
+turn the option off, under **Settings → Patient portal → "Trust this browser" lasts**.
+
 | The patient says | What to do |
 |---|---|
 | "I got a new phone" | If they still have the old phone or a recovery code: Record → Two-step verification → *Switch to a new phone or app*. |
 | "I lost my phone and my recovery codes" | Confirm you are talking to the account holder (for example, call the phone number on their order). Then open their patient record and press **Reset two-step verification**. They are signed out everywhere, can sign in with their password, and are emailed. **The admin records that you reset it — it cannot record that you checked who you were talking to.** |
+| "It stopped remembering my browser" | Trusted browsers are forgotten after the set number of days unused, and whenever the password is reset, two-step verification changes, or you press **Sign out everywhere**. Expected. |
+| "Someone else might have my laptop" | **Sign out everywhere** also removes every trusted browser; then ask them to reset their password. They can also remove trusted browsers themselves under Record → Two-step verification. |
 | "It says my code didn't work" | The phone's clock must be set automatically. Codes change every 30 seconds; use the newest. After five wrong codes they must enter their password again. |
 | "It says too many attempts" | Ten wrong codes in 15 minutes on one account. Wait 15 minutes. If they did not try that many times, someone else has their password — ask them to reset it. |
 | "A 'password accepted, code requested' entry I don't recognise" | Someone has their password but not their phone. Ask them to reset their password now. |

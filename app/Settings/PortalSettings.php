@@ -27,6 +27,9 @@ class PortalSettings extends Settings
 
     public int $session_max_hours;
 
+    /** Days "trust this browser" lasts, sliding with use; 0 turns it off. */
+    public int $trusted_device_days;
+
     /** A TwoFactorPolicy value. */
     public string $two_factor_policy;
 

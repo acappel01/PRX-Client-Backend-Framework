@@ -51,6 +51,10 @@ class PatientInfolist
                             ->dateTime()
                             ->prefix(fn ($record) => $record->hasTwoFactor() ? 'On since ' : null)
                             ->placeholder('Off'),
+                        TextEntry::make('trusted_browsers')
+                            ->label('Trusted browsers')
+                            ->state(fn ($record) => $record->trustedDevices()->active()->count())
+                            ->helperText('Browsers allowed to skip the code. "Sign out everywhere" removes them.'),
                         TextEntry::make('created_at')->label('Registered')->dateTime(),
                         TextEntry::make('updated_at')->label('Last updated')->dateTime(),
                         TextEntry::make('deleted_at')->label('Deleted')->dateTime()->placeholder('—'),
