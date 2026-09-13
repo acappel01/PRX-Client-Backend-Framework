@@ -31,7 +31,7 @@ Changes are live immediately — no server restart, no cache clear.
 
 | Field | Notes |
 |---|---|
-| Brand name | Used in the page `<title>`, the `og:site_name` meta tag, mail-from name, and any spot the layout asks for the company name. |
+| Brand name | Used in the page `<title>`, the `og:site_name` meta tag, mail-from name, the name shown inside every email (header, sign-off, footer), and any spot the layout asks for the company name. |
 | Tagline | One-line positioning. Used in OG previews and as a layout subhead. |
 | Logo path | A path under `public/` (e.g. `/images/logo.svg`). Upload the file via SFTP or the media library when that ships. |
 | Favicon path | Usually the same as the logo for SVG assets. |
@@ -107,6 +107,8 @@ Admin settings win over the server file (`.env`); a blank admin field falls thro
 | Which service sends | Settings → Communication → **Provider** + credentials | `MAIL_MAILER`, `MAILGUN_DOMAIN`, `MAILGUN_SECRET`, … | Sending domain verified in the provider's dashboard (SPF/DKIM DNS records) |
 | From address | Settings → Communication → **From address** | `MAIL_FROM_ADDRESS` | Must be on the verified sending domain |
 | From name | Settings → Communication → **From name**, else Settings → Brand → **Brand name** | `MAIL_FROM_NAME` | |
+| Name inside the email (header, sign-off, footer, page title) | Settings → Brand → **Brand name** | the From name | Never the server's `APP_NAME`, which names the admin software |
+| Where the email's header links | Settings → Brand → **Canonical site URL** | `CMS_FRONTEND_URL` | Neither set: the header is plain text, never a link to the admin |
 | Reply-to address | Settings → Communication → **Reply-to address**, else Settings → Contact → **Support email** | `MAIL_REPLY_TO_ADDRESS` | If the reply address is on a domain whose MX records point at the provider, the provider receives its mail: add an inbound **route** there (Mailgun: Receiving → Routes) forwarding it to a real inbox, or replies are dropped |
 | Reply-to name | Settings → Communication → **Reply-to name** | `MAIL_REPLY_TO_NAME` | |
 | Which integration sends portal mail | Automation → **Integrations**: exactly one integration switched **On** (Enabled) offering transactional email | — | The same one-only rule applies to workflow email steps that don't name an integration |

@@ -66,6 +66,9 @@ class SendPlanEmail implements ShouldQueue
      * The frontend owns URL patterns, so the one place this backend needs to
      * know one is configured rather than assumed. Falls back to the app URL,
      * which is wrong but visible, instead of building a link to nowhere.
+     *
+     * Not MailBrand::url(), on purpose: the header only names the brand and may
+     * point at its canonical site; this button must reach a frontend route.
      */
     private function planUrl(object $lead): string
     {

@@ -149,4 +149,27 @@ return [
         'name' => env('MAIL_REPLY_TO_NAME'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Markdown Mail Components
+    |--------------------------------------------------------------------------
+    |
+    | Where overridden mail components live. The framework's own base config
+    | already points here and is merged under this file, so this block is
+    | explicit rather than required: it keeps working on an install that turns
+    | framework config merging off, and says the overrides are load-bearing.
+    | They exist because the stock layout prints APP_NAME and links to APP_URL,
+    | which on this backend are the admin product and the admin hostname, never
+    | the brand a patient bought from. See App\Services\Mail\MailBrand.
+    |
+    */
+
+    'markdown' => [
+        'theme' => env('MAIL_MARKDOWN_THEME', 'default'),
+
+        'paths' => [
+            resource_path('views/vendor/mail'),
+        ],
+    ],
+
 ];

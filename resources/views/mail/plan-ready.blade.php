@@ -12,5 +12,5 @@ Open my plan
 This link is personal to you — please don't share it.
 
 Thanks,<br>
-{{ config('app.name') }}
+{{ app(\App\Services\Mail\MailBrand::class)->name() }}
 </x-mail::message>
