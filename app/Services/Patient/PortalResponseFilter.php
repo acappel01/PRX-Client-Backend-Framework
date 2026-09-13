@@ -217,12 +217,35 @@ class PortalResponseFilter
             'created_at',
         ],
 
+        // A poll with `after`: the new messages, oldest first, and the cursor
+        // to use next. `latest_cursor` is null when nothing arrived.
+        'messages-poll' => [
+            'count',
+            'latest_cursor',
+            'has_more',
+            'messages' => [
+                'id',
+                'content',
+                'sender_name',
+                'is_mine',
+                'message_type',
+                'reply_to_message_id',
+                'created_at',
+            ],
+        ],
+
         'message' => [
             'id',
             'content',
             'message_type',
             'reply_to_message_id',
             'created_at',
+        ],
+
+        'conversation-opened' => [
+            'conversation_id',
+            'encounter_id',
+            'subject',
         ],
 
         'slots' => [

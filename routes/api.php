@@ -385,8 +385,9 @@ Route::prefix('v1')->name('api.v1.')->group(function (): void {
         Route::get('orders', [PortalController::class, 'orders'])->name('orders.index');
         Route::get('prescriptions', [PortalController::class, 'prescriptions'])->name('prescriptions.index');
         Route::get('conversations', [PortalController::class, 'conversations'])->name('conversations.index');
-        Route::get('conversations/{conversationId}/messages', [PortalController::class, 'conversationMessages'])->name('conversations.messages');
-        Route::post('conversations/{conversationId}/messages', [PortalController::class, 'sendMessage'])->name('conversations.messages.store');
+        Route::get('conversations/{conversationId}/messages', [PortalController::class, 'conversationMessages'])->whereUuid('conversationId')->name('conversations.messages');
+        Route::post('conversations/{conversationId}/messages', [PortalController::class, 'sendMessage'])->whereUuid('conversationId')->name('conversations.messages.store');
+        Route::post('encounters/{encounterId}/conversation', [PortalController::class, 'openConversation'])->whereUuid('encounterId')->name('encounters.conversation.store');
         Route::get('scheduling/slots', [PortalController::class, 'availabilitySlots'])->name('scheduling.slots');
         Route::post('scheduling/appointments', [PortalController::class, 'bookAppointment'])->name('scheduling.appointments.store');
     });

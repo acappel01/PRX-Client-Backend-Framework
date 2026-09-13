@@ -718,7 +718,8 @@ skips the **code** — never the password — for `PortalSettings::trusted_devic
 | `GET /patient/orders` | patient | Raw model upstream — heavily filtered. |
 | `GET /patient/prescriptions` | patient | ⚠️ the dose is nested under `items[]`. |
 | `GET /patient/conversations` | patient | Polled; real-time is unavailable upstream. |
-| `GET|POST /patient/conversations/{id}/messages` | patient | Our field is **`content`**, max 5000. |
+| `GET|POST /patient/conversations/{id}/messages` | patient | Our field is **`content`**, max 5000. GET takes `after` (message id or ISO-8601 time) and `per_page` (1–200), validated here so a bad cursor never reaches the provider; with `after` the response is `{messages, count, latest_cursor, has_more}` (spec `messages-poll`; `latest_cursor` null when nothing is new). `{id}` must be a uuid. |
+| `POST /patient/encounters/{id}/conversation` | patient | Opens or reuses the conversation for one of the patient's visits → `{conversation_id, encounter_id, subject}`. The provider scopes the encounter to the token's chart. |
 | `GET /patient/scheduling/slots` | **sales-org** | Chart id injected from the session. |
 | `POST /patient/scheduling/appointments` | **sales-org** | Encounter ownership proven first. |
 

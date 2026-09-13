@@ -330,14 +330,46 @@ class Client
         return $this->extractData($this->patientRequest($patientToken)->get('/me/patient/conversations'));
     }
 
-    public function getConversationMessages(string $patientToken, string $conversationId): array
+    /**
+     * Messages in one of the patient's conversations.
+     *
+     * Without `after`: a page, newest first. With `after` (a message id from this
+     * conversation, or an ISO-8601 time — second-granular, so prefer the id):
+     * `{messages: [...oldest first], count, latest_cursor, has_more}`, where
+     * `latest_cursor` is null when nothing is new, so a poller must keep its
+     * previous cursor.
+     *
+     * @param  array{after?: string, per_page?: int}  $query
+     */
+    public function getConversationMessages(string $patientToken, string $conversationId, array $query = []): array
     {
         if (config('prescribe-rx.stub')) {
-            return ['data' => []];
+            return isset($query['after']) ? ['messages' => [], 'count' => 0, 'latest_cursor' => null, 'has_more' => false] : [];
         }
 
         return $this->extractData(
-            $this->patientRequest($patientToken)->get("/me/patient/conversations/{$conversationId}/messages")
+            $this->patientRequest($patientToken)->get(
+                "/me/patient/conversations/{$conversationId}/messages",
+                array_intersect_key($query, array_flip(['after', 'per_page']))
+            )
+        );
+    }
+
+    /**
+     * Open (or reuse) the conversation with the provider on one of the patient's
+     * own encounters. The provider scopes the encounter to the token's chart.
+     *
+     * @return array{conversation_id: string, encounter_id: string, subject: ?string}
+     */
+    public function openEncounterConversation(string $patientToken, string $encounterId): array
+    {
+        if (config('prescribe-rx.stub')) {
+            // A uuid, so the stub flow reaches the thread page (which only takes uuids).
+            return ['conversation_id' => '00000000-0000-4000-8000-000000000001', 'encounter_id' => $encounterId, 'subject' => null];
+        }
+
+        return $this->extractData(
+            $this->patientRequest($patientToken)->post("/me/patient/encounters/{$encounterId}/conversation")
         );
     }
 

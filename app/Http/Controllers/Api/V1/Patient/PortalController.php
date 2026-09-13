@@ -11,6 +11,7 @@ use App\Services\PrescribeRx\Client;
 use App\Services\PrescribeRx\Exceptions\PrescribeRxException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 
 /**
  * Patient portal — proxies PRX /me/patient/* endpoints.
@@ -229,10 +230,47 @@ class PortalController extends ApiController
      */
     public function conversationMessages(Request $request, string $conversationId): JsonResponse
     {
+        // Checked here so a malformed cursor never reaches the provider, whose
+        // 422 carries no field errors and would render as "check your values".
+        $validated = $request->validate([
+            'after' => ['sometimes', 'bail', 'string', 'max:64', function (string $attribute, mixed $value, \Closure $fail): void {
+                if (! Str::isUuid($value) && strtotime((string) $value) === false) {
+                    $fail('The after cursor must be a message id or an ISO-8601 time.');
+                }
+            }],
+            'per_page' => ['sometimes', 'integer', 'between:1,200'],
+        ]);
+        $patient = $request->user();
+        $query = array_filter([
+            'after' => $validated['after'] ?? null,
+            'per_page' => isset($validated['per_page']) ? (int) $validated['per_page'] : null,
+        ], fn ($value) => $value !== null);
+
+        return $this->success(
+            $this->filter->apply(
+                isset($query['after']) ? 'messages-poll' : 'messages',
+                $this->withPatientToken($patient, fn ($t) => $this->prx->getConversationMessages($t, $conversationId, $query))
+            )
+        );
+    }
+
+    /**
+     * Open (or reuse) the conversation with the provider for one of the patient's
+     * visits. The provider only finds encounters on the token's own chart, so a
+     * foreign id is a 404.
+     *
+     * @tags Patient Portal
+     */
+    public function openConversation(Request $request, string $encounterId): JsonResponse
+    {
         $patient = $request->user();
 
         return $this->success(
-            $this->filter->apply('messages', $this->withPatientToken($patient, fn ($t) => $this->prx->getConversationMessages($t, $conversationId)))
+            $this->filter->apply('conversation-opened', $this->withPatientToken(
+                $patient,
+                fn ($t) => $this->prx->openEncounterConversation($t, $encounterId)
+            )),
+            status: 201
         );
     }
 
