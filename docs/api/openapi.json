@@ -4134,6 +4134,30 @@
                                                         "upsells"
                                                     ]
                                                 },
+                                                "portal": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "session": {
+                                                            "type": "object",
+                                                            "description": "Public on purpose: the portal warns before the idle limit,\nand knowing it gives nobody anything a session doesn't.",
+                                                            "properties": {
+                                                                "idle_minutes": {
+                                                                    "type": "integer"
+                                                                },
+                                                                "max_hours": {
+                                                                    "type": "integer"
+                                                                }
+                                                            },
+                                                            "required": [
+                                                                "idle_minutes",
+                                                                "max_hours"
+                                                            ]
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "session"
+                                                    ]
+                                                },
                                                 "provider": {
                                                     "type": "object",
                                                     "properties": {
@@ -4164,6 +4188,7 @@
                                                 "contact",
                                                 "seo",
                                                 "checkout",
+                                                "portal",
                                                 "provider"
                                             ]
                                         },
@@ -8027,6 +8052,59 @@
                     },
                     "422": {
                         "$ref": "#/components/responses/ValidationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/patient/session": {
+            "get": {
+                "operationId": "v1.patient.portal.session",
+                "description": "`idle_expires_at` is when the session ends if it is not used again;\n`expires_at` is when it ends regardless. Calling this IS a use \u2014 it moves\n`idle_expires_at` forward \u2014 which is what makes it the portal's \"stay\n     * signed in\" call. It sits in the patient group's `api` limiter, not the\nsign-in limiter, so a keep-alive cannot lock anyone out of signing in.",
+                "summary": "The current session's deadlines",
+                "tags": [
+                    "PatientPortal"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "idle_minutes": {
+                                                    "type": "integer"
+                                                },
+                                                "idle_expires_at": {
+                                                    "type": "string"
+                                                },
+                                                "expires_at": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "idle_minutes",
+                                                "idle_expires_at",
+                                                "expires_at"
+                                            ]
+                                        },
+                                        "meta": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "meta"
+                                    ]
+                                }
+                            }
+                        }
                     },
                     "401": {
                         "$ref": "#/components/responses/AuthenticationException"
