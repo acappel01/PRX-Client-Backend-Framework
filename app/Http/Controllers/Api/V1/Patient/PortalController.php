@@ -169,6 +169,101 @@ class PortalController extends ApiController
         );
     }
 
+    /** Readings the Health charts ask the provider for. A patient logging daily is inside it for ~2.7 years. */
+    private const HEALTH_SERIES_READINGS = 1000;
+
+    /** How many readings the Health screen lists under its charts. */
+    private const HEALTH_RECENT_READINGS = 50;
+
+    /**
+     * Health, composed for one screen: chart series, the weight goal, and the
+     * recent readings — `{period, series, goal, items, truncated, readings_considered}`.
+     *
+     * Built from the vitals LIST rather than the provider's `/vitals/trends`,
+     * which caps at one year, keeps only the date of each reading, and derives
+     * "total loss" from the first and last rows alone. The list carries exact
+     * instants and has no period cap, which "All time" needs: a continuing
+     * patient's history is never cut off by the chart. Nothing is stored here;
+     * the period is applied to what the provider returned.
+     *
+     * `period` is `1year` (default) or `all`. Series are oldest first; `items`
+     * newest first and not period-scoped, so a patient whose readings are all
+     * older than a year still sees them listed. A lone half of a blood-pressure
+     * reading is not a reading and is not plotted.
+     *
+     * @tags Patient Portal
+     */
+    public function healthSeries(Request $request): JsonResponse
+    {
+        $validated = $request->validate(['period' => ['sometimes', 'string', 'in:1year,all']]);
+        $period = $validated['period'] ?? '1year';
+        $patient = $request->user();
+
+        [$vitals, $goals] = $this->withPatientToken($patient, fn ($t) => [
+            $this->prx->getPatientVitals($t, ['limit' => self::HEALTH_SERIES_READINGS]),
+            $this->prx->getVitalsGoals($t),
+        ]);
+
+        $vitals = $this->filter->apply('vitals', array_is_list($vitals) ? $vitals : []);
+        $goals = $this->filter->apply('vitals-goals', $goals);
+        $since = $period === '1year' ? now()->subYear() : null;
+
+        // Parse each instant once. The provider sends newest first, so the list is
+        // reversed BEFORE the stable sort: two readings in the same second then
+        // keep oldest-first order and the chart's "latest" is the later one.
+        $inPeriod = collect(array_reverse($vitals))
+            ->filter(fn ($vital) => is_array($vital))
+            ->map(fn ($vital) => ['instant' => $this->parseInstant($vital['created_at'] ?? null), 'vital' => $vital])
+            ->filter(fn ($row) => $row['instant'] !== null && ($since === null || $row['instant']->gte($since)))
+            ->sortBy(fn ($row) => $row['instant']->getTimestamp())
+            ->pluck('vital')
+            ->values();
+
+        $points = fn (string $field) => $inPeriod
+            ->filter(fn ($vital) => is_numeric($vital[$field] ?? null))
+            ->map(fn ($vital) => ['at' => $vital['created_at'], 'value' => $vital[$field] + 0])
+            ->values()
+            ->all();
+
+        return $this->success([
+            'period' => $period,
+            'series' => [
+                'weight' => $points('weight'),
+                'blood_pressure' => $inPeriod
+                    ->filter(fn ($vital) => is_numeric($vital['systolic_bp'] ?? null) && is_numeric($vital['diastolic_bp'] ?? null))
+                    ->map(fn ($vital) => ['at' => $vital['created_at'], 'systolic' => $vital['systolic_bp'] + 0, 'diastolic' => $vital['diastolic_bp'] + 0])
+                    ->values()
+                    ->all(),
+                'heart_rate' => $points('heart_rate'),
+                'blood_glucose' => $points('blood_glucose'),
+            ],
+            'goal' => [
+                'weight' => is_numeric($goals['goal_weight'] ?? null) ? $goals['goal_weight'] + 0 : null,
+                'date' => $goals['goal_date'] ?? null,
+            ],
+            'items' => array_slice($vitals, 0, self::HEALTH_RECENT_READINGS),
+            // The provider returns newest first up to the limit, so a full page
+            // means older readings may exist that the chart did not receive.
+            // Assumes the provider honours `limit` as sent — it does not clamp it
+            // today; if it ever caps below 1000 this reads false while history is cut.
+            'truncated' => count($vitals) >= self::HEALTH_SERIES_READINGS,
+            'readings_considered' => count($vitals),
+        ]);
+    }
+
+    private function parseInstant(mixed $value): ?Carbon
+    {
+        if (! is_string($value) || $value === '') {
+            return null;
+        }
+
+        try {
+            return Carbon::parse($value);
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
     /**
      * The patient's details as the clinical provider holds them — name, date of
      * birth, contact and the provider's patient number. Read live every time; not

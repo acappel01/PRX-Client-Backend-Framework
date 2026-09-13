@@ -9160,6 +9160,196 @@
                 }
             }
         },
+        "/patient/health/series": {
+            "get": {
+                "operationId": "v1.patient.portal.health.series",
+                "description": "Built from the vitals LIST rather than the provider's `/vitals/trends`,\nwhich caps at one year, keeps only the date of each reading, and derives\n\"total loss\" from the first and last rows alone. The list carries exact\ninstants and has no period cap, which \"All time\" needs: a continuing\npatient's history is never cut off by the chart. Nothing is stored here;\nthe period is applied to what the provider returned.\n\n`period` is `1year` (default) or `all`. Series are oldest first; `items`\nnewest first and not period-scoped, so a patient whose readings are all\nolder than a year still sees them listed. A lone half of a blood-pressure\nreading is not a reading and is not plotted.",
+                "summary": "Health, composed for one screen: chart series, the weight goal, and the\nrecent readings \u2014 `{period, series, goal, items, truncated, readings_considered}`",
+                "tags": [
+                    "PatientPortal"
+                ],
+                "parameters": [
+                    {
+                        "name": "period",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "1year",
+                                "all"
+                            ]
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "period": {
+                                                    "anyOf": [
+                                                        {
+                                                            "type": "string"
+                                                        },
+                                                        {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "1year"
+                                                            ]
+                                                        }
+                                                    ]
+                                                },
+                                                "series": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "weight": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "object",
+                                                                "properties": {
+                                                                    "at": {
+                                                                        "type": "string"
+                                                                    },
+                                                                    "value": {
+                                                                        "type": "string"
+                                                                    }
+                                                                },
+                                                                "required": [
+                                                                    "at",
+                                                                    "value"
+                                                                ]
+                                                            }
+                                                        },
+                                                        "blood_pressure": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "object",
+                                                                "properties": {
+                                                                    "at": {
+                                                                        "type": "string"
+                                                                    },
+                                                                    "systolic": {
+                                                                        "type": "string"
+                                                                    },
+                                                                    "diastolic": {
+                                                                        "type": "string"
+                                                                    }
+                                                                },
+                                                                "required": [
+                                                                    "at",
+                                                                    "systolic",
+                                                                    "diastolic"
+                                                                ]
+                                                            }
+                                                        },
+                                                        "heart_rate": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "object",
+                                                                "properties": {
+                                                                    "at": {
+                                                                        "type": "string"
+                                                                    },
+                                                                    "value": {
+                                                                        "type": "string"
+                                                                    }
+                                                                },
+                                                                "required": [
+                                                                    "at",
+                                                                    "value"
+                                                                ]
+                                                            }
+                                                        },
+                                                        "blood_glucose": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "object",
+                                                                "properties": {
+                                                                    "at": {
+                                                                        "type": "string"
+                                                                    },
+                                                                    "value": {
+                                                                        "type": "string"
+                                                                    }
+                                                                },
+                                                                "required": [
+                                                                    "at",
+                                                                    "value"
+                                                                ]
+                                                            }
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "weight",
+                                                        "blood_pressure",
+                                                        "heart_rate",
+                                                        "blood_glucose"
+                                                    ]
+                                                },
+                                                "goal": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "weight": {
+                                                            "type": [
+                                                                "string",
+                                                                "null"
+                                                            ]
+                                                        },
+                                                        "date": {}
+                                                    },
+                                                    "required": [
+                                                        "weight",
+                                                        "date"
+                                                    ]
+                                                },
+                                                "items": {
+                                                    "type": "array",
+                                                    "items": {}
+                                                },
+                                                "truncated": {
+                                                    "type": "boolean",
+                                                    "description": "The provider returns newest first up to the limit, so a full page\nmeans older readings exist that the chart did not receive."
+                                                },
+                                                "readings_considered": {
+                                                    "type": "integer"
+                                                }
+                                            },
+                                            "required": [
+                                                "period",
+                                                "series",
+                                                "goal",
+                                                "items",
+                                                "truncated",
+                                                "readings_considered"
+                                            ]
+                                        },
+                                        "meta": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "meta"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
         "/patient/profile": {
             "get": {
                 "operationId": "v1.patient.portal.profile",

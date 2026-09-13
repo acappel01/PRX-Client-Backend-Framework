@@ -309,7 +309,7 @@ class PortalLeakAndOwnershipTest extends TestCase
         foreach ([
             'dashboard', 'encounters', 'vitals', 'profile', 'vitals/goals', 'orders', 'prescriptions',
             'conversations', "conversations/{$conversation}/messages", "encounters/{$encounter}/requirements",
-            "encounters/{$encounter}/video-token",
+            "encounters/{$encounter}/video-token", 'health/series',
         ] as $path) {
             $this->getJson("/api/v1/patient/{$path}")
                 ->assertStatus(409)
