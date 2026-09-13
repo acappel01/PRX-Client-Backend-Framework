@@ -96,6 +96,17 @@ policy to match — auditors check that the two agree.
 |---|---|
 | "It keeps signing me out" | Expected after 30 minutes idle or 12 hours. Tell them about the **Stay signed in** prompt. |
 
+## Finding a patient from the provider's details
+
+Search the **Patients** list by the provider's **patient number** (as PRX staff quote it, e.g.
+`PAT-0548644222`), the chart id, or the provider's patient id. The number is recorded the first time the
+patient uses the portal after their record is connected. On a patient's page, **As the clinical
+provider holds it** shows the name, date of birth, email, phone and patient number live from the
+provider; the account details above it are our login and can differ. Patients see the same live
+details under Record → Your details; to correct them, update the provider's record. Each time a
+patient page is opened, the provider logs a record access under the organisation's credential; our
+admin does not record which staff member opened it.
+
 ## Sign-in activity and signing a patient out
 
 Every sign-in to a patient account is recorded — with the time, the IP address and the browser —

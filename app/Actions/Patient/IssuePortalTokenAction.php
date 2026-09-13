@@ -4,8 +4,10 @@ namespace App\Actions\Patient;
 
 use App\Models\Patient;
 use App\Services\PrescribeRx\Client;
+use Illuminate\Http\Client\StrayRequestException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 
 class IssuePortalTokenAction
 {
@@ -81,7 +83,53 @@ class IssuePortalTokenAction
 
         Cache::put($this->cacheKey($patient), $response['token'], $ttl);
 
+        $this->recordProviderIdentifiers($patient, $response);
+
         return $response['token'];
+    }
+
+    /**
+     * Keep the provider's identifiers for this patient on our record, so support
+     * can find the account from the number the provider's staff quote.
+     *
+     * Only when one is missing or has changed, and never at the cost of the
+     * token: a failure here is logged and the patient's request carries on.
+     * Identifiers only — name, date of birth and phone are read live
+     * (operator decision 2026-09-13).
+     *
+     * @param  array<string, mixed>  $issued
+     */
+    private function recordProviderIdentifiers(Patient $patient, array $issued): void
+    {
+        // Stub mode would write placeholder ids into real rows on a dev box.
+        if (config('prescribe-rx.stub')) {
+            return;
+        }
+
+        try {
+            $patientId = self::identifier($issued['patient_id'] ?? null) ?? $patient->prx_patient_id;
+
+            // The id is already in hand: keep it even if the number lookup fails.
+            if ($patientId !== $patient->prx_patient_id) {
+                $patient->forceFill(['prx_patient_id' => $patientId])->save();
+            }
+
+            if ($patient->prx_patient_number === null) {
+                $number = self::identifier($this->prx->getMyPatientChart($issued['token'])['patient_number'] ?? null);
+
+                if ($number !== null) {
+                    $patient->forceFill(['prx_patient_number' => $number])->save();
+                }
+            }
+        } catch (StrayRequestException $e) {
+            // A test that forgot to fake the provider must fail, not log and pass.
+            throw $e;
+        } catch (\Throwable $e) {
+            Log::warning('Could not record the provider identifiers for a patient.', [
+                'patient_id' => $patient->getKey(),
+                'exception' => $e::class,
+            ]);
+        }
     }
 
     private function cacheKey(Patient $patient): string
@@ -98,5 +146,11 @@ class IssuePortalTokenAction
         }
 
         return 1500; // 25-min fallback for stub mode
+    }
+
+    /** An identifier as the provider sent it, or null — rejected, never truncated. */
+    private static function identifier(mixed $value): ?string
+    {
+        return is_string($value) && preg_match('/^[A-Za-z0-9._:-]{1,64}$/', $value) === 1 ? $value : null;
     }
 }

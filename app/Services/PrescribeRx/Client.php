@@ -282,6 +282,66 @@ class Client
     }
 
     /**
+     * The patient's own chart as the provider holds it — demographics and the
+     * provider's identifiers (`patient_number`, `patient_id`). Read live; our
+     * record keeps only the identifiers.
+     */
+    public function getMyPatientChart(string $patientToken): array
+    {
+        if (config('prescribe-rx.stub')) {
+            return ['id' => 'stub-chart', 'patient_number' => 'STUB-0001', 'patient_id' => null, 'first_name' => 'Stub', 'last_name' => 'Patient', 'dob' => null, 'email' => null, 'phone' => null, 'gender' => null];
+        }
+
+        return $this->extractData($this->patientRequest($patientToken)->get('/me/patient'));
+    }
+
+    /**
+     * A chart read with the ORG credential, for operators in the admin. The
+     * provider checks the chart belongs to our organisation.
+     */
+    public function getPatientChart(string $chartId): array
+    {
+        if (config('prescribe-rx.stub')) {
+            return ['id' => $chartId, 'patient_number' => 'STUB-0001', 'first_name' => 'Stub', 'last_name' => 'Patient'];
+        }
+
+        // Read on an admin page render: short, and no retries, so a slow provider
+        // shows placeholders in seconds instead of holding the page for a minute.
+        return $this->extractData(
+            $this->request()->timeout(8)->retry(1, 0)->get('/patients/'.rawurlencode($chartId))
+        );
+    }
+
+    /**
+     * The patient's weight goal: `{goal_weight, goal_date}` (either may be null).
+     * Stored on the chart's settings; the dashboard's `weight_goal` reads it.
+     */
+    public function getVitalsGoals(string $patientToken): array
+    {
+        if (config('prescribe-rx.stub')) {
+            return ['goal_weight' => null, 'goal_date' => null];
+        }
+
+        return $this->extractData($this->patientRequest($patientToken)->get('/me/patient/vitals/goals'));
+    }
+
+    /**
+     * Set the weight goal. The provider validates `goal_weight` 80–500 and
+     * `goal_date` after today, and KEEPS a value that is sent as null — so a
+     * goal cannot be cleared through this call.
+     *
+     * @param  array{goal_weight?: float|int|null, goal_date?: string|null}  $goals
+     */
+    public function updateVitalsGoals(string $patientToken, array $goals): array
+    {
+        if (config('prescribe-rx.stub')) {
+            return ['goal_weight' => $goals['goal_weight'] ?? null, 'goal_date' => $goals['goal_date'] ?? null];
+        }
+
+        return $this->extractData($this->patientRequest($patientToken)->put('/me/patient/vitals/goals', $goals));
+    }
+
+    /**
      * `GET /me/patient/orders`
      *
      * Order history for the authenticated patient.

@@ -382,6 +382,9 @@ Route::prefix('v1')->name('api.v1.')->group(function (): void {
         Route::get('encounters/{encounterId}/video-token', [PortalController::class, 'videoToken'])->name('encounters.video-token');
         Route::get('vitals', [PortalController::class, 'vitals'])->name('vitals.index');
         Route::post('vitals', [PortalController::class, 'storeVital'])->name('vitals.store');
+        Route::get('profile', [PortalController::class, 'profile'])->name('profile');
+        Route::get('vitals/goals', [PortalController::class, 'vitalsGoals'])->name('vitals.goals');
+        Route::post('vitals/goals', [PortalController::class, 'updateVitalsGoals'])->name('vitals.goals.update');
         Route::get('orders', [PortalController::class, 'orders'])->name('orders.index');
         Route::get('prescriptions', [PortalController::class, 'prescriptions'])->name('prescriptions.index');
         Route::get('conversations', [PortalController::class, 'conversations'])->name('conversations.index');

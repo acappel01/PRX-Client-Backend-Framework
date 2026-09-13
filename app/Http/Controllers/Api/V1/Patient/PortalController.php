@@ -13,6 +13,7 @@ use App\Services\PrescribeRx\Exceptions\PrescribeRxException;
 use App\Settings\PortalSettings;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
@@ -165,6 +166,66 @@ class PortalController extends ApiController
 
         return $this->success(
             $this->filter->apply('vitals', $this->withPatientToken($patient, fn ($t) => $this->prx->getPatientVitals($t)))
+        );
+    }
+
+    /**
+     * The patient's details as the clinical provider holds them — name, date of
+     * birth, contact and the provider's patient number. Read live every time; not
+     * stored here.
+     *
+     * @tags Patient Portal
+     */
+    public function profile(Request $request): JsonResponse
+    {
+        $patient = $request->user();
+        $this->assertLinkedChart($patient);
+
+        return $this->success(
+            $this->filter->apply('profile', $this->withPatientToken($patient, fn ($t) => $this->prx->getMyPatientChart($t)))
+        );
+    }
+
+    /**
+     * The patient's weight goal: `{goal_weight, goal_date}`.
+     *
+     * @tags Patient Portal
+     */
+    public function vitalsGoals(Request $request): JsonResponse
+    {
+        $patient = $request->user();
+        $this->assertLinkedChart($patient);
+
+        return $this->success(
+            $this->filter->apply('vitals-goals', $this->withPatientToken($patient, fn ($t) => $this->prx->getVitalsGoals($t)))
+        );
+    }
+
+    /**
+     * Set the weight goal. `goal_weight` in lbs (80–500, the provider's own
+     * bounds), optional `goal_date` after today. POST here (the portal's proxy
+     * speaks GET/POST); PUT upstream.
+     *
+     * @tags Patient Portal
+     */
+    public function updateVitalsGoals(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'goal_weight' => ['required', 'numeric', 'min:80', 'max:500'],
+            'goal_date' => ['nullable', 'date', 'after:today'],
+        ]);
+        $patient = $request->user();
+        $this->assertLinkedChart($patient);
+
+        $goals = array_filter([
+            'goal_weight' => round((float) $validated['goal_weight'], 1),
+            // Normalised: `date` also accepts "12/12/2026", which the provider
+            // would store verbatim and the portal's date input could not show.
+            'goal_date' => isset($validated['goal_date']) ? Carbon::parse($validated['goal_date'])->toDateString() : null,
+        ], fn ($value) => $value !== null);
+
+        return $this->success(
+            $this->filter->apply('vitals-goals', $this->withPatientToken($patient, fn ($t) => $this->prx->updateVitalsGoals($t, $goals)))
         );
     }
 

@@ -695,6 +695,25 @@ skips the **code** — never the password — for `PortalSettings::trusted_devic
 **Deploy order used:** schema + settings row migrated first (`085970b`, `2effd46`), then code. The portal's
 `prx_challenge` cookie and screens are documented in the portal repo's `docs/security/dev.md`.
 
+## Provider identifiers and demographics
+
+**Decided 2026-09-13 (operator):** our patient record stores the provider's **identifiers** —
+`prx_patient_chart_id`, `prx_patient_id` (the provider's user id) and `prx_patient_number` (the chart's
+patient number, e.g. `PAT-0548644222`) — and reads **demographics live**. Name, date of birth and phone
+are never copied from the provider, so there is no second copy of PHI identifiers to drift or leak.
+
+- `IssuePortalTokenAction` records `prx_patient_id` (from the issue-token response) and, when missing,
+  `prx_patient_number` (one `GET /me/patient`) each time it mints a token. It never fails the token:
+  a lookup error is logged and the request carries on.
+- Patients see their details under Record → *Your details* (`GET /patient/profile`, live), with a
+  pointer to the care team to correct them — the provider's record is the one to fix.
+- Operators see *As the clinical provider holds it* on the patient view page: one org-token
+  `GET /patients/{chart}` per render (the provider checks tenancy), request-scoped cache, placeholders if
+  unreachable. The patients table searches by patient number, chart id and provider patient id.
+- Our own `first_name`/`last_name` come from the order at account creation and are not updated from
+  the provider; the hand-linked `portal-probe` test account deliberately differs from its chart
+  ("Atlasfour Atlas-Four").
+
 ## Endpoints
 
 | Route | Token | Notes |
@@ -719,6 +738,8 @@ skips the **code** — never the password — for `PortalSettings::trusted_devic
 | `GET /patient/prescriptions` | patient | ⚠️ the dose is nested under `items[]`. |
 | `GET /patient/conversations` | patient | Polled; real-time is unavailable upstream. |
 | `GET|POST /patient/conversations/{id}/messages` | patient | Our field is **`content`**, max 5000. GET takes `after` (message id or ISO-8601 time) and `per_page` (1–200), validated here so a bad cursor never reaches the provider; with `after` the response is `{messages, count, latest_cursor, has_more}` (spec `messages-poll`; `latest_cursor` null when nothing is new). `{id}` must be a uuid. |
+| `GET /patient/profile` | patient | The patient's details as the provider holds them (`patient_number`, names, `dob`, `email`, `phone`) — read live from `/me/patient` every time, spec `profile`; never copied into our database. |
+| `GET\|POST /patient/vitals/goals` | patient | Weight goal `{goal_weight, goal_date}` on the provider's chart settings (PUT upstream). POST validates the provider's bounds (80–500 lbs, date after today). The provider keeps a value sent as null, so a goal can be changed but not cleared. Home's `weight_goal` reads it. |
 | `GET /patient/encounters/{id}/requirements` | patient | What a held visit needs: `{resolvable_via_api, completeness_pct, info_request_message, items:[{slug,label,type,satisfied}], missing}`. `label` is the operator's wording from `PortalSettings::requirement_labels` when set, else the provider's. |
 | `POST /patient/encounters/{id}/provide-information` | patient | Multipart: text fields and `id_front`/`id_back`/`selfie_photo`/`body_photo` (`id_upload` → `id_front`), JPEG/PNG/WebP ≤ 10 MB, nothing stored. Only validated keys are forwarded. `{released, missing, missing_fields, missing_docs}` — the provider's "still missing" **422 is a committed partial save** and becomes our 200 `released: false`. Upstream 409 → `409 {code: not_awaiting_completion}`. Every Atlas-originated sandbox intake is held `on_hold` (hard-sandboxed), so `resolvable_via_api` is false on them and the form never shows. Built on `patientRequest(json: false)` — `asJson()`'s explicit Content-Type survives `attach()` and would label the multipart body as JSON. **Deployment:** four 10 MB photos need `upload_max_filesize`/`post_max_size` ≥ 42 M on the admin's PHP SAPI — this box's mod_php 8.4 has 64 M via `conf.d/99-protocol-hrt-uploads.ini`, but the FPM and 8.5 inis are at the 2 M/8 M defaults, so moving SAPI or PHP version silently breaks every phone photo. |
 | `POST /patient/encounters/{id}/conversation` | patient | Opens or reuses the conversation for one of the patient's visits → `{conversation_id, encounter_id, subject}`. The provider scopes the encounter to the token's chart. |

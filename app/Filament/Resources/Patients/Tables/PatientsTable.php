@@ -48,10 +48,22 @@ class PatientsTable
                     ->boolean()
                     ->trueColor('danger')
                     ->falseColor('gray'),
+                TextColumn::make('prx_patient_number')
+                    ->label('PRX patient no.')
+                    ->placeholder('—')
+                    ->copyable()
+                    ->searchable(),
                 TextColumn::make('prx_patient_chart_id')
                     ->label('Chart ID')
                     ->placeholder('—')
                     ->copyable()
+                    ->searchable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+                TextColumn::make('prx_patient_id')
+                    ->label('PRX patient id')
+                    ->placeholder('—')
+                    ->copyable()
+                    ->searchable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->defaultSort('created_at', 'desc')

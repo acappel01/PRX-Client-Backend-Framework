@@ -94,6 +94,23 @@ class PortalResponseFilter
             'expires_at',
         ],
 
+        // The patient's own details as the provider holds them — read live, not
+        // copied into our database.
+        'profile' => [
+            'patient_number',
+            'first_name',
+            'middle_name',
+            'last_name',
+            'dob',
+            'email',
+            'phone',
+        ],
+
+        'vitals-goals' => [
+            'goal_weight',
+            'goal_date',
+        ],
+
         // TRANSCRIBED FROM THE HANDLER, NOT FROM A DTO — and the distinction
         // cost a review cycle. `/me/patient/vitals` serialises through
         // `PatientSelfServiceController::formatVital` (prx-demo@07969f8:1351-1373),
