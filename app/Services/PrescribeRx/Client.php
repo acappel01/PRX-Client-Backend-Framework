@@ -803,7 +803,7 @@ class Client
      * must be stored immediately — it is not retrievable after this call.
      * Use POST /webhooks/{id}/rotate-secret to issue a replacement.
      *
-     * @param  string[]  $events  e.g. ['encounter.*', 'order.*', 'lab.*']
+     * @param  string[]  $events  e.g. ['encounter.*', 'order.*', 'fulfillment.*']
      * @return array<string, mixed>
      */
     public function registerWebhook(string $url, array $events): array

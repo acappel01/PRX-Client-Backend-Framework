@@ -75,30 +75,14 @@ Methods: `label()`, `color()`.
 
 ## Actions
 
-### `App\Actions\Orders\ReceivePrescribeRxWebhookAction`
+### Webhook sync
 
-Entry point for all inbound PRX webhooks. Runs in a single DB transaction.
-
-**Three sub-methods:**
-
-1. `resolveOrder(payload)` — Two-step order lookup:
-   - Step 1: by `prescribe_rx_order_id` (fast path for re-deliveries)
-   - Step 2: via `encounter → orders` (first-delivery path — checkout creates orders without PRX order ID)
-   - On first match via encounter: backfills `prescribe_rx_order_id` and `prescribe_rx_order_number` so step 1 works on all future deliveries
-
-2. `syncOrder(order, payload)` — Updates status and sets timestamp columns (`shipped_at`, `delivered_at`, `cancelled_at`) once-only (never overwrites existing timestamp).
-
-3. `syncEncounter(payload)` — Updates the linked `Encounter.status` from `encounter_status` in the payload.
-
-4. `syncShipments(order, payload)` — Upserts `OrderShipment` rows by `prescribe_rx_shipment_id`.
-
-### `App\Actions\Commerce\UpsertOrderAction`
-
-General-purpose idempotent upsert by `prescribe_rx_order_id`. Reconciles items using a **replace strategy** — drops all existing items and recreates from the payload. Used when the full order data is available (e.g. a rich order-created event). Not currently called by the webhook flow.
-
-### `App\Actions\Commerce\UpsertShipmentAction`
-
-Idempotent shipment upsert. Lookup priority: `prescribe_rx_shipment_id` → `(carrier, tracking_number)` pair → new row. Reconciles `order_shipment_items` pivot from `prescribe_rx_product_id` / `prescribe_rx_product_number`.
+Orders are updated by prescribe-rx webhooks through the provider-agnostic inbound ledger —
+`PrescribeRxWebhookHandler`, documented in [`../webhooks/dev.md`](../webhooks/dev.md). In short:
+**update-only** (a webhook never creates an order), matched by `prescribe_rx_order_id` or, on the
+first event, via the encounter to the checkout-created order, which then gets its provider id and
+number; provider workflow / payment / shipping statuses stored beside the coarse `status`;
+timestamps set once; an older event never overwrites a newer one.
 
 ---
 
@@ -157,15 +141,11 @@ Retrieve an order by UUID. The UUID is returned at checkout completion and treat
 
 **Intentional omissions:** `shipping_address`, `billing_address` — encrypted, cannot verify ownership without patient session scope.
 
-### `POST /api/v1/webhooks/prescribe-rx`
+### `POST /api/webhooks/prescribe-rx`
 
-Receives order/encounter status events from PRX.
-
-**Auth:** HMAC-SHA256 signature in `X-PRX-Signature` header, verified against `PRESCRIBE_RX_WEBHOOK_SECRET` env variable. In non-production with no secret configured, unsigned payloads are accepted. In production without a secret, all requests are rejected.
-
-**Response:** `200 {"message": "Accepted."}` on success. `401` on invalid signature.
-
-The handler is fully idempotent — re-delivering any event is safe.
+The prescribe-rx webhook receiver (not under `/api/v1`). Signed with
+`X-PrescribeRx-Signature`; records the event and processes it on the queue. Contract, status
+codes and handling: [`../webhooks/dev.md`](../webhooks/dev.md).
 
 ---
 
@@ -184,7 +164,7 @@ POST /api/v1/checkout
   → returns: order_uuid, checkout_path, PRX encounter data
 ```
 
-The `prescribe_rx_order_id` on the order is blank until the first PRX webhook fires. `ReceivePrescribeRxWebhookAction::resolveOrder()` matches via `encounter → orders` on first delivery and backfills the IDs.
+The `prescribe_rx_order_id` on the order is blank until the first PRX order webhook arrives. `PrescribeRxWebhookHandler` matches it via `encounter → orders` on that event and backfills the id and number.
 
 ---
 
@@ -203,8 +183,6 @@ The `prescribe_rx_order_id` on the order is blank until the first PRX webhook fi
 
 - **Order items are encrypted at the name column** — `OrderItem.name` uses the `encrypted` Eloquent cast. Queries that filter or sort on `name` will not work at the database level.
 
-- **Timestamp columns set once** — `syncOrder()` only sets `shipped_at`, `delivered_at`, `cancelled_at` when the field is currently null. Re-delivering a shipped event does not reset the timestamp.
-
-- **`UpsertOrderAction` is not called by the webhook flow** — it exists for future use when PRX sends full order payloads. `ReceivePrescribeRxWebhookAction` handles all current webhook events directly.
+- **Timestamp columns set once** — the webhook handler only sets `shipped_at`, `delivered_at`, `cancelled_at`, `refunded_at` when the field is currently null. Re-delivering an event does not reset the timestamp.
 
 - **No local payment path yet** — `CheckoutController` returns 503 for `checkout_path = local`. When NMI/AuthNet local checkout is wired, it will go through `PaymentGatewayManager` and create the Order directly rather than via PRX.

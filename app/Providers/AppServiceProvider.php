@@ -336,5 +336,12 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('api', fn (Request $request) => Limit::perMinute(120)->by(
             $request->user() ? class_basename($request->user()).':'.$request->user()->getKey() : $request->ip()
         ));
+
+        // Provider webhooks, per sending IP. Generous on purpose: one order on
+        // prescribe-rx emits several events inside a second, and a 429 counts as
+        // a failed delivery toward the sender disabling the subscription.
+        RateLimiter::for('inbound-webhooks', fn (Request $request) => Limit::perMinute(300)->by(
+            'inbound-webhooks:'.$request->ip()
+        ));
     }
 }

@@ -9314,7 +9314,7 @@
                                                 },
                                                 "truncated": {
                                                     "type": "boolean",
-                                                    "description": "The provider returns newest first up to the limit, so a full page\nmeans older readings exist that the chart did not receive."
+                                                    "description": "The provider returns newest first up to the limit, so a full page\nmeans older readings may exist that the chart did not receive.\nAssumes the provider honours `limit` as sent \u2014 it does not clamp it\ntoday; if it ever caps below 1000 this reads false while history is cut."
                                                 },
                                                 "readings_considered": {
                                                     "type": "integer"
@@ -10318,61 +10318,6 @@
                         "$ref": "#/components/responses/AuthenticationException"
                     }
                 }
-            }
-        },
-        "/webhooks/prescribe-rx": {
-            "post": {
-                "operationId": "v1.webhooks.prescribe-rx",
-                "description": "Accepts HMAC-SHA256 signed webhook payloads from Prescribe-Rx. The signature is\nverified against the `PRESCRIBE_RX_WEBHOOK_SECRET` env variable. In non-production\nenvironments without a secret configured, unsigned payloads are accepted. Returns\n401 if the signature is invalid.",
-                "summary": "Receive a Prescribe-Rx order or encounter status update",
-                "tags": [
-                    "Webhooks"
-                ],
-                "responses": {
-                    "200": {
-                        "description": "",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "message": {
-                                            "type": "string",
-                                            "const": "Accepted."
-                                        }
-                                    },
-                                    "required": [
-                                        "message"
-                                    ]
-                                }
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "message": {
-                                            "type": "string",
-                                            "const": "Invalid signature."
-                                        },
-                                        "errors": {
-                                            "type": "string"
-                                        }
-                                    },
-                                    "required": [
-                                        "message",
-                                        "errors"
-                                    ]
-                                }
-                            }
-                        }
-                    }
-                },
-                "security": []
             }
         }
     },

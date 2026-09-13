@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Commerce\Cart;
+use App\Models\InboundWebhookEvent;
 use App\Models\PatientAuthChallenge;
 use App\Models\PatientSecurityEvent;
 use App\Models\PatientTrustedDevice;
@@ -78,6 +79,12 @@ Schedule::command('model:prune', ['--model' => [PatientAuthChallenge::class]])
 // Trusted browsers a month past expiry or revocation.
 Schedule::command('model:prune', ['--model' => [PatientTrustedDevice::class]])
     ->dailyAt('03:40')
+    ->onOneServer();
+
+// Settled inbound webhooks (processed, ignored, unmatched) after 90 days.
+// `failed` rows are kept until somebody deals with them.
+Schedule::command('model:prune', ['--model' => [InboundWebhookEvent::class]])
+    ->dailyAt('03:45')
     ->onOneServer();
 
 // Signatures on that history. Weekly is enough to learn that a row was edited;

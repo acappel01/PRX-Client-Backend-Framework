@@ -35,7 +35,6 @@ use App\Http\Controllers\Api\V1\Patient\TwoFactorController as PatientTwoFactorC
 use App\Http\Controllers\Api\V1\Quiz\QuizController;
 use App\Http\Controllers\Api\V1\Recommendations\ProtocolPreviewController;
 use App\Http\Controllers\Api\V1\Referral\ReferralClickController;
-use App\Http\Controllers\Api\V1\Webhooks\PrescribeRxWebhookController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -256,14 +255,6 @@ Route::prefix('v1')->name('api.v1.')->group(function (): void {
 
     Route::prefix('orders')->name('orders.')->middleware('throttle:api')->group(function (): void {
         Route::get('{uuid}', [OrderController::class, 'show'])->name('show');
-    });
-
-    // ── Webhooks ─────────────────────────────────────────────────────────
-    // Inbound events from external systems. CSRF exempt (no session).
-    // Signature verification is handled inside each controller.
-
-    Route::prefix('webhooks')->name('webhooks.')->middleware('throttle:60,1')->group(function (): void {
-        Route::post('prescribe-rx', PrescribeRxWebhookController::class)->name('prescribe-rx');
     });
 
     // ── Profiles ─────────────────────────────────────────────────────────

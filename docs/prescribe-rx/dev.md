@@ -205,7 +205,7 @@ Plan when this comes in scope:
 
 ### Webhooks
 
-The sales-org token has webhook abilities (`webhook:create/read/update/delete`). When intake-status updates and order-fulfillment events become important, register webhooks pointing at a `/api/webhooks/prescribe-rx` route in this app and reconcile encounter / order state locally. Defer until the Orders module ships.
+The sales-org token has webhook abilities (`webhook:create/read/update/delete`). The receiver is `POST /api/webhooks/prescribe-rx`; the subscription, envelope, signature, event list and handling are documented in [`../webhooks/dev.md`](../webhooks/dev.md).
 
 ### Auth flow (`/auth/login`)
 

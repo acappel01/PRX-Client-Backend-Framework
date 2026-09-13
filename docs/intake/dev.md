@@ -216,7 +216,7 @@ Server-rendered Blade page. The only public server-rendered page in the applicat
 
 **Controller:** `App\Http\Controllers\PrescribeRx\EmbedCompleteController`
 
-Advisory ping fired by the prescribe-rx embed's `onComplete` callback. Not authoritative — data is client-supplied and unverified. Calls `MarkLeadHandedOffAction` to flip the Lead status immediately for snappy UX. The signed webhook is the source of truth.
+Advisory ping fired by the prescribe-rx embed's `onComplete` callback. Not authoritative — data is client-supplied and unverified. Calls `MarkLeadHandedOffAction` to flip the Lead status immediately for snappy UX. It is never trusted for identity (see `docs/portal/dev.md`), and the signed webhook does not correct it: webhooks update only the encounters and orders checkout created.
 
 Accepts: `{ lead_uuid, encounter_id?, patient_id? }`. Always returns `{ "ok": true }` even for unknown leads (fails open to avoid blocking the patient's thank-you page).
 
@@ -224,19 +224,9 @@ Accepts: `{ lead_uuid, encounter_id?, patient_id? }`. Always returns `{ "ok": tr
 
 **Controller:** `App\Http\Controllers\PrescribeRx\WebhookController`
 
-**Middleware:** `App\Http\Middleware\VerifyPrescribeRxSignature` — verifies `X-PrescribeRx-Signature` HMAC using `IntegrationSettings::$prescribe_rx_webhook_secret`. CSRF-exempt (set in `bootstrap/app.php`).
+**Middleware:** `throttle:inbound-webhooks`, then `App\Http\Middleware\VerifyPrescribeRxSignature` — verifies `X-PrescribeRx-Signature` HMAC using `IntegrationSettings::$prescribe_rx_webhook_secret`. CSRF-exempt (set in `bootstrap/app.php`).
 
-Event router dispatches by `payload.event`:
-
-| Event prefix | Handler | Effect |
-|---|---|---|
-| `encounter.*` | `handleEncounter()` | Upserts encounter via `UpsertEncounterAction`; cross-updates Lead status |
-| `order.*` | `handleOrder()` | Upserts order via `UpsertOrderAction` |
-| `shipment.*` | `handleShipment()` | Upserts shipment via `UpsertShipmentAction` |
-
-All handlers are idempotent (webhook delivery is at-least-once). Exceptions are caught and logged; the endpoint always returns 200 to prevent prescribe-rx retry storms.
-
-`scrubMetadata()` strips clinical keys (`allergies`, `medications`, `answers`, `vitals`, etc.) from any metadata pass-through as defense in depth — this application never persists clinical data.
+Records the event in `inbound_webhook_events` and processes it on the queue with `PrescribeRxWebhookHandler`: update-only, never creates an encounter or order, never touches a lead. Event names, status codes, the stored allowlist and the status map are in [`../webhooks/dev.md`](../webhooks/dev.md).
 
 ---
 
@@ -245,8 +235,8 @@ All handlers are idempotent (webhook delivery is at-least-once). Exceptions are 
 | Module | How intake connects |
 |---|---|
 | **Catalog** | `IntakeSchemaController` reads `products`, `packages`, `categories` to resolve `provider_encounter_type_id` |
-| **Leads** | `PrxEmbedPayloadBuilder` reads Lead demographics and `cart_items`; `EmbedCompleteController` and `WebhookController` write Lead status via actions |
-| **Commerce (Encounters/Orders/Shipments)** | `WebhookController` creates/updates records via `UpsertEncounterAction`, `UpsertOrderAction`, `UpsertShipmentAction` |
+| **Leads** | `PrxEmbedPayloadBuilder` reads Lead demographics and `cart_items`; `EmbedCompleteController` writes Lead status via `MarkLeadHandedOffAction`. Webhooks do not touch leads. |
+| **Commerce (Encounters/Orders/Shipments)** | `PrescribeRxWebhookHandler` updates encounters and orders checkout created, and records shipments under them ([`../webhooks/dev.md`](../webhooks/dev.md)) |
 | **Settings** | `IntegrationSettings` supplies all credentials; `TelehealthManager` reads `prescribe_rx_enabled` to select the provider |
 
 ---

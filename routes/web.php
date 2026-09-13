@@ -41,9 +41,9 @@ Route::get('/checkout/handoff/{lead:uuid}', function (Lead $lead) {
 Route::post('/api/internal/checkout/embed-complete', EmbedCompleteController::class)
     ->name('checkout.embed-complete');
 
-// Prescribe-RX webhook receiver — HMAC signature verified by middleware.
-// CSRF exempt (set in bootstrap/app.php). Handles encounter / order / shipment
-// status events. Idempotent; at-least-once delivery from PRX.
+// Prescribe-RX webhook receiver — the only one. Throttled first, so an unsigned
+// flood is turned away before any HMAC work; then the signature; then the event
+// is recorded and queued (docs/webhooks/dev.md). CSRF exempt in bootstrap/app.php.
 Route::post('/api/webhooks/prescribe-rx', WebhookController::class)
-    ->middleware(VerifyPrescribeRxSignature::class)
+    ->middleware(['throttle:inbound-webhooks', VerifyPrescribeRxSignature::class])
     ->name('webhooks.prescribe-rx');

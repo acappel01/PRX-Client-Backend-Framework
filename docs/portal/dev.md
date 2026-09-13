@@ -73,13 +73,13 @@ checkout form itself:
    victim's chart. Full portal on their clinical record.
 
 So anyone can mint a lead for any address. What cannot be minted is an
-**`Encounter`**, whose only two writers take no identifier from an untrusted
+**`Encounter`**, whose only writer takes no identifier from an untrusted
 caller:
 
 | Writer | Why it is trustworthy |
 |---|---|
 | `SubmitPrescribeRxCheckoutAction` | our server called the provider and read `patient_chart_id` out of its response |
-| `UpsertEncounterAction`, only from `PrescribeRxWebhookController` | HMAC-verified, `hash_equals` on `X-PRX-Signature` |
+| nothing else — the prescribe-rx webhook handler (`PrescribeRxWebhookHandler`) is **update-only** | it never creates an encounter and never writes `lead_id`; it may fill an empty `prescribe_rx_patient_id` from an event verified by `X-PrescribeRx-Signature`, and never overwrites one |
 
 The chart id comes from there and nowhere else. **`leads.prescribe_rx_patient_id`
 is deliberately ignored** — it has four writers, and two of them

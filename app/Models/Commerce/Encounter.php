@@ -22,6 +22,8 @@ class Encounter extends Model
         'prescribe_rx_patient_id',
         'prescribe_rx_encounter_type_id',
         'status',
+        'provider_status',
+        'provider_status_at',
         'submitted_at',
         'reviewed_at',
         'completed_at',
@@ -35,6 +37,7 @@ class Encounter extends Model
     {
         return [
             'status' => EncounterStatus::class,
+            'provider_status_at' => 'datetime',
             'submitted_at' => 'datetime',
             'reviewed_at' => 'datetime',
             'completed_at' => 'datetime',

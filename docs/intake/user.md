@@ -93,18 +93,11 @@ Steps that are already filled are skipped automatically inside the embed.
 
 ## Webhook events
 
-prescribe-rx sends signed webhook events to `POST /api/webhooks/prescribe-rx` as encounters and orders progress. This application listens for:
-
-| Event | What happens |
-|---|---|
-| `encounter.created` / `encounter.submitted` | Lead status is updated to "handed off" |
-| `encounter.completed` | Lead status is updated to "completed" |
-| `order.*` | A local order record is created or updated |
-| `shipment.*` | A local shipment record is created or updated |
+prescribe-rx sends signed webhook events to `POST /api/webhooks/prescribe-rx` as encounters, orders and shipments progress. This application uses them to **update** the encounters and orders created at checkout — status, dates and tracking. A webhook never creates an encounter or order and never changes a lead. Setup and troubleshooting: the [inbound webhooks guide](../webhooks/user.md).
 
 You can view encounter and order status in Admin → Commerce.
 
-**Important:** The webhook is the authoritative source of truth. There is also a client-side advisory ping (`/api/internal/checkout/embed-complete`) that fires when the patient appears to finish inside the embed — this is used to flip the UI immediately without waiting for the webhook, but it is not verified and should not be trusted for business logic.
+**Important:** The webhook is the authoritative source of truth. There is also a client-side advisory ping (`/api/internal/checkout/embed-complete`) that fires when the patient appears to finish inside the embed — this is used to mark the lead as handed off immediately, but it is not verified and should not be trusted for business logic.
 
 ---
 
@@ -126,8 +119,8 @@ Check that the **Embed Code** is set correctly in Settings → Integrations. The
 
 **Webhooks are failing signature verification**
 
-The **Webhook Secret** in Settings → Integrations does not match the secret on the prescribe-rx webhook subscription. Rotate the secret in prescribe-rx admin and update it here.
+The **Webhook signing secret** in Settings → Integrations does not match the secret on the prescribe-rx webhook subscription. Rotate the secret in prescribe-rx admin and update it here.
 
-**Lead status is not updating after a patient completes checkout**
+**Encounter or order status is not updating**
 
-Confirm that the webhook subscription is active in the prescribe-rx admin and that the endpoint `https://yourdomain.com/api/webhooks/prescribe-rx` is publicly reachable. Check the application logs (Admin → Logs) for any `prx-webhook` error entries.
+Confirm that the webhook subscription is active in the prescribe-rx admin, that its URL is exactly `https://yourdomain.com/api/webhooks/prescribe-rx`, and that its failure count is not climbing. Events about records this site does not hold (for example consultations started in the embedded checkout) are kept as *unmatched* rather than applied — see the [inbound webhooks guide](../webhooks/user.md).

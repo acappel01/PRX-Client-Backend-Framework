@@ -213,7 +213,7 @@ already forbids, slipping through because that gate only understood integration 
 `registerAction(available: …)` is the general form of it.
 
 Note the two jobs this install *has* — `RevalidateFrontendJob` and
-`HandlePrescribeRxWebhookEvent` — are not candidates: `DispatchJobAction` constructs
+`ProcessInboundWebhookEvent` — are not candidates: `DispatchJobAction` constructs
 `new $job($context->subject)` and neither takes a subject. Registering one means giving it a
 constructor that does.
 

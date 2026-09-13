@@ -37,8 +37,9 @@ use Illuminate\Validation\ValidationException;
  *
  *   * `SubmitPrescribeRxCheckoutAction` — our server called the provider and
  *     read `patient_chart_id` out of its response;
- *   * `UpsertEncounterAction`, reached only from the HMAC-verified webhook
- *     (`PrescribeRxWebhookController`, `hash_equals` on `X-PRX-Signature`).
+ *   * and nothing else: the signed prescribe-rx webhook (`PrescribeRxWebhookHandler`)
+ *     is update-only — it never creates an encounter or writes `lead_id`, and
+ *     fills `prescribe_rx_patient_id` only when it is empty.
  *
  * So the chart id is taken from the encounter and nowhere else. `leads`
  * carries its own `prescribe_rx_patient_id`, and it is deliberately ignored:

@@ -80,11 +80,9 @@ The Orders table supports:
 
 ## Webhooks
 
-Orders are updated automatically when PrescribeRx sends events. No manual action is needed. If a webhook fails to deliver (PRX outage, network error), it should be re-sent from the PrescribeRx admin. The webhook handler is idempotent — re-delivering an event is safe.
+Orders are updated automatically when PrescribeRx sends events. No manual action is needed. Webhooks only update orders this site created at checkout — they never create one. Re-delivering an event is safe.
 
-Webhook endpoint: `POST /api/v1/webhooks/prescribe-rx`
-
-To verify webhooks are arriving, check **Admin → Logs** or the Laravel log at `storage/logs/laravel.log` for `PRX webhook received` entries.
+Webhook endpoint: `POST /api/webhooks/prescribe-rx`. Connecting it and checking it works: see the [inbound webhooks guide](../webhooks/user.md).
 
 ---
 

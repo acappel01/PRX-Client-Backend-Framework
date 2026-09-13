@@ -21,6 +21,10 @@ class Order extends Model
         'prescribe_rx_order_id',
         'prescribe_rx_order_number',
         'status',
+        'provider_workflow_status',
+        'provider_payment_status',
+        'provider_shipping_status',
+        'provider_status_at',
         'subtotal',
         'tax_amount',
         'shipping_amount',
@@ -51,6 +55,7 @@ class Order extends Model
             // level on top of RDS at-rest encryption.
             'shipping_address' => 'encrypted:array',
             'billing_address' => 'encrypted:array',
+            'provider_status_at' => 'datetime',
             'placed_at' => 'datetime',
             'shipped_at' => 'datetime',
             'delivered_at' => 'datetime',

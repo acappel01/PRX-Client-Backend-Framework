@@ -17,6 +17,7 @@ Per-module documentation: `user.md` = admin operator guide, `dev.md` = architect
 | Cart | Token-based cart API | [`cart/dev.md`](cart/dev.md) · [`cart/user.md`](cart/user.md) |
 | Checkout | prx-embed vs local gateway flow, gateway config endpoint | [`checkout/dev.md`](checkout/dev.md) |
 | Orders | Order shells, webhook sync, shipments | [`orders/dev.md`](orders/dev.md) · [`orders/user.md`](orders/user.md) |
+| Inbound webhooks | The prescribe-rx receiver, the event ledger, update-only handling, replay | [`webhooks/dev.md`](webhooks/dev.md) · [`webhooks/user.md`](webhooks/user.md) |
 | Leads | Lead capture, consents, UTM attribution | [`leads/dev.md`](leads/dev.md) · [`leads/user.md`](leads/user.md) |
 | Workflows | Operator-built automation: triggers, conditions, actions, run log | [`workflows/dev.md`](workflows/dev.md) · [`workflows/user.md`](workflows/user.md) |
 | Quiz | Intake quiz results page — the copy a visitor reads after finishing | [`quiz/user.md`](quiz/user.md) |

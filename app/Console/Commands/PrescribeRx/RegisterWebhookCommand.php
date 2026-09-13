@@ -10,8 +10,8 @@ use Illuminate\Console\Command;
 use Throwable;
 
 #[Signature('prescribe-rx:register-webhook
-    {--url= : Webhook URL (defaults to /api/v1/webhooks/prescribe-rx on APP_URL)}
-    {--events=* : Events to subscribe to (defaults to encounter.* order.* lab.*)}
+    {--url= : Webhook URL (defaults to the webhooks.prescribe-rx route on this install)}
+    {--events=* : Events to subscribe to (defaults to encounter.* order.* fulfillment.*)}
     {--list : List existing webhook subscriptions instead of creating}
     {--delete= : Delete a webhook subscription by ID}
     {--save-secret : Persist the returned signing secret to IntegrationSettings}
@@ -34,9 +34,11 @@ class RegisterWebhookCommand extends Command
 
     private function registerWebhook(IntegrationSettings $settings, Client $client): int
     {
-        $url = $this->option('url') ?: rtrim(config('app.url'), '/').'/api/v1/webhooks/prescribe-rx';
+        $url = $this->option('url') ?: route('webhooks.prescribe-rx');
 
-        $events = $this->option('events') ?: ['encounter.*', 'order.*', 'lab.*'];
+        // The families the receiver acts on today; everything else it records
+        // and ignores, so subscribing wider only costs deliveries.
+        $events = $this->option('events') ?: ['encounter.*', 'order.*', 'fulfillment.*'];
 
         $this->line('');
         $this->info('Registering PRX webhook subscription');
