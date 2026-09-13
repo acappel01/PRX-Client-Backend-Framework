@@ -6,6 +6,7 @@ use App\Data\PrescribeRx\EncounterTypeData;
 use App\Data\PrescribeRx\EncounterTypeSchemaData;
 use App\Data\PrescribeRx\UnifiedIntakeRequestData;
 use App\Data\PrescribeRx\UnifiedIntakeResponseData;
+use App\Http\Middleware\AssignRequestId;
 use App\Services\PrescribeRx\Exceptions\PrescribeRxException;
 use App\Settings\IntegrationSettings;
 use Illuminate\Http\Client\PendingRequest;
@@ -798,6 +799,8 @@ class Client
         return Http::baseUrl($this->baseUrl())
             ->withToken($patientToken)
             ->withHeaders(config('prescribe-rx.default_headers'))
+            // Ours, so the provider's logs and ours share one id per request.
+            ->withHeaders(['X-Request-ID' => AssignRequestId::current()])
             ->connectTimeout((int) config('prescribe-rx.http.connect_timeout', 5))
             ->timeout((int) config('prescribe-rx.http.request_timeout', 30))
             ->acceptJson()
@@ -817,6 +820,7 @@ class Client
         return Http::baseUrl($this->baseUrl())
             ->withToken($this->settings->prescribe_rx_api_token)
             ->withHeaders(config('prescribe-rx.default_headers'))
+            ->withHeaders(['X-Request-ID' => AssignRequestId::current()])
             ->connectTimeout((int) config('prescribe-rx.http.connect_timeout', 5))
             ->timeout((int) config('prescribe-rx.http.request_timeout', 30))
             ->retry(
@@ -867,6 +871,7 @@ class Client
             try {
                 Log::warning('PrescribeRx non-2xx', [
                     'status' => $response->status(),
+                    'upstream_request_id' => $response->json('meta.request_id') ?? ($response->header('X-Request-ID') ?: null),
                     'body' => $response->json(),
                 ]);
             } catch (Throwable) {

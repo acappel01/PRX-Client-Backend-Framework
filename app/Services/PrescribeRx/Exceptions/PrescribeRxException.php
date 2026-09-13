@@ -24,6 +24,9 @@ class PrescribeRxException extends RuntimeException
         public readonly ?int $httpStatus = null,
         public readonly ?array $errors = null,
         ?Throwable $previous = null,
+        // The provider's correlation id for the failed call. Normally the id we
+        // sent it (it echoes `X-Request-ID`); differs only if it minted its own.
+        public readonly ?string $upstreamRequestId = null,
     ) {
         parent::__construct($message, $httpStatus ?? 0, $previous);
     }
@@ -43,10 +46,15 @@ class PrescribeRxException extends RuntimeException
         $message = $body['message']
             ?? "PrescribeRx API call failed (HTTP {$response->status()})";
 
+        $upstreamRequestId = $body['meta']['request_id'] ?? $response->header('X-Request-ID');
+
         return new self(
             $message,
             httpStatus: $response->status(),
             errors: $body['errors'] ?? null,
+            // Provider-authored bytes: kept only if they look like an id, so
+            // nothing else (or invalid UTF-8 that would break json()) reaches a body.
+            upstreamRequestId: is_string($upstreamRequestId) && preg_match('/^[A-Za-z0-9._:-]{1,64}$/', $upstreamRequestId) === 1 ? $upstreamRequestId : null,
         );
     }
 }

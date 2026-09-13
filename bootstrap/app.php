@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\AssignRequestId;
 use App\Http\Middleware\EnsurePatientToken;
 use App\Http\Middleware\EnsurePatientTwoFactorEnrolled;
 use App\Http\Middleware\NoStorePhiResponse;
@@ -28,6 +29,7 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
 
         $middleware->appendToGroup('api', VerifyApiClientOrigin::class);
+        $middleware->appendToGroup('api', AssignRequestId::class);
 
         $middleware->alias([
             'patient' => EnsurePatientToken::class,
@@ -49,6 +51,15 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->prependToPriorityList(
             before: AuthenticatesRequests::class,
             prepend: NoStorePhiResponse::class,
+        );
+
+        // The correlation id goes first of all, so a 401 from Sanctum, a 429
+        // from the throttle and a 500 thrown inside either still carry
+        // `X-Request-ID`. Left to its group position it ran AFTER those, which
+        // the priority sort hoists — the same trap as `no-store` above.
+        $middleware->prependToPriorityList(
+            before: NoStorePhiResponse::class,
+            prepend: AssignRequestId::class,
         );
     })
     ->withExceptions(function (Exceptions $exceptions): void {
@@ -78,6 +89,14 @@ return Application::configure(basePath: dirname(__DIR__))
 
             $status = $e->httpStatus ?: 0;
 
+            // A correlation id on every provider failure, so support can find
+            // the request in our logs and the provider's. `upstream_request_id`
+            // appears only when the provider used a different id than ours.
+            $reference = array_filter([
+                'request_id' => AssignRequestId::current(),
+                'upstream_request_id' => $e->upstreamRequestId !== AssignRequestId::current() ? $e->upstreamRequestId : null,
+            ]);
+
             if ($status === 422) {
                 return response()->json([
                     'message' => 'Some of those values could not be accepted.',
@@ -85,7 +104,7 @@ return Application::configure(basePath: dirname(__DIR__))
                     // caller sent, so a form can point at the field. Validation
                     // text names fields and rules and carries nothing else.
                     'errors' => $e->errors ?? [],
-                ], 422);
+                ] + $reference, 422);
             }
 
             // Deliberately NO 401 here. By the time this exception escapes,
@@ -107,7 +126,7 @@ return Application::configure(basePath: dirname(__DIR__))
             ];
 
             if (isset($passthrough[$status])) {
-                return response()->json(['message' => $passthrough[$status]], $status);
+                return response()->json(['message' => $passthrough[$status]] + $reference, $status);
             }
 
             // Anything else — including a status of 0, which is our own
@@ -115,6 +134,6 @@ return Application::configure(basePath: dirname(__DIR__))
             // caller's. 502 says so without describing it.
             return response()->json([
                 'message' => 'The clinical provider did not complete that request.',
-            ], $status === 0 ? 503 : 502);
+            ] + $reference, $status === 0 ? 503 : 502);
         });
     })->create();

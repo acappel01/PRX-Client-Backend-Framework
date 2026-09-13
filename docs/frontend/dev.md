@@ -9,7 +9,7 @@ Any stack that can call HTTP works. The reference skeleton is Next.js (App Route
 ## 1. Core contract
 
 - **Base URL**: `https://<backend-host>/api/v1`
-- **Envelope**: success → `{ data, meta?, message? }`; failure → `{ message, errors? }`. Always unwrap `data`.
+- **Envelope**: success → `{ data, meta?, message? }`; failure → `{ message, errors? }`, and a failure caused by the clinical provider also carries `request_id` (plus `upstream_request_id` only when the provider used a different id). Every API response has an `X-Request-ID` header. Always unwrap `data`.
 - **Versioning**: breaking changes bump the prefix to `/v2`. Pin to `v1`.
 - **Live reference**: interactive OpenAPI docs at `https://<backend-host>/api/docs` (Scalar UI, generated from code).
 - **Caching**: content endpoints are server-cached (~300s) and invalidated on admin edits. Frontends should still cache/ISR on their side (the reference skeleton uses `revalidate: 300`).

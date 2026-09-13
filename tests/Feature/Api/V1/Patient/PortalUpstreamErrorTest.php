@@ -149,4 +149,82 @@ class PortalUpstreamErrorTest extends TestCase
         $this->postJson('/api/v1/patient/vitals', ['weight_lbs' => 178.4])
             ->assertStatus(404);
     }
+
+    // ─── Correlation id ──────────────────────────────────────────────
+
+    /** Equality, not "looks like a uuid": the id the patient reads must be the one the provider saw. */
+    public function test_a_provider_failure_carries_the_request_id_the_provider_was_sent(): void
+    {
+        $this->fakePrx(['message' => 'boom'], 500);
+
+        $response = $this->postJson('/api/v1/patient/vitals', ['weight_lbs' => 178.4], ['X-Request-ID' => 'evil<script>'])
+            ->assertStatus(502);
+
+        $sent = collect(Http::recorded())
+            ->map(fn ($pair) => $pair[0])
+            ->filter(fn ($request) => str_contains($request->url(), '/me/patient/vitals'))
+            ->sole()
+            ->header('X-Request-ID')[0] ?? null;
+
+        $this->assertNotNull($sent);
+        $this->assertSame($sent, $response->json('request_id'));
+        $this->assertSame($sent, $response->headers->get('X-Request-ID'));
+        // A caller-supplied id is never used — it would write their bytes into two systems' logs.
+        $this->assertNotSame('evil<script>', $sent);
+        $this->assertStringNotContainsString('evil', $response->getContent());
+        $this->assertNull($response->json('upstream_request_id'), 'Same id upstream: no second reference.');
+    }
+
+    public function test_an_echoed_upstream_id_is_not_repeated(): void
+    {
+        Http::fake([
+            '*/patients/*/issue-token' => Http::response([
+                'data' => ['token' => 'patient-token', 'expires_at' => now()->addMinutes(30)->toIso8601String()],
+            ], 201),
+            // What the provider actually does: echo the id it was sent.
+            '*/me/patient/vitals' => fn ($request) => Http::response(['message' => 'boom', 'meta' => ['request_id' => $request->header('X-Request-ID')[0]]], 500),
+        ]);
+
+        $response = $this->postJson('/api/v1/patient/vitals', ['weight_lbs' => 178.4])->assertStatus(502);
+
+        $this->assertNotNull($response->json('request_id'));
+        $this->assertArrayNotHasKey('upstream_request_id', $response->json());
+    }
+
+    public function test_an_upstream_id_that_is_not_an_id_is_dropped(): void
+    {
+        $this->fakePrx(['message' => 'boom', 'meta' => ['request_id' => '<script>alert(1)</script>']], 500);
+
+        $this->postJson('/api/v1/patient/vitals', ['weight_lbs' => 178.4])
+            ->assertStatus(502)
+            ->assertJsonMissingPath('upstream_request_id');
+    }
+
+    public function test_the_request_id_header_is_on_an_unauthenticated_401(): void
+    {
+        $this->app['auth']->forgetGuards();
+
+        $this->getJson('/api/v1/patient/home', ['Authorization' => 'Bearer nope'])
+            ->assertUnauthorized()
+            ->assertHeader('X-Request-ID');
+    }
+
+    public function test_a_different_upstream_id_is_passed_along(): void
+    {
+        $this->fakePrx(['message' => 'boom', 'meta' => ['request_id' => 'prx-minted-id-123']], 500);
+
+        $this->postJson('/api/v1/patient/vitals', ['weight_lbs' => 178.4])
+            ->assertStatus(502)
+            ->assertJsonPath('upstream_request_id', 'prx-minted-id-123');
+    }
+
+    public function test_a_rejected_value_also_carries_a_reference(): void
+    {
+        $this->fakePrx(['message' => 'nope', 'errors' => ['weight_lbs' => ['too big']]], 422);
+
+        $response = $this->postJson('/api/v1/patient/vitals', ['weight_lbs' => 99999])->assertStatus(422);
+
+        $this->assertMatchesRegularExpression('/^[0-9a-f-]{36}$/', (string) $response->json('request_id'));
+        $this->assertSame($response->headers->get('X-Request-ID'), $response->json('request_id'));
+    }
 }

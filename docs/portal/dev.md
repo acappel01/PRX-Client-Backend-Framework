@@ -783,6 +783,19 @@ statuses and that none of that string survives.
 Filament panel actions are unaffected: they catch the exception themselves and the handler returns
 `null` for anything that is not an API request.
 
+### Correlation id
+
+**Added 2026-09-13.** `AssignRequestId` (api group, first in the priority list so Sanctum 401s and
+throttle 429s carry it) mints a uuid per request, puts it in the log context and the `X-Request-ID`
+response header, and `Client` sends it to the provider as `X-Request-ID` — which the provider echoes in
+`meta.request_id` and its response header (not, per its source, its logs). Every provider-error
+body from the renderer carries `request_id`, plus `upstream_request_id` only if the provider used a
+different id. The status and message rules above are unchanged; this adds one opaque key. An inbound
+`X-Request-ID` is **never** read — accepting it would let a caller write into both systems' logs.
+The portal shows it as "Reference" on 5xx screens and on the vitals "couldn't confirm" outcome
+(5xx or no response). `upstream_request_id` is kept only if it matches `[A-Za-z0-9._:-]{1,64}`. Tests: `PortalUpstreamErrorTest` asserts the
+body's id **equals** the id recorded on the wire.
+
 ## Traps this module has already hit
 
 **`no-store` must be registered before the authenticator in the middleware PRIORITY list**
