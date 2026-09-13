@@ -124,6 +124,10 @@ Mail the provider receives for a no-reply address is not forwarded anywhere unle
   removes it from patients who turned it on. Required sends patients without it to set it up on their
   next screen; nobody is signed out. See `docs/portal/user.md` → "Two-step verification", including
   how support resets it for a patient who lost their phone.
+- **Wording for outstanding visit items** — optional. When a visit is held until the patient sends
+  something, the portal lists each item by the clinical provider's own wording ("Government ID
+  (front)"). Add an item code and the text a patient should read instead ("A photo of the front of
+  your driver's licence"). Codes are listed under the field (other visit types can add their own). Plain text, 120 characters.
 - **"Trust this browser" lasts** — days, 0 to 90, default 30. How long a browser a patient trusted can
   skip the code (never the password), renewed on use. 0 removes the option.
 - **Sign out after inactivity** — minutes, 5 to 240, default 30. A patient session unused for this long

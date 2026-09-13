@@ -7,6 +7,7 @@ use App\Data\Settings\PortalSettingsData;
 use App\Enums\Patient\TwoFactorPolicy;
 use App\Settings\PortalSettings;
 use BackedEnum;
+use Filament\Forms\Components\KeyValue;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
@@ -58,6 +59,18 @@ class ManagePortal extends BaseSettingsPage
                             ->maxValue(PortalSettingsData::TRUSTED_DEVICE_MAX_DAYS)
                             ->suffix('days')
                             ->helperText('After entering a code, a patient can trust their browser and skip the code (never the password) for this long, renewed each time they sign in there. 0 turns the option off. Trust is removed when their password is reset, their email is first verified, two-step verification is turned off, reset or moved to a new phone, you sign them out everywhere, or the account is deleted. 0 to 90.'),
+                    ]),
+
+                Section::make('Wording for outstanding visit items')
+                    ->description('When a visit is held until the patient sends something (a photo of their ID, their licence number), the portal lists each item. Write what the patient should read for any item here; items without a line use the clinical provider\'s own wording.')
+                    ->collapsed()
+                    ->components([
+                        KeyValue::make('requirement_labels')
+                            ->label('Item wording')
+                            ->keyLabel('Item code')
+                            ->valueLabel('What the patient reads')
+                            ->addActionLabel('Add wording')
+                            ->helperText('Item codes the provider uses: id_front, id_back, id_upload, selfie_photo, body_photo, drivers_license_number, drivers_license_or_identification_state_of_issue, patient_first_name, patient_last_name, patient_date_of_birth, patient_gender, patient_phone, patient_email, patient_address, vitals, health_questions. Other visit types can add their own codes. Plain text, up to 120 characters.'),
                     ]),
 
                 Section::make('Sessions')

@@ -4,13 +4,16 @@ namespace App\Http\Controllers\Api\V1\Patient;
 
 use App\Actions\Patient\IssuePortalTokenAction;
 use App\Http\Controllers\Api\V1\ApiController;
+use App\Http\Middleware\AssignRequestId;
 use App\Models\Patient;
 use App\Services\Patient\PatientActionStackService;
 use App\Services\Patient\PortalResponseFilter;
 use App\Services\PrescribeRx\Client;
 use App\Services\PrescribeRx\Exceptions\PrescribeRxException;
+use App\Settings\PortalSettings;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 /**
@@ -252,6 +255,125 @@ class PortalController extends ApiController
                 $this->withPatientToken($patient, fn ($t) => $this->prx->getConversationMessages($t, $conversationId, $query))
             )
         );
+    }
+
+    /**
+     * What a held visit still needs from the patient.
+     *
+     * Each item's `label` is the operator's wording (Settings → Patient portal)
+     * when one is set for its slug, otherwise the provider's. The provider only
+     * finds encounters on the token's own chart, so a foreign id is a 404.
+     *
+     * @tags Patient Portal
+     */
+    public function encounterRequirements(Request $request, string $encounterId, PortalSettings $settings): JsonResponse
+    {
+        $patient = $request->user();
+        $this->assertLinkedChart($patient);
+
+        $data = $this->filter->apply('requirements', $this->withPatientToken(
+            $patient,
+            fn ($t) => $this->prx->getEncounterRequirements($t, $encounterId)
+        ));
+
+        $labels = $settings->requirement_labels;
+
+        $data['items'] = array_map(fn (array $item): array => isset($item['slug'], $labels[$item['slug']])
+            ? ['label' => $labels[$item['slug']]] + $item
+            : $item, $data['items'] ?? []);
+
+        return $this->success($data);
+    }
+
+    /**
+     * Send what a held visit needs: text fields and up to four photos (multipart).
+     *
+     * Photos: `id_front`, `id_back`, `selfie_photo`, `body_photo` (`id_upload` is
+     * accepted as `id_front`) — JPEG, PNG or WebP, 10 MB each; nothing is stored
+     * here. Answers `{released, missing, missing_fields, missing_docs}`: released
+     * sends the visit on for review; `released: false` means what was sent IS
+     * saved and more is still needed — so a retry never resends saved documents.
+     * 409 `not_awaiting_completion` when the visit is no longer waiting on the
+     * patient.
+     *
+     * @tags Patient Portal
+     */
+    public function provideInformation(Request $request, string $encounterId): JsonResponse
+    {
+        $patient = $request->user();
+        $this->assertLinkedChart($patient);
+
+        $photo = ['nullable', 'file', 'mimes:jpg,jpeg,png,webp', 'mimetypes:image/jpeg,image/png,image/webp', 'max:10240'];
+
+        $validated = $request->validate([
+            'first_name' => ['nullable', 'string', 'max:100'],
+            'last_name' => ['nullable', 'string', 'max:100'],
+            'date_of_birth' => ['nullable', 'date'],
+            'gender' => ['nullable', 'string', 'max:20'],
+            'phone' => ['nullable', 'string', 'max:30'],
+            'email' => ['nullable', 'email', 'max:255'],
+            'address_street1' => ['nullable', 'string', 'max:255'],
+            'address_street2' => ['nullable', 'string', 'max:255'],
+            'address_city' => ['nullable', 'string', 'max:100'],
+            'address_state' => ['nullable', 'string', 'max:50'],
+            'address_zip' => ['nullable', 'string', 'max:20'],
+            'weight' => ['nullable', 'numeric', 'between:1,1500'],
+            'height_feet' => ['nullable', 'integer', 'between:1,9'],
+            'height_inches' => ['nullable', 'integer', 'between:0,11'],
+            'drivers_license_number' => ['nullable', 'string', 'max:50'],
+            'drivers_license_state' => ['nullable', 'string', 'max:50'],
+            'id_front' => $photo,
+            'id_upload' => $photo,
+            'id_back' => $photo,
+            'selfie_photo' => $photo,
+            'body_photo' => $photo,
+        ]);
+
+        // Validated keys only, never the raw request: nothing a caller adds (a
+        // chart id, an organisation) can reach the provider.
+        $fields = array_filter(
+            array_intersect_key($validated, array_flip(['first_name', 'last_name', 'date_of_birth', 'gender', 'phone', 'email', 'address_street1', 'address_street2', 'address_city', 'address_state', 'address_zip', 'weight', 'height_feet', 'height_inches', 'drivers_license_number', 'drivers_license_state'])),
+            fn ($value) => $value !== null && $value !== ''
+        );
+        $fields = array_map(fn ($value) => (string) $value, $fields);
+
+        $files = array_filter([
+            'id_front' => $request->file('id_front') ?? $request->file('id_upload'),
+            'id_back' => $request->file('id_back'),
+            'selfie_photo' => $request->file('selfie_photo'),
+            'body_photo' => $request->file('body_photo'),
+        ]);
+
+        if ($fields === [] && $files === []) {
+            return $this->error('Add at least one of the items requested.', 422, ['items' => ['Add at least one of the items requested.']]);
+        }
+
+        try {
+            $result = $this->withPatientToken(
+                $patient,
+                fn ($t) => $this->prx->provideEncounterInformation($t, $encounterId, $fields, $files)
+            );
+        } catch (PrescribeRxException $e) {
+            if ($e->httpStatus === 409) {
+                return response()->json([
+                    'message' => 'This visit is no longer waiting on you.',
+                    'code' => 'not_awaiting_completion',
+                    'request_id' => AssignRequestId::current(),
+                ], 409);
+            }
+
+            throw $e;
+        }
+
+        // Slugs only in the log: the values are a licence number and an address.
+        Log::info('Patient provided intake information.', [
+            'encounter_id' => $encounterId,
+            'fields' => array_keys($fields),
+            'files' => array_keys($files),
+            'released' => (bool) ($result['released'] ?? false),
+        ]);
+
+        return $this->success($this->filter->apply('provide-information', $result));
     }
 
     /**

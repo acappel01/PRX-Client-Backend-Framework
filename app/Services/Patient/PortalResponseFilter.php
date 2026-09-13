@@ -242,6 +242,25 @@ class PortalResponseFilter
             'created_at',
         ],
 
+        // What a held visit still needs. Labels are replaced by the operator's
+        // wording (PortalSettings::requirement_labels) in the controller.
+        'requirements' => [
+            'encounter_id',
+            'status',
+            'resolvable_via_api',
+            'info_request_message',
+            'completeness_pct',
+            'missing',
+            'items' => ['slug', 'label', 'type', 'satisfied'],
+        ],
+
+        'provide-information' => [
+            'released',
+            'missing',
+            'missing_fields',
+            'missing_docs',
+        ],
+
         'conversation-opened' => [
             'conversation_id',
             'encounter_id',

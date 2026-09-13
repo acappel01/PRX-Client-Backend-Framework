@@ -210,6 +210,22 @@ class PatientSecurityOperatorTest extends TestCase
         $this->assertSame('optional', $stored->two_factor_policy);
     }
 
+    /** The KeyValue field's own dehydrated shape, through getState → DTO → action — not a hand-built array. */
+    public function test_requirement_wording_saves_through_the_page(): void
+    {
+        $this->actingAs($this->operator);
+
+        Livewire::test(ManagePortal::class)
+            ->fillForm(['requirement_labels' => ['id_front' => 'A photo of the front of your ID', 'vitals' => 'Your weight and height']])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertSame(
+            ['id_front' => 'A photo of the front of your ID', 'vitals' => 'Your weight and height'],
+            app(PortalSettings::class)->refresh()->requirement_labels,
+        );
+    }
+
     public function test_the_retention_setting_refuses_values_outside_its_bounds(): void
     {
         $this->actingAs($this->operator);

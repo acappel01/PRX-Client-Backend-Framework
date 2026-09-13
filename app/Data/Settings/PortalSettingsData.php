@@ -23,6 +23,22 @@ class PortalSettingsData extends Data
 
     public const TRUSTED_DEVICE_MAX_DAYS = 90;
 
+    public const REQUIREMENT_LABEL_MAX = 120;
+
+    /**
+     * Keys are provider slugs (lowercase, digits, underscore); values are short
+     * plain text a patient reads. Blank values are dropped rather than stored.
+     *
+     * @return array<string, array<int, string>>
+     */
+    public static function rules(): array
+    {
+        return [
+            'requirement_labels' => ['array', 'max:100'],
+            'requirement_labels.*' => ['nullable', 'string', 'max:'.self::REQUIREMENT_LABEL_MAX],
+        ];
+    }
+
     public function __construct(
         // No "keep forever": identifying data needs an end date.
         #[Required, Between(self::RETENTION_MIN_DAYS, self::RETENTION_MAX_DAYS)]
@@ -36,5 +52,7 @@ class PortalSettingsData extends Data
         public string $two_factor_policy,
         #[Required, Between(0, self::TRUSTED_DEVICE_MAX_DAYS)]
         public int $trusted_device_days,
+        /** @var array<string, string> */
+        public array $requirement_labels = [],
     ) {}
 }

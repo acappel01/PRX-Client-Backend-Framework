@@ -30,6 +30,14 @@ class PortalSettings extends Settings
     /** Days "trust this browser" lasts, sliding with use; 0 turns it off. */
     public int $trusted_device_days;
 
+    /**
+     * Operator-written text for each item a held visit still needs, keyed by the
+     * provider's requirement slug. A slug with no entry shows the provider's label.
+     *
+     * @var array<string, string>
+     */
+    public array $requirement_labels;
+
     /** A TwoFactorPolicy value. */
     public string $two_factor_policy;
 

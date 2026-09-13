@@ -11,6 +11,7 @@ use App\Services\PrescribeRx\Exceptions\PrescribeRxException;
 use App\Settings\IntegrationSettings;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -353,6 +354,75 @@ class Client
                 array_intersect_key($query, array_flip(['after', 'per_page']))
             )
         );
+    }
+
+    /**
+     * What a held visit still needs from the patient.
+     *
+     * `{encounter_id, status, resolvable_via_api, info_request_message,
+     * completeness_pct, items: [{slug, label, type: file|text|field, satisfied}],
+     * missing: [slug]}`. `resolvable_via_api` is true only while the visit waits in
+     * `requires_information` with no provider assigned — the one state the
+     * provide-information call accepts.
+     */
+    public function getEncounterRequirements(string $patientToken, string $encounterId): array
+    {
+        if (config('prescribe-rx.stub')) {
+            return ['encounter_id' => $encounterId, 'status' => 'requires_information', 'resolvable_via_api' => false, 'info_request_message' => null, 'completeness_pct' => 100, 'items' => [], 'missing' => []];
+        }
+
+        return $this->extractData(
+            $this->patientRequest($patientToken)->get("/me/patient/encounters/{$encounterId}/requirements")
+        );
+    }
+
+    /**
+     * Send what a held visit needs: text fields and up to four photos, multipart.
+     *
+     * The files are read into memory (≤ 10 MB each, validated by the caller) rather
+     * than streamed, so the 401-renew retry in PortalController can send them again.
+     *
+     * Returns `{released, missing, missing_fields, missing_docs}` for BOTH a
+     * release (200) and "saved, but more is still needed" — which the provider
+     * answers as a 422 AFTER committing what it received. Treating that 422 as
+     * "nothing was written" would tell a patient to resend documents already on
+     * file. Every other failure throws.
+     *
+     * @param  array<string, string>  $fields
+     * @param  array<string, UploadedFile>  $files
+     * @return array{released: bool, missing: array<int, string>, missing_fields: array<int, string>, missing_docs: array<int, string>}
+     */
+    public function provideEncounterInformation(string $patientToken, string $encounterId, array $fields, array $files): array
+    {
+        if (config('prescribe-rx.stub')) {
+            return ['released' => true, 'missing' => [], 'missing_fields' => [], 'missing_docs' => []];
+        }
+
+        $request = $this->patientRequest($patientToken, json: false)->timeout(120);
+
+        foreach ($files as $name => $file) {
+            // attach() switches the request to multipart, overriding asJson().
+            $request = $request->attach($name, (string) file_get_contents($file->getRealPath()), $name.'.'.($file->guessExtension() ?: 'jpg'), ['Content-Type' => $file->getMimeType()]);
+        }
+
+        $response = $request->post("/me/patient/encounters/{$encounterId}/provide-information", $fields);
+
+        $errors = $response->json('errors');
+
+        // The provider's own shape for "saved, still missing" — all three lists —
+        // so a field-validation 422 can never be mistaken for a partial save.
+        if ($response->status() === 422 && is_array($errors)
+            && array_key_exists('missing', $errors)
+            && (array_key_exists('missing_docs', $errors) || array_key_exists('missing_fields', $errors))) {
+            return [
+                'released' => false,
+                'missing' => array_values((array) ($errors['missing'] ?? [])),
+                'missing_fields' => array_values((array) ($errors['missing_fields'] ?? [])),
+                'missing_docs' => array_values((array) ($errors['missing_docs'] ?? [])),
+            ];
+        }
+
+        return $this->extractData($response);
     }
 
     /**
@@ -826,17 +896,21 @@ class Client
      * (from `issuePatientToken()`). Used for all `/me/patient/*` calls
      * and for encounter video-token (PHI audit requires patient identity).
      */
-    protected function patientRequest(string $patientToken): PendingRequest
+    protected function patientRequest(string $patientToken, bool $json = true): PendingRequest
     {
-        return Http::baseUrl($this->baseUrl())
+        $request = Http::baseUrl($this->baseUrl())
             ->withToken($patientToken)
             ->withHeaders(config('prescribe-rx.default_headers'))
             // Ours, so the provider's logs and ours share one id per request.
             ->withHeaders(['X-Request-ID' => AssignRequestId::current()])
             ->connectTimeout((int) config('prescribe-rx.http.connect_timeout', 5))
             ->timeout((int) config('prescribe-rx.http.request_timeout', 30))
-            ->acceptJson()
-            ->asJson();
+            ->acceptJson();
+
+        // asJson() sets an explicit `Content-Type: application/json` header that
+        // attach() does NOT remove — a multipart upload built on it goes out
+        // labelled as JSON and the provider cannot parse it. Uploads opt out.
+        return $json ? $request->asJson() : $request;
     }
 
     /**
