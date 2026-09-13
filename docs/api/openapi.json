@@ -7971,6 +7971,69 @@
                 }
             }
         },
+        "/patient/security/events": {
+            "get": {
+                "operationId": "v1.patient.portal.security.events",
+                "description": "`is_current_session` marks the sign-in this request's session came from.\n`actor` is `you`, `unverified` (a failed attempt or an anonymous link\nrequest \u2014 not proven to be the patient), `operator` or `system`.\n`meta.retention_days` is how long history is kept.",
+                "summary": "Recent security events on the patient's account: sign-ins and failed\nattempts (with IP address and browser), sign-outs, sessions ended, links\nsent, password and account changes. Newest first",
+                "tags": [
+                    "PatientPortal"
+                ],
+                "parameters": [
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "additionalProperties": {}
+                                            }
+                                        },
+                                        "meta": {
+                                            "type": "object",
+                                            "properties": {
+                                                "retention_days": {
+                                                    "type": "integer"
+                                                }
+                                            },
+                                            "required": [
+                                                "retention_days"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "meta"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
         "/patient/home": {
             "get": {
                 "operationId": "v1.patient.portal.home",
