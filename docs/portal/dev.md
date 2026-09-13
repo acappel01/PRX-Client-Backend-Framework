@@ -410,6 +410,121 @@ addresses can never receive mail. Login sessions now carry `patient:*` abilities
 **Deploy:** `php artisan horizon:terminate` after shipping — workers must load the
 new job classes.
 
+## Security history
+
+**Added 2026-09-13.** Every sign-in (and failed attempt), sign-out, session revocation, emailed
+link sent or used, password change, and operator change to a patient account writes one row to
+`patient_security_events`, with the client IP and user agent. Patients read their own under
+Record → *Sign-in activity*; operators read it on the patient record.
+
+### Writing
+
+One path: `App\Services\Patient\PatientSecurityLog::record()`. It never throws — a failed insert
+is `Log::critical` with the event type and exception class only (not `report()`: the handler logs
+the message, and an insert's message quotes the IP and user agent). A broken log must not lock
+patients out. Callers record **after** their transaction commits.
+
+The IP and user agent travel as `App\Data\Patient\RequestContext` (`fromRequest()`), which
+replaced the `?string $ip` parameter on every patient action. The IP is `$request->ip()` behind
+`TRUSTED_PROXIES`; the user agent is scrubbed to valid UTF-8 and capped at 512 characters, because
+a strict-mode insert rejects anything else and the event would be lost. `SendAccountLinkJob` now
+carries the user agent next to the IP inside its encrypted payload.
+
+| Event | Written by | Actor | Notes |
+|---|---|---|---|
+| `login_succeeded` | `LoginPatientAction` | patient | `token_id` = the session it opened |
+| `login_failed` | `LoginPatientAction` | anonymous | `context.reason` = `unknown_account` / `bad_password`; unknown address has no patient, only `subject_hash` |
+| `logout` | `LogoutPatientAction` | patient | `token_id` = the session ended |
+| `sessions_revoked` | reset, first claim, `RevokePatientSessionsAction` | varies | `context.revoked` = count, `context.reason`; written only when a reset or claim actually ended one |
+| `claim_link_sent` | `RequestClaimLinkAction` | patient | only when a link actually went out |
+| `reset_link_sent` / `create_account_link_sent` | `RequestAccountLinkAction` (queued) | anonymous | create has no patient, only `subject_hash` |
+| `account_created`, `record_claimed` | `CreatePatientAccountAction` | patient | no separate `email_verified` — creation is the verification |
+| `record_claimed`, `email_verified` | `ClaimPatientRecordAction` | patient | verified only on the first verification |
+| `password_changed`, `email_verified` | `ResetPatientPasswordAction` | patient | `context.method = reset_link` |
+| `email_changed`, `chart_link_changed` | `PatientSecurityObserver` | operator | **only when an admin user is signed in on `web`** — the patient's own flows set the same columns and record their own events |
+| `account_deleted`, `account_restored`, `account_purged` | `PatientSecurityObserver` | operator or system | soft delete also deletes the patient's tokens (counted in the `account_deleted` row's `context.revoked`, no separate `sessions_revoked`), so a restore starts signed out |
+
+Not recorded: a request refused by `throttle:auth` (429) never reaches a controller. An edit made
+with `saveQuietly()`, `withoutEvents()`, a query-builder update, or tinker without a signed-in
+user bypasses the observer.
+
+### Sign-in timing
+
+`LoginPatientAction` used to short-circuit on an unknown address and skip bcrypt, answering in
+microseconds where a real account took hundreds of milliseconds. It now spends `Hash::make()` on
+that branch and writes the same one event, so body, status and cost match
+(`test_an_unknown_address_still_spends_a_password_hash`).
+
+### Append-only, and what "tamper-evident" means here
+
+- `PatientSecurityEvent` has no `updated_at`; `updating` and `deleting` throw. That stops edits
+  **through the application**, not through SQL — the database user can still run anything.
+  (On this box every app shares one database user with full privileges; a per-app user is an ops
+  prerequisite for any database-level guarantee.)
+- `integrity` = HMAC-SHA256 over a canonical JSON of the immutable columns, keyed by a key derived
+  from `APP_KEY`. Context keys are sorted before signing because MySQL's JSON type reorders them.
+  `patient_id` is **not** signed (its foreign key nulls it on force delete); `patient_uuid` is.
+  Verification also tries `app.previous_keys`, so rotating `APP_KEY` does not make history look
+  forged — **keep the old key in `APP_PREVIOUS_KEYS` after a rotation**.
+- `php artisan patient-security-events:verify` (scheduled Mondays 04:00) recomputes every
+  signature and checks each non-null `patient_id` still resolves to the signed uuid. Failures are
+  `Log::critical` with row ids and exit 1.
+- 🔴 **It detects an edited row. It does not detect a deleted row.** That needs a hash chain, and
+  a chain was deliberately not built: on MySQL `REPEATABLE-READ` with interleaved auto-increment,
+  two concurrent sign-ins read the same head and fork it unless every sign-in on the install
+  serialises behind one lock, and pruning then needs a checkpoint row. The row already has what a
+  chain would sign; add it if the threat model grows to include deletion.
+
+### Failed sign-ins for an address with no account
+
+Stored, with `patient_id` null and `subject_hash` = HMAC of the lowercased, trimmed address (a plain
+sha256 of an address is reversible by dictionary). Every email-addressed event carries the same
+hash, so attempts against one address can be counted across the account's whole lifetime, and
+indexes on `(subject_hash, occurred_at)` and `(ip_address, occurred_at)` support stuffing
+detection later. These rows are **not** shown to the patient or on the patient record: the address
+was typed by someone unproven. A key rotation starts new hashes.
+
+### Retention
+
+`PortalSettings::security_events_retention_days` (Settings → Patient portal), default **730**,
+bounded 30–2555 with no "forever". `PatientSecurityEvent` is `MassPrunable` — **not** `Prunable`,
+whose per-row `delete()` the append-only guard would refuse — pruned daily at 03:30 by its own
+`model:prune --model` entry. `prunable()` never goes below 30 days whatever is stored. Whole rows
+only; nothing is redacted in place (an UPDATE would break the signature).
+
+### Exposure
+
+- **Patient:** `GET /patient/security/events?limit=` (default 20, max 100), newest first, by
+  `patient_id` only, `no-store`. `PatientSecurityEventResource` is a whitelist: `type`, `label`,
+  `occurred_at`, `ip_address`, `user_agent`, `actor` (`you` / `unverified` / `operator` / `system`),
+  `is_current_session`, `sessions_revoked`. Never the row id, hash, signature, operator id, or
+  `context.reason` (which would say whether the address or the password was wrong). On an
+  `operator` or `system` event `ip_address` and `user_agent` are null — they would be the support
+  desk's, not the patient's.
+  `meta.retention_days` carries the setting.
+- **Operator:** `SecurityEventsRelationManager` on the patient record (admin panel only), gated
+  on `view` of the owning patient — the model has no Shield policy. Read-only.
+  **Sign out everywhere** (header action on the patient's view page, gated on `update`) runs
+  `RevokePatientSessionsAction`; the password is not changed.
+
+Found on the way and fixed: the patient **view** page had thrown since it was added
+(`PatientInfolist` imported `Filament\Infolists\Components\Section`, which Filament 4 moved to
+`Filament\Schemas\Components`). Nothing tested it.
+
+**Reserved for later increments** (names only, not built): `two_factor_enrolled`,
+`two_factor_removed`, `two_factor_challenge_failed`, `recovery_code_used`, `device_trusted`,
+`device_revoked`, `step_up_succeeded`. Trusted devices must be revoked on password change and first
+verification when they exist. Sanctum patient tokens still never expire (`sanctum.expiration`
+null) — do not build trusted devices on "sessions end".
+
+**Deploy:** `php artisan migrate` (table + settings row), `php artisan horizon:terminate`
+(`SendAccountLinkJob` gained a constructor argument), Shield ritual for `ManagePortal`. A
+`SendAccountLinkJob` queued by the previous version fails once on `$userAgent` being uninitialised
+(caught, class-only log) — the person asks again. Drain the queue first if that matters.
+
+Not covered by tests: the IP and user agent on observer and "Sign out everywhere" events — the
+observer passes no client while `runningInConsole()`, which PHPUnit is. Verified live instead.
+
 ## Endpoints
 
 | Route | Token | Notes |
@@ -419,6 +534,7 @@ new job classes.
 | `POST /patient/auth/create-account` | anonymous | `{token, password}`. 201 with a session; 422 `errors.token`. |
 | `POST /patient/auth/password/reset` | anonymous | `{token, password}`. 200, no session; every session revoked. |
 | `POST /patient/claim-links` | **none** | Account, not clinical. Empty body; uniform 202; 503 when this install cannot send; 429 over 3/hour. Emails the order's address. |
+| `GET /patient/security/events` | **none** | The account's own security history. `?limit=` 1–100. `meta.retention_days`. See "Security history". |
 | `POST /patient/claim` | **none** | `{token}`. 200 with the patient; 422 `errors.token`. Links the record and verifies the address in one transaction. |
 | `GET /patient/home` | patient | **Screen-shaped and server-ranked.** One call, not six. |
 | `GET /patient/dashboard` | patient | Raw dashboard, filtered. |

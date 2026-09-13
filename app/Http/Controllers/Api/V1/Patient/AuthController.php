@@ -5,9 +5,11 @@ namespace App\Http\Controllers\Api\V1\Patient;
 use App\Actions\Exceptions\ActionException;
 use App\Actions\Patient\CreatePatientAccountAction;
 use App\Actions\Patient\LoginPatientAction;
+use App\Actions\Patient\LogoutPatientAction;
 use App\Actions\Patient\RequestAccountLinkAction;
 use App\Actions\Patient\ResetPatientPasswordAction;
 use App\Data\Patient\PatientResource;
+use App\Data\Patient\RequestContext;
 use App\Http\Controllers\Api\V1\ApiController;
 use App\Jobs\Patient\SendAccountLinkJob;
 use App\Services\Patient\PatientMail;
@@ -15,6 +17,7 @@ use Illuminate\Auth\AuthenticationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
+use Laravel\Sanctum\PersonalAccessToken;
 
 /**
  * Patient authentication — account links, login, logout, me.
@@ -85,7 +88,7 @@ class AuthController extends ApiController
             $validated['token'],
             $validated['password'],
             $validated['device_name'] ?? ($request->userAgent() ?? 'api'),
-            $request->ip(),
+            RequestContext::fromRequest($request),
         );
 
         return $this->success([
@@ -110,7 +113,7 @@ class AuthController extends ApiController
             'password' => ['required', 'string', 'min:8', 'max:255'],
         ]);
 
-        $action->execute($validated['token'], $validated['password'], $request->ip());
+        $action->execute($validated['token'], $validated['password'], RequestContext::fromRequest($request));
 
         return response()->json(['data' => ['changed' => true], 'message' => self::PASSWORD_CHANGED]);
     }
@@ -137,6 +140,7 @@ class AuthController extends ApiController
                 $validated['email'],
                 $validated['password'],
                 $validated['device_name'] ?? ($request->userAgent() ?? 'api'),
+                RequestContext::fromRequest($request),
             );
         } catch (AuthenticationException $e) {
             throw ValidationException::withMessages(['email' => [$e->getMessage()]]);
@@ -154,9 +158,13 @@ class AuthController extends ApiController
      *
      * @tags PatientAuth
      */
-    public function logout(Request $request): JsonResponse
+    public function logout(Request $request, LogoutPatientAction $action): JsonResponse
     {
-        $request->user()->currentAccessToken()->delete();
+        $session = $request->user()->currentAccessToken();
+
+        if ($session instanceof PersonalAccessToken) {
+            $action->execute($request->user(), $session, RequestContext::fromRequest($request));
+        }
 
         return $this->success(['message' => 'Token revoked.']);
     }
@@ -187,6 +195,7 @@ class AuthController extends ApiController
         SendAccountLinkJob::dispatch(
             RequestAccountLinkAction::normalise($validated['email']),
             $request->ip(),
+            RequestContext::fromRequest($request)->userAgent,
         );
 
         return response()->json(['data' => ['sent' => true], 'message' => self::LINK_SENT], 202);

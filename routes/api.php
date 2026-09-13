@@ -30,6 +30,7 @@ use App\Http\Controllers\Api\V1\Orders\OrderController;
 use App\Http\Controllers\Api\V1\Patient\AccountController as PatientAccountController;
 use App\Http\Controllers\Api\V1\Patient\AuthController as PatientAuthController;
 use App\Http\Controllers\Api\V1\Patient\PortalController;
+use App\Http\Controllers\Api\V1\Patient\SecurityController as PatientSecurityController;
 use App\Http\Controllers\Api\V1\Quiz\QuizController;
 use App\Http\Controllers\Api\V1\Recommendations\ProtocolPreviewController;
 use App\Http\Controllers\Api\V1\Referral\ReferralClickController;
@@ -346,6 +347,10 @@ Route::prefix('v1')->name('api.v1.')->group(function (): void {
         Route::post('claim', [PatientAccountController::class, 'claim'])
             ->middleware('throttle:claim')
             ->name('claim');
+
+        // The account's own security history. Not clinical, but it is who
+        // signed in from where, so it lives behind `no-store` like the rest.
+        Route::get('security/events', [PatientSecurityController::class, 'events'])->name('security.events');
 
         Route::get('home', [PortalController::class, 'home'])->name('home');
         Route::get('dashboard', [PortalController::class, 'dashboard'])->name('dashboard');

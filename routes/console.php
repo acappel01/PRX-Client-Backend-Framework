@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Commerce\Cart;
+use App\Models\PatientSecurityEvent;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -57,6 +58,20 @@ Schedule::command('queue:prune-batches --hours=168')
 // blast radius the day someone adds the trait somewhere else.
 Schedule::command('model:prune', ['--model' => [Cart::class]])
     ->dailyAt('03:20')
+    ->onOneServer();
+
+// Patient security history, by the operator's retention setting (Settings →
+// Patient portal). MassPrunable: a query-level delete of whole rows, the one
+// removal the append-only model allows. Its own entry, not added to the cart
+// list above, so either can be changed without reasoning about the other.
+Schedule::command('model:prune', ['--model' => [PatientSecurityEvent::class]])
+    ->dailyAt('03:30')
+    ->onOneServer();
+
+// Signatures on that history. Weekly is enough to learn that a row was edited;
+// it cannot say anything about a row that was deleted.
+Schedule::command('patient-security-events:verify')
+    ->weeklyOn(1, '04:00')
     ->onOneServer();
 
 // Harmless today (no tokens exist yet) and required the moment the API moves

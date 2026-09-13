@@ -4,12 +4,15 @@ namespace App\Actions\Patient;
 
 use App\Actions\Concerns\Transacts;
 use App\Actions\Exceptions\ActionException;
+use App\Data\Patient\RequestContext;
+use App\Enums\Patient\SecurityEventType;
 use App\Events\Patient\ClaimLinkRequested;
 use App\Integrations\Messages\EmailMessage;
 use App\Models\Lead;
 use App\Models\Patient;
 use App\Models\PatientEmailToken;
 use App\Services\Patient\PatientMail;
+use App\Services\Patient\PatientSecurityLog;
 use App\Settings\BrandSettings;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -58,6 +61,7 @@ class RequestClaimLinkAction
     public function __construct(
         private readonly PatientMail $mail,
         private readonly BrandSettings $brand,
+        private readonly PatientSecurityLog $log,
     ) {}
 
     /**
@@ -66,7 +70,7 @@ class RequestClaimLinkAction
      *
      * @throws ActionException 503 when this installation cannot send.
      */
-    public function execute(Patient $patient, ?string $ip = null): bool
+    public function execute(Patient $patient, ?RequestContext $client = null): bool
     {
         $delivery = $this->mail->deliveryOrFail('Claim link');
 
@@ -78,7 +82,7 @@ class RequestClaimLinkAction
 
         $plain = PatientEmailToken::newPlainToken();
 
-        $token = $this->tx(function () use ($patient, $lead, $plain, $ip): PatientEmailToken {
+        $token = $this->tx(function () use ($patient, $lead, $plain, $client): PatientEmailToken {
             // One live link per order. A second request supersedes the first,
             // so an inbox holding several copies holds one that works.
             PatientEmailToken::query()
@@ -94,7 +98,7 @@ class RequestClaimLinkAction
                 'sent_to' => Str::lower($lead->email),
                 'token_hash' => PatientEmailToken::hash($plain),
                 'expires_at' => now()->addMinutes(PatientEmailToken::CLAIM_TTL_MINUTES),
-                'requested_ip' => $ip,
+                'requested_ip' => $client?->ip,
             ]);
         });
 
@@ -114,6 +118,11 @@ class RequestClaimLinkAction
 
             throw $this->mail->unavailable();
         }
+
+        // Only when a link actually went out, like ClaimLinkRequested. The
+        // patient sees this history, and "nothing matched" must not show there
+        // any more than in the response.
+        $this->log->record(SecurityEventType::ClaimLinkSent, patient: $patient, client: $client);
 
         ClaimLinkRequested::dispatch($patient);
 

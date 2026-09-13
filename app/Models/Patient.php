@@ -68,4 +68,9 @@ class Patient extends Authenticatable
     {
         return $this->hasMany(Order::class);
     }
+
+    public function securityEvents(): HasMany
+    {
+        return $this->hasMany(PatientSecurityEvent::class);
+    }
 }

@@ -189,6 +189,16 @@ Why the split: From must sit on the provider-verified sending domain or SPF/DKIM
 
 **The Email section of `ManageCommunication` saved nothing until this change.** `CommunicationSettingsData` and `UpdateCommunicationSettingsAction` carried only the Twilio/SMS/voice/video fields, so "Send email", the provider, credentials and From all reported success and wrote nothing (on Atlas, every Email value was still null when this was found). The page also now merges the form state **over the stored values**: Filament omits hidden fields from `getState()`, and the action assigns every field, so switching provider erased the previous provider's key and switching SMS off erased the opt-in message. `ManageCommunicationEmailSaveTest` drives all of it through the real form.
 
+## Patient portal settings (2026-09-13)
+
+Group `portal`, one key: `security_events_retention_days` (int, default 730). `PortalSettings` →
+`PortalSettingsData` (`Between(30, 2555)`, constants on the DTO) → `UpdatePortalSettingsAction` →
+`ManagePortal` at `/admin/settings/portal`. Read by `PatientSecurityEvent::prunable()`, which also
+floors it at 30 whatever is stored, and returned to the portal as `meta.retention_days` on
+`GET /patient/security/events`. Tests: `tests/Feature/Patient/PatientSecurityOperatorTest.php`
+(page save and bounds) and `PatientSecurityEventIntegrityTest.php` (prune). See
+`docs/portal/dev.md` → "Security history".
+
 ## Theme text classes (added 2026-08-16)
 
 ## Frontend behaviour flags

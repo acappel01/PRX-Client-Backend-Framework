@@ -6,6 +6,7 @@ use App\Actions\Exceptions\ActionException;
 use App\Actions\Patient\ClaimPatientRecordAction;
 use App\Actions\Patient\RequestClaimLinkAction;
 use App\Data\Patient\PatientResource;
+use App\Data\Patient\RequestContext;
 use App\Http\Controllers\Api\V1\ApiController;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -37,7 +38,7 @@ class AccountController extends ApiController
     public function requestClaimLink(Request $request, RequestClaimLinkAction $action): JsonResponse
     {
         try {
-            $action->execute($request->user(), $request->ip());
+            $action->execute($request->user(), RequestContext::fromRequest($request));
         } catch (ActionException $e) {
             return $this->error($e->getMessage(), $e->getCode());
         }
@@ -60,7 +61,7 @@ class AccountController extends ApiController
             $request->user(),
             $request->input('token'),
             $current instanceof PersonalAccessToken ? $current->getKey() : null,
-            $request->ip(),
+            RequestContext::fromRequest($request),
         );
 
         return $this->success(['patient' => PatientResource::fromModel($patient)->toArray()]);

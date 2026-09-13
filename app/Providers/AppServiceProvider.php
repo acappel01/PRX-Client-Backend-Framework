@@ -21,6 +21,7 @@ use App\Models\Kb\HealthGoal;
 use App\Models\Lead;
 use App\Models\Page;
 use App\Models\PageSection;
+use App\Models\Patient;
 use App\Models\Quiz\Quiz;
 use App\Models\Quiz\QuizQuestion;
 use App\Models\Quiz\QuizQuestionOption;
@@ -28,6 +29,7 @@ use App\Models\Quiz\QuizStep;
 use App\Observers\CmsCacheObserver;
 use App\Observers\LeadObserver;
 use App\Observers\PageSectionObserver;
+use App\Observers\PatientSecurityObserver;
 use App\Services\Cms\BlockRegistry;
 use App\Services\Cms\FrontendRevalidator;
 use App\Services\Cms\PageRevisionService;
@@ -177,6 +179,9 @@ class AppServiceProvider extends ServiceProvider
         // Watches `leads.status` so every disposition change — from an action,
         // the Filament form, an import or a workflow — becomes one event.
         Lead::observe(LeadObserver::class);
+
+        // Operator edits, deletes and restores become patient security events.
+        Patient::observe(PatientSecurityObserver::class);
 
         Page::observe(CmsCacheObserver::class);
         PageSection::observe(CmsCacheObserver::class);

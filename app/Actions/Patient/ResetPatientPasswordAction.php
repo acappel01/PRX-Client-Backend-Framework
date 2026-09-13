@@ -3,11 +3,14 @@
 namespace App\Actions\Patient;
 
 use App\Actions\Concerns\Transacts;
+use App\Data\Patient\RequestContext;
+use App\Enums\Patient\SecurityEventType;
 use App\Events\Patient\EmailVerified;
 use App\Events\Patient\PasswordChanged;
 use App\Jobs\Patient\SendPasswordChangedNoticeJob;
 use App\Models\Patient;
 use App\Models\PatientEmailToken;
+use App\Services\Patient\PatientSecurityLog;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
@@ -42,10 +45,14 @@ class ResetPatientPasswordAction
 {
     use Transacts;
 
+    public const REASON = 'password_reset';
+
+    public function __construct(private readonly PatientSecurityLog $log) {}
+
     /**
      * @throws ValidationException keyed `token`.
      */
-    public function execute(mixed $plain, string $password, ?string $ip = null): Patient
+    public function execute(mixed $plain, string $password, ?RequestContext $client = null): Patient
     {
         if (! PatientEmailToken::looksValid($plain)) {
             throw $this->refusal();
@@ -69,7 +76,9 @@ class ResetPatientPasswordAction
 
         $firstVerification = $patient->email_verified_at === null;
 
-        $patient = $this->tx(function () use ($token, $patient, $password, $ip): Patient {
+        $revoked = 0;
+
+        $patient = $this->tx(function () use ($token, $patient, $password, $client, &$revoked): Patient {
             $won = PatientEmailToken::query()
                 ->whereKey($token->getKey())
                 ->whereNull('consumed_at')
@@ -77,7 +86,7 @@ class ResetPatientPasswordAction
                 ->update([
                     'consumed_at' => now(),
                     'consumed_by_patient_id' => $patient->getKey(),
-                    'consumed_ip' => $ip,
+                    'consumed_ip' => $client?->ip,
                 ]);
 
             if ($won !== 1) {
@@ -90,7 +99,7 @@ class ResetPatientPasswordAction
             ])->save();
 
             // Every session, including any a squatter or a password thief holds.
-            $patient->tokens()->delete();
+            $revoked = $patient->tokens()->delete();
 
             // Any other reset link still in an inbox is now a way back in.
             PatientEmailToken::query()
@@ -106,6 +115,16 @@ class ResetPatientPasswordAction
             Log::warning('A password reset verified an account that already held a medical record.', [
                 'patient_id' => $patient->getKey(),
             ]);
+        }
+
+        $this->log->record(SecurityEventType::PasswordChanged, patient: $patient, client: $client, context: ['method' => 'reset_link']);
+
+        if ($revoked > 0) {
+            $this->log->record(SecurityEventType::SessionsRevoked, patient: $patient, client: $client, context: ['reason' => self::REASON, 'revoked' => $revoked]);
+        }
+
+        if ($firstVerification) {
+            $this->log->record(SecurityEventType::EmailVerified, patient: $patient, client: $client);
         }
 
         PasswordChanged::dispatch($patient);

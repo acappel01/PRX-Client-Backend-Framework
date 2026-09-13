@@ -51,7 +51,33 @@ Accounts registered the old way (before 2026-09-13) still sign in normally. If s
 was registered by someone other than the inbox owner, the real owner can take it over with
 **Forgot password**: the reset proves their inbox and signs everyone else out.
 
+## Sign-in activity and signing a patient out
+
+Every sign-in to a patient account is recorded — with the time, the IP address and the browser —
+and so are failed sign-in attempts, sign-outs, password changes, emailed links, and changes made
+in the admin (email address, record link, delete, restore).
+
+- **Patients** see their own list on the portal's **Record** page under *Sign-in activity*,
+  marked "This device" for the session they are using. Changes made in the admin show as
+  "by support".
+- **You** see it on the patient's record in the admin, under **Security history**, including
+  which staff member made each change. Nothing on that list can be edited or deleted.
+
+| The patient says | What to do |
+|---|---|
+| "There's a sign-in I don't recognise" | Open the patient's record and press **Sign out everywhere**, then ask them to use **Forgot password** on the sign-in page. Signing out alone does not change the password — whoever signed in could sign in again. |
+| "It says a sign-in attempt failed and it wasn't me" | Someone typed their email with a wrong password. Nothing got in. If there are many, ask them to choose a stronger password with **Forgot password**. |
+| "I lost my phone" | **Sign out everywhere**, then a password reset. |
+
+**Sign out everywhere** is only shown to staff allowed to edit patients, and it is recorded under
+your name.
+
+How long the history is kept is set under **Settings → Patient portal** (two years by default).
+Older entries are deleted automatically every night. Failed attempts for an email address with
+no account are kept too, but they are not attached to anyone's record.
+
 ## Related
 
 - Where email settings live: `docs/settings/user.md` → "Where every email setting lives".
 - How it works and why: `docs/portal/dev.md` → "Accounts are created by the link".
+- The security history in detail: `docs/portal/dev.md` → "Security history".

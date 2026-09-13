@@ -3,10 +3,13 @@
 namespace App\Actions\Patient;
 
 use App\Actions\Concerns\Transacts;
+use App\Data\Patient\RequestContext;
+use App\Enums\Patient\SecurityEventType;
 use App\Events\Patient\EmailVerified;
 use App\Events\Patient\RecordClaimed;
 use App\Models\Patient;
 use App\Models\PatientEmailToken;
+use App\Services\Patient\PatientSecurityLog;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -56,7 +59,12 @@ class ClaimPatientRecordAction
      */
     public const REFUSAL_ANONYMOUS = 'This link is invalid or has expired. Request a new one from the sign-in page.';
 
-    public function __construct(private readonly LinkPatientToPrxChartAction $link) {}
+    public const REASON_FIRST_VERIFICATION = 'first_verification';
+
+    public function __construct(
+        private readonly LinkPatientToPrxChartAction $link,
+        private readonly PatientSecurityLog $log,
+    ) {}
 
     /**
      * @param  int|null  $currentTokenId  The Sanctum token this request arrived
@@ -64,7 +72,7 @@ class ClaimPatientRecordAction
      *
      * @throws ValidationException keyed `token`.
      */
-    public function execute(Patient $patient, mixed $plain, ?int $currentTokenId = null, ?string $ip = null): Patient
+    public function execute(Patient $patient, mixed $plain, ?int $currentTokenId = null, ?RequestContext $client = null): Patient
     {
         if (! PatientEmailToken::looksValid($plain)) {
             throw $this->refusal();
@@ -88,7 +96,7 @@ class ClaimPatientRecordAction
         $firstVerification = $patient->email_verified_at === null;
 
         try {
-            $patient = $this->tx(function () use ($patient, $token, $ip): Patient {
+            $patient = $this->tx(function () use ($patient, $token, $client): Patient {
                 $won = PatientEmailToken::query()
                     ->whereKey($token->getKey())
                     ->whereNull('consumed_at')
@@ -96,7 +104,7 @@ class ClaimPatientRecordAction
                     ->update([
                         'consumed_at' => now(),
                         'consumed_by_patient_id' => $patient->getKey(),
-                        'consumed_ip' => $ip,
+                        'consumed_ip' => $client?->ip,
                     ]);
 
                 if ($won !== 1) {
@@ -118,13 +126,25 @@ class ClaimPatientRecordAction
             throw $this->rekeyed($e);
         }
 
+        $revoked = 0;
+
         if ($firstVerification) {
             // Sessions opened before the address was proven may belong to
             // someone who knew the password without holding the mailbox. They
             // go; the session that just proved it stays.
-            $patient->tokens()
+            $revoked = $patient->tokens()
                 ->when($currentTokenId !== null, fn ($q) => $q->whereKeyNot($currentTokenId))
                 ->delete();
+        }
+
+        $this->log->record(SecurityEventType::RecordClaimed, patient: $patient, client: $client, tokenId: $currentTokenId);
+
+        if ($firstVerification) {
+            $this->log->record(SecurityEventType::EmailVerified, patient: $patient, client: $client, tokenId: $currentTokenId);
+        }
+
+        if ($revoked > 0) {
+            $this->log->record(SecurityEventType::SessionsRevoked, patient: $patient, client: $client, tokenId: $currentTokenId, context: ['reason' => self::REASON_FIRST_VERIFICATION, 'revoked' => $revoked]);
         }
 
         RecordClaimed::dispatch($patient);

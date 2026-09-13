@@ -3,11 +3,15 @@
 namespace App\Actions\Patient;
 
 use App\Actions\Concerns\Transacts;
+use App\Data\Patient\RequestContext;
+use App\Enums\Patient\SecurityEventActor;
+use App\Enums\Patient\SecurityEventType;
 use App\Integrations\Messages\EmailMessage;
 use App\Models\Lead;
 use App\Models\Patient;
 use App\Models\PatientEmailToken;
 use App\Services\Patient\PatientMail;
+use App\Services\Patient\PatientSecurityLog;
 use App\Settings\BrandSettings;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -65,13 +69,16 @@ class RequestAccountLinkAction
     public function __construct(
         private readonly PatientMail $mail,
         private readonly BrandSettings $brand,
+        private readonly PatientSecurityLog $log,
     ) {}
 
     /**
      * @return string|null Which link went out, or null. For tests and logs only.
      */
-    public function execute(string $email, ?string $ip = null): ?string
+    public function execute(string $email, ?RequestContext $client = null): ?string
     {
+        $ip = $client?->ip;
+
         $email = self::normalise($email);
 
         $delivery = rescue(fn () => $this->mail->deliveryOrFail('Account link'), null, false);
@@ -91,12 +98,26 @@ class RequestAccountLinkAction
                 return null;
             }
 
-            return $this->sendReset($delivery, $patient, $ip);
+            $sent = $this->sendReset($delivery, $patient, $ip);
+
+            if ($sent !== null) {
+                $this->log->record(SecurityEventType::ResetLinkSent, patient: $patient, client: $client, actor: SecurityEventActor::Anonymous);
+            }
+
+            return $sent;
         }
 
         $lead = Lead::query()->claimableUnder($email)->latest('id')->first();
 
-        return $lead === null ? null : $this->sendCreate($delivery, $lead, $email, $ip);
+        $sent = $lead === null ? null : $this->sendCreate($delivery, $lead, $email, $ip);
+
+        if ($sent !== null) {
+            // No account to attach to: the keyed address hash is what later
+            // joins this to the account the link creates.
+            $this->log->record(SecurityEventType::CreateAccountLinkSent, client: $client, actor: SecurityEventActor::Anonymous, email: $email);
+        }
+
+        return $sent;
     }
 
     /** Trim and lowercase — the only canonical form. Gmail dots and +tags are kept: other providers treat them as different mailboxes. */

@@ -3,11 +3,14 @@
 namespace App\Actions\Patient;
 
 use App\Actions\Concerns\Transacts;
+use App\Data\Patient\RequestContext;
+use App\Enums\Patient\SecurityEventType;
 use App\Events\Patient\AccountCreated;
 use App\Events\Patient\EmailVerified;
 use App\Events\Patient\RecordClaimed;
 use App\Models\Patient;
 use App\Models\PatientEmailToken;
+use App\Services\Patient\PatientSecurityLog;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -46,14 +49,17 @@ class CreatePatientAccountAction
 {
     use Transacts;
 
-    public function __construct(private readonly LinkPatientToPrxChartAction $link) {}
+    public function __construct(
+        private readonly LinkPatientToPrxChartAction $link,
+        private readonly PatientSecurityLog $log,
+    ) {}
 
     /**
      * @return array{patient: Patient, token: string}
      *
      * @throws ValidationException keyed `token`.
      */
-    public function execute(mixed $plain, string $password, string $deviceName = 'api', ?string $ip = null): array
+    public function execute(mixed $plain, string $password, string $deviceName = 'api', ?RequestContext $client = null): array
     {
         if (! PatientEmailToken::looksValid($plain)) {
             throw $this->refusal();
@@ -72,14 +78,14 @@ class CreatePatientAccountAction
         }
 
         try {
-            $patient = $this->tx(function () use ($token, $password, $ip): Patient {
+            $patient = $this->tx(function () use ($token, $password, $client): Patient {
                 $won = PatientEmailToken::query()
                     ->whereKey($token->getKey())
                     ->whereNull('consumed_at')
                     ->where('expires_at', '>', now())
                     ->update([
                         'consumed_at' => now(),
-                        'consumed_ip' => $ip,
+                        'consumed_ip' => $client?->ip,
                     ]);
 
                 if ($won !== 1) {
@@ -118,13 +124,18 @@ class CreatePatientAccountAction
             throw $this->rekeyed($e);
         }
 
-        $session = $patient->createToken($deviceName, ['patient:*'])->plainTextToken;
+        $session = $patient->createToken($deviceName, ['patient:*']);
+
+        // No separate `email_verified`: an account created by the link is
+        // verified by being created.
+        $this->log->record(SecurityEventType::AccountCreated, patient: $patient, client: $client, tokenId: $session->accessToken->getKey());
+        $this->log->record(SecurityEventType::RecordClaimed, patient: $patient, client: $client);
 
         AccountCreated::dispatch($patient);
         RecordClaimed::dispatch($patient);
         EmailVerified::dispatch($patient);
 
-        return ['patient' => $patient, 'token' => $session];
+        return ['patient' => $patient, 'token' => $session->plainTextToken];
     }
 
     private function refusal(): ValidationException

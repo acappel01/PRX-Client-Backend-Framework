@@ -3,6 +3,7 @@
 namespace App\Jobs\Patient;
 
 use App\Actions\Patient\RequestAccountLinkAction;
+use App\Data\Patient\RequestContext;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeEncrypted;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -19,7 +20,7 @@ use Throwable;
  * took cannot say whether the address has an account or an order. See
  * RequestAccountLinkAction.
  *
- * ENCRYPTED because the payload holds an email address and an IP, both PII,
+ * ENCRYPTED because the payload holds an email address, an IP and a user agent, all PII,
  * sitting in Redis until a worker takes it. It holds NO token: the credential is
  * minted inside the worker and exists only in its memory and the email.
  *
@@ -36,12 +37,13 @@ class SendAccountLinkJob implements ShouldBeEncrypted, ShouldQueue
     public function __construct(
         public readonly string $email,
         public readonly ?string $ip = null,
+        public readonly ?string $userAgent = null,
     ) {}
 
     public function handle(RequestAccountLinkAction $action): void
     {
         try {
-            $action->execute($this->email, $this->ip);
+            $action->execute($this->email, new RequestContext($this->ip, $this->userAgent));
         } catch (Throwable $e) {
             // A database exception's message embeds its bindings — here, the
             // address. Left to propagate, it would be written in plain text to

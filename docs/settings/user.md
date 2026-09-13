@@ -14,6 +14,7 @@ The Settings area at `/admin/settings/*` controls the brand, look, contact info,
 | **Theme** | `/admin/settings/theme` | Primary / accent / background / text colors, display & body fonts |
 | **Contact** | `/admin/settings/contact` | Support & sales emails, phone, mailing address, business hours, social links |
 | **Communication** | `/admin/settings/communication` | Whether email sends, mail provider, From and Reply-to addresses; Twilio SMS/voice; video consults |
+| **Patient portal** | `/admin/settings/portal` | How long patients' sign-in and account security history is kept |
 | **SEO & Analytics** | `/admin/settings/seo` | Default meta title & description, OG image, Google Analytics, Tag Manager, Facebook Pixel, search-engine indexing toggle |
 
 ## How to edit
@@ -116,6 +117,15 @@ Admin settings win over the server file (`.env`); a blank admin field falls thro
 | Link in the record-linking email | — | `PATIENT_PORTAL_URL` | Unset: no link is sent; the portal is told email is unavailable |
 
 Mail the provider receives for a no-reply address is not forwarded anywhere unless a route says so. That is the intent for a no-reply, but a route that forwards it to support (or auto-answers "this inbox isn't monitored") catches patients who reply to the From address anyway.
+
+### Patient portal
+
+- **Keep security history for** — days, 30 to 2555, default 730 (two years). Every patient sign-in,
+  failed sign-in, sign-out and account change is recorded with the IP address and browser it came
+  from. Entries older than this are deleted every night. IP addresses identify people, so keep
+  history only as long as you would need it to look into an account problem; there is no
+  "forever". Lowering it deletes the older entries on the next nightly run, and they cannot be
+  brought back. Where patients and staff see the history: `docs/portal/user.md`.
 
 ### SEO & Analytics
 
