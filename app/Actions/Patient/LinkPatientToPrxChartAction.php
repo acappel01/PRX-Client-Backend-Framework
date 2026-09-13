@@ -48,9 +48,10 @@ use Illuminate\Validation\ValidationException;
  * ── Mailbox proof lives one level up ────────────────────────────────────────
  *
  * The encounter proves an order is real; it does not prove the account holder
- * placed it, because registration does not verify an address. That proof is
- * `ClaimPatientRecordAction`, the only caller: it consumes a single-use link
- * emailed to the order's own address and calls this inside its transaction.
+ * placed it. That proof is a single-use link emailed to the order's own address,
+ * consumed by one of the only two callers — `ClaimPatientRecordAction` (a
+ * signed-in account) or `CreatePatientAccountAction` (the account created by the
+ * link) — which call this inside their own transaction.
  * Do not expose this action to a request directly again — the endpoint that
  * did (`POST /patient/link-chart`) was removed for exactly that reason.
  */

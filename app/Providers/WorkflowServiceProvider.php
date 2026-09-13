@@ -6,8 +6,10 @@ use App\Enums\Integrations\IntegrationCapability;
 use App\Enums\Privacy\DataClassification;
 use App\Events\Leads\LeadCreated;
 use App\Events\Leads\LeadDispositionChanged;
+use App\Events\Patient\AccountCreated;
 use App\Events\Patient\ClaimLinkRequested;
 use App\Events\Patient\EmailVerified;
+use App\Events\Patient\PasswordChanged;
 use App\Events\Patient\RecordClaimed;
 use App\Events\Quiz\QuizCompleted;
 use App\Filament\Support\IntegrationActionForms;
@@ -209,6 +211,8 @@ class WorkflowServiceProvider extends ServiceProvider
         $registry->registerEvent('patient.claim_link_requested', ClaimLinkRequested::class, 'Patient was emailed a link to connect their record', 'patient');
         $registry->registerEvent('patient.record_claimed', RecordClaimed::class, 'Patient connected their record', 'patient');
         $registry->registerEvent('patient.email_verified', EmailVerified::class, 'Patient verified their email', 'patient');
+        $registry->registerEvent('patient.account_created', AccountCreated::class, 'Patient created their account from an emailed link', 'patient');
+        $registry->registerEvent('patient.password_changed', PasswordChanged::class, 'Patient reset their password', 'patient');
     }
 
     private function attachObservers(WorkflowRegistry $registry): void

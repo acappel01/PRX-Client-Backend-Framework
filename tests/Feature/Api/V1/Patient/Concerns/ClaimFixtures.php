@@ -108,11 +108,11 @@ trait ClaimFixtures
         return $this->tokenFrom(end($this->sentMail));
     }
 
-    protected function tokenFrom(Email $email): string
+    protected function tokenFrom(Email $email, string $path = 'claim'): string
     {
-        preg_match('#https://portal\.example\.test/claim/([A-Za-z0-9_-]{43})#', $email->getTextBody(), $m);
+        preg_match('#https://portal\.example\.test/'.preg_quote($path, '#').'/([A-Za-z0-9_-]{43})#', $email->getTextBody(), $m);
 
-        $this->assertArrayHasKey(1, $m, 'The email carries no claim link.');
+        $this->assertArrayHasKey(1, $m, "The email carries no {$path} link.");
 
         return $m[1];
     }

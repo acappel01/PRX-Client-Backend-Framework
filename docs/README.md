@@ -28,3 +28,4 @@ Per-module documentation: `user.md` = admin operator guide, `dev.md` = architect
 
 Convention: every shipped module has both `user.md` and `dev.md`; a module isn't "done" without them. Document as you build.
 - [`portal/dev.md`](portal/dev.md) — the patient-portal proxy: the allowlist, the server-side ranking, and the traps it has already hit
+- [`portal/user.md`](portal/user.md) — for support: how patients create accounts and reset passwords by emailed link, and what to check when they can't

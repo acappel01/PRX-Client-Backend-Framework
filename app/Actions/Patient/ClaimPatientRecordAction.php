@@ -50,6 +50,12 @@ class ClaimPatientRecordAction
     /** One sentence for every token failure, so none can be told apart. */
     public const REFUSAL = 'This link is invalid or has expired. Request a new one from your account.';
 
+    /**
+     * The same, for the links used without a session (create-account, reset),
+     * where "your account" is not somewhere the reader can go.
+     */
+    public const REFUSAL_ANONYMOUS = 'This link is invalid or has expired. Request a new one from the sign-in page.';
+
     public function __construct(private readonly LinkPatientToPrxChartAction $link) {}
 
     /**

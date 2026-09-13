@@ -10,15 +10,33 @@ use Illuminate\Support\Str;
 /**
  * A single-use link emailed to a patient. See the migration for the design.
  *
- * Nothing here is mass-assignable from a request: every row is written by
- * `RequestClaimLinkAction` from values it derived itself.
+ * Three purposes share the table, and a token is only ever looked up as
+ * `token_hash + purpose`, so one can never be spent as another:
+ *
+ * - `claim` — a signed-in account connects an order's record (RequestClaimLinkAction).
+ * - `create_account` — an anonymous visitor with an eligible order creates the
+ *   account for that order's address (`lead_id`, no `patient_id`).
+ * - `password_reset` — the holder of an existing account's mailbox sets a new
+ *   password (`patient_id`, no `lead_id`).
+ *
+ * Nothing here is mass-assignable from a request: every row is written by an
+ * action from values it derived itself.
  */
 class PatientEmailToken extends Model
 {
     public const PURPOSE_CLAIM = 'claim';
 
+    public const PURPOSE_CREATE_ACCOUNT = 'create_account';
+
+    public const PURPOSE_PASSWORD_RESET = 'password_reset';
+
     /** Minutes a claim link stays usable. The patient is at the screen when they ask. */
     public const CLAIM_TTL_MINUTES = 60;
+
+    /** Both anonymous links are asked for by someone at the screen, as a claim is. */
+    public const CREATE_ACCOUNT_TTL_MINUTES = 60;
+
+    public const PASSWORD_RESET_TTL_MINUTES = 60;
 
     public const UPDATED_AT = null;
 
@@ -66,7 +84,7 @@ class PatientEmailToken extends Model
 
     public function sentToMatches(string $email): bool
     {
-        return hash_equals($this->sent_to, Str::lower($email));
+        return hash_equals($this->sent_to, Str::lower(trim($email)));
     }
 
     public function lead(): BelongsTo

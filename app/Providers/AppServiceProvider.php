@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Actions\Patient\RequestAccountLinkAction;
 use App\Models\Blog\BlogCategory;
 use App\Models\Blog\BlogPost;
 use App\Models\Catalog\Category;
@@ -269,6 +270,31 @@ class AppServiceProvider extends ServiceProvider
             Limit::perHour(3)->by('claim-link:'.($request->user()?->id ?? $request->ip())),
             Limit::perDay(10)->by('claim-link-day:'.($request->user()?->id ?? $request->ip())),
         ]);
+
+        // The anonymous "email me a link" endpoints (register, forgot). Keyed by
+        // the ADDRESS as well as the IP, because the address is what receives
+        // the mail: without it one IP-rotating caller could mail-bomb a person.
+        // The address is normalised HERE — this runs before the controller, and
+        // `Foo@x` and `foo@x` must share a bucket or the limit is unbounded per
+        // mailbox. Hashed so no address sits in the cache key. It counts
+        // requests, not sends, so a 429 says nothing about the address.
+        RateLimiter::for('account-link', function (Request $request) {
+            // Runs before validation: a non-string `email` (an array) must not
+            // become a 500 on a public endpoint. Validation answers it with a 422.
+            $email = $request->input('email');
+            $address = hash('sha256', RequestAccountLinkAction::normalise(is_string($email) ? $email : ''));
+
+            return [
+                Limit::perHour(3)->by('account-link:'.$address),
+                Limit::perDay(10)->by('account-link-day:'.$address),
+                Limit::perHour(20)->by('account-link-ip:'.$request->ip()),
+            ];
+        });
+
+        // Using a create-account or reset link. No session to key on.
+        RateLimiter::for('account-token', fn (Request $request) => Limit::perMinute(10)->by(
+            'account-token:'.$request->ip()
+        ));
 
         // Guessing a 256-bit token is moot; this bounds noise in the logs.
         RateLimiter::for('claim', fn (Request $request) => Limit::perMinute(10)->by(

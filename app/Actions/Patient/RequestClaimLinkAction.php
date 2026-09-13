@@ -4,20 +4,15 @@ namespace App\Actions\Patient;
 
 use App\Actions\Concerns\Transacts;
 use App\Actions\Exceptions\ActionException;
-use App\Enums\Integrations\IntegrationCapability;
 use App\Events\Patient\ClaimLinkRequested;
-use App\Integrations\Contracts\SendsTransactionalEmail;
-use App\Integrations\IntegrationRegistry;
 use App\Integrations\Messages\EmailMessage;
-use App\Models\Integrations\IntegrationInstance;
 use App\Models\Lead;
 use App\Models\Patient;
 use App\Models\PatientEmailToken;
+use App\Services\Patient\PatientMail;
 use App\Settings\BrandSettings;
-use App\Workflows\Actions\CapabilityRouting;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
-use RuntimeException;
 use Throwable;
 
 /**
@@ -61,7 +56,7 @@ class RequestClaimLinkAction
     use Transacts;
 
     public function __construct(
-        private readonly IntegrationRegistry $integrations,
+        private readonly PatientMail $mail,
         private readonly BrandSettings $brand,
     ) {}
 
@@ -73,7 +68,7 @@ class RequestClaimLinkAction
      */
     public function execute(Patient $patient, ?string $ip = null): bool
     {
-        [$instance, $driver] = $this->deliveryOrFail();
+        $delivery = $this->mail->deliveryOrFail('Claim link');
 
         $lead = $this->eligibleLead($patient);
 
@@ -104,7 +99,7 @@ class RequestClaimLinkAction
         });
 
         try {
-            $driver->sendEmail($instance, $this->message($patient, $lead, $plain));
+            $this->mail->send($delivery, $this->message($patient, $lead, $plain));
         } catch (Throwable $e) {
             // A link nobody received must not stay live. Logged with ids only:
             // the address is PII and the exception may quote the recipient.
@@ -113,58 +108,16 @@ class RequestClaimLinkAction
             Log::error('Claim link failed to send.', [
                 'patient_id' => $patient->getKey(),
                 'lead_uuid' => $lead->uuid,
-                'integration' => $instance->slug,
+                'integration' => $delivery[0]->slug,
                 'exception' => $e::class,
             ]);
 
-            throw $this->unavailable();
+            throw $this->mail->unavailable();
         }
 
         ClaimLinkRequested::dispatch($patient);
 
         return true;
-    }
-
-    /**
-     * The transport, resolved and tested before anything about the order is
-     * looked at. See "Enumeration" above.
-     *
-     * @return array{0: IntegrationInstance, 1: SendsTransactionalEmail}
-     */
-    private function deliveryOrFail(): array
-    {
-        if (blank(config('portal.url'))) {
-            Log::error('Claim link unavailable: PATIENT_PORTAL_URL is not set.');
-
-            throw $this->unavailable();
-        }
-
-        try {
-            $instance = CapabilityRouting::resolve(
-                $this->integrations,
-                IntegrationCapability::TransactionalEmail,
-                null,
-                'email',
-            );
-
-            $driver = $this->integrations->driverFor($instance);
-
-            if (! $driver instanceof SendsTransactionalEmail) {
-                throw new RuntimeException("[{$instance->slug}] cannot send transactional email.");
-            }
-
-            $driver->test($instance);
-        } catch (Throwable $e) {
-            // The routing and driver messages are written for an operator
-            // ("configure one under Integrations"), not for a patient.
-            Log::error('Claim link unavailable: no usable transactional email integration.', [
-                'reason' => $e->getMessage(),
-            ]);
-
-            throw $this->unavailable();
-        }
-
-        return [$instance, $driver];
     }
 
     /**
@@ -179,9 +132,7 @@ class RequestClaimLinkAction
     private function eligibleLead(Patient $patient): ?Lead
     {
         return Lead::query()
-            ->whereRaw('LOWER(email) = ?', [Str::lower($patient->email)])
-            ->whereNull('patient_id')
-            ->whereHas('encounters', fn ($q) => $q->whereNotNull('prescribe_rx_patient_id'))
+            ->claimableUnder($patient->email)
             ->latest('id')
             ->first();
     }
@@ -233,17 +184,6 @@ class RequestClaimLinkAction
 
     private function url(string $plain): string
     {
-        $base = rtrim((string) config('portal.url'), '/');
-        $path = str_replace('{token}', $plain, (string) config('portal.claim_path'));
-
-        return $base.'/'.ltrim($path, '/');
-    }
-
-    private function unavailable(): ActionException
-    {
-        return ActionException::failed(
-            'We cannot send email right now. Please try again later or contact support.',
-            503,
-        );
+        return $this->mail->portalLink('claim_path', $plain);
     }
 }

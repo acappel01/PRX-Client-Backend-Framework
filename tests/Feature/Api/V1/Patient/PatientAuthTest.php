@@ -19,77 +19,14 @@ class PatientAuthTest extends TestCase
 
         Http::preventStrayRequests();
 
-        // Anonymous registration must never resolve a clinical identity by email.
+        // Nothing anonymous may ever resolve a clinical identity by email.
         $this->mock(Client::class, function ($mock) {
             $mock->shouldNotReceive('findPatientByEmail');
         });
     }
 
-    // ── Register ─────────────────────────────────────────────────────────
-
-    public function test_register_creates_patient_and_returns_token(): void
-    {
-        $response = $this->postJson('/api/v1/patient/auth/register', [
-            'email' => 'jane@example.com',
-            'password' => 'password123',
-            'first_name' => 'Jane',
-            'last_name' => 'Doe',
-        ]);
-
-        $response->assertCreated()
-            ->assertJsonStructure([
-                'data' => ['token', 'token_type', 'patient' => ['uuid', 'email', 'first_name', 'last_name', 'has_prx_chart']],
-            ]);
-
-        $this->assertDatabaseHas('patients', ['email' => 'jane@example.com']);
-    }
-
-    public function test_register_does_not_link_or_verify_a_prx_chart_from_unproven_identity(): void
-    {
-        $response = $this->postJson('/api/v1/patient/auth/register', [
-            'email' => 'linked@example.com',
-            'password' => 'password123',
-            'first_name' => 'Linked',
-            'last_name' => 'Patient',
-            'prx_patient_chart_id' => 'chart-uuid',
-            'prx_patient_id' => 'user-uuid',
-            'prx_chart_verified_at' => now()->toIso8601String(),
-            'email_verified_at' => now()->toIso8601String(),
-        ]);
-
-        $response->assertCreated()
-            ->assertJsonPath('data.patient.has_prx_chart', false);
-
-        $this->assertDatabaseHas('patients', [
-            'email' => 'linked@example.com',
-            'prx_patient_chart_id' => null,
-            'prx_patient_id' => null,
-            'prx_chart_verified_at' => null,
-            'email_verified_at' => null,
-        ]);
-
-        Http::assertNothingSent();
-    }
-
-    public function test_register_rejects_duplicate_email(): void
-    {
-        Patient::factory()->create(['email' => 'existing@example.com']);
-
-        $this->postJson('/api/v1/patient/auth/register', [
-            'email' => 'existing@example.com',
-            'password' => 'password123',
-            'first_name' => 'New',
-            'last_name' => 'Patient',
-        ])->assertUnprocessable();
-    }
-
-    public function test_register_validates_required_fields(): void
-    {
-        $this->postJson('/api/v1/patient/auth/register', [])
-            ->assertStatus(422);
-    }
-
-    // ── Login ─────────────────────────────────────────────────────────────
+    // Registration no longer creates an account — it emails a link, and the
+    // link creates it. Covered by AccountLinkRequestTest and CreateAccountTest.
 
     public function test_login_returns_token_with_valid_credentials(): void
     {

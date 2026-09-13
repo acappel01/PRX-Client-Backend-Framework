@@ -9,6 +9,7 @@ use App\Models\Quiz\QuizQuestion;
 use App\Models\Referral\ReferralClick;
 use App\Models\Referral\ReferralLink;
 use App\Models\Referral\ReferralSource;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -139,6 +140,25 @@ class Lead extends Model
     public function encounters(): HasMany
     {
         return $this->hasMany(Encounter::class);
+    }
+
+    /**
+     * Orders under this address that someone could still connect an account to:
+     * nobody holds them yet, and an encounter carries the chart id OUR server
+     * read from the provider.
+     *
+     * The encounter is the evidence. `POST /leads` is anonymous, so a lead on
+     * its own proves nothing, and mailing a link for one would only be a way to
+     * make this backend email anyone. Used by the claim link (signed in) and the
+     * create-account link (anonymous) so the two can never disagree about what
+     * counts.
+     */
+    public function scopeClaimableUnder(Builder $query, string $email): Builder
+    {
+        return $query
+            ->whereRaw('LOWER(email) = ?', [Str::lower(trim($email))])
+            ->whereNull('patient_id')
+            ->whereHas('encounters', fn (Builder $q) => $q->whereNotNull('prescribe_rx_patient_id'));
     }
 
     /**

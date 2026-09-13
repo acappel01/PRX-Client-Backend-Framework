@@ -21,7 +21,10 @@ class LoginPatientAction
             throw new AuthenticationException('The provided credentials are incorrect.');
         }
 
-        $token = $patient->createToken($deviceName)->plainTextToken;
+        // `patient:*`, the same as every other patient session. It was `['*']`,
+        // which nothing checks today (EnsurePatientToken tests the model type),
+        // but a token that claims every ability is one refactor from meaning it.
+        $token = $patient->createToken($deviceName, ['patient:*'])->plainTextToken;
 
         return compact('patient', 'token');
     }

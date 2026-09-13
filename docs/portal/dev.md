@@ -54,8 +54,9 @@ POST /patient/claim         (session, { token })
    → ClaimPatientRecordAction → LinkPatientToPrxChartAction  (inside one transaction)
 ```
 
-`LinkPatientToPrxChartAction` is still the single place a chart is linked, and
-`ClaimPatientRecordAction` is its only caller. **Do not expose it to a request
+`LinkPatientToPrxChartAction` is still the single place a chart is linked. Its
+only callers are `ClaimPatientRecordAction` and `CreatePatientAccountAction`, and
+both reach it only by consuming a link delivered to the order's mailbox. **Do not expose it to a request
 directly again** — see the history below.
 
 ### The evidence is the ENCOUNTER. A lead proves nothing.
@@ -218,7 +219,10 @@ afterwards against a verified snapshot):
 | Link path | `PATIENT_PORTAL_CLAIM_PATH`, default `/claim/{token}` | — |
 | Who sends | exactly one active integration instance offering `transactional_email` | 503; two or more also 503 (the choice is the operator's to make) |
 | Whether the site mailer sends | Settings → Communications → email switched on, real transport | 503 |
-| Link lifetime | `PatientEmailToken::CLAIM_TTL_MINUTES` (60) | — |
+| Link lifetime | `PatientEmailToken::CLAIM_TTL_MINUTES` (60); `CREATE_ACCOUNT_TTL_MINUTES` and `PASSWORD_RESET_TTL_MINUTES` (60 each) | — |
+| Create-account / reset link paths | `PATIENT_PORTAL_CREATE_ACCOUNT_PATH` (`/create-account/{token}`), `PATIENT_PORTAL_RESET_PATH` (`/reset/{token}`) | — |
+| "Password changed" notice link | `PATIENT_PORTAL_FORGOT_PATH` (`/forgot`), no token | — |
+| Anonymous link requests are actually sent | a running Horizon supervisor (the decision runs in a queued job) | 503 — never a 202 for mail no worker will send |
 | Where a reply goes | Settings → Communication → Reply-to address, else Contact → Support email, else `MAIL_REPLY_TO_ADDRESS` | no `Reply-To` header — a reply goes to the From address, normally a no-reply with no inbox |
 
 Tokens are stored as `sha256` in `patient_email_tokens.token_hash`; the plain value
@@ -226,8 +230,9 @@ exists only in the email. 256 bits of entropy is why a fast hash is correct and
 why the lookup can be an indexed equality.
 
 **Portals must keep the token out of logs.** Atlas's portal vhost excludes
-`/claim/` request lines and any request whose Referer is a claim page from the
-access log, and sends `Referrer-Policy: no-referrer` there. A `combined` log keeps
+`/claim/`, `/create-account/` and `/reset/` request lines, and any request whose
+Referer is one of those pages, from the access log, and sends
+`Referrer-Policy: no-referrer` there. A `combined` log keeps
 both the request line and the Referer.
 
 ### Guards
@@ -262,14 +267,16 @@ are.
 
 ### Known residuals
 
-- **Registration still does not verify an address**, and `patients.email` is
-  unique. Someone can register a customer's address first and squat it: they can
-  never receive the link, but the real customer cannot register. Pre-existing,
-  surfaced rather than solved here. The fix is account creation *by* the link.
+- ~~Registration does not verify an address, so an address can be squatted.~~
+  **Closed 2026-09-13**: registration creates nothing, and an account is created
+  only by a link delivered to its address. A row that predates this (unverified,
+  registered by typing) is taken back by its mailbox owner through a password
+  reset — see "Accounts are created by the link".
 - The confused-deputy argument relies on `patients.email` being unique and there
   being no self-serve email change. If a profile-update endpoint lands, the
   `sent_to` equality at claim is what keeps it true.
-- **The 202 is uniform in body, not in latency.** A match writes a token and makes a
+- **For `claim-links`, the 202 is uniform in body, not in latency.** (The anonymous
+  register/forgot endpoints are uniform in both — they queue the decision.) A match writes a token and makes a
   synchronous provider round-trip before answering; a non-match returns after one
   SELECT. One timed request per registered address could tell them apart. Accepted
   for now because the synchronous send is what keeps the token out of a queue and
@@ -291,13 +298,126 @@ are.
   and admin are co-hosted; a deployment where they are not needs a credential-bound
   assertion instead, and a CDN in front changes both the portal's extraction and
   `TRUSTED_PROXIES` together.
-- There is no system-initiated invite yet (mail the link when a chart id first
-  arrives). The table and action are shaped for it; nothing fires today.
+- There is no system-initiated invite yet (mail the create-account link when a
+  chart id first arrives). `RequestAccountLinkAction` is shaped for it — it would be
+  dispatched from the encounter write, not a workflow, since it carries a
+  credential. Nothing fires today; the customer asks for the link from the portal.
+
+## Accounts are created by the link
+
+**No account row exists for an address that has not proven its mailbox** — since
+2026-09-13. Registration used to create an unverified Patient from a typed address;
+`patients.email` is unique, so anyone could register a customer's address first and
+lock them out. Now:
+
+```
+POST /patient/auth/register        { email }  ─┐  same request, uniform 202
+POST /patient/auth/password/forgot { email }  ─┘  → SendAccountLinkJob (queued, encrypted)
+        account under the address (any state) → password_reset link → {portal}/reset/{token}
+        no account, claimable order            → create_account link → {portal}/create-account/{token}
+        deleted account, or neither            → nothing
+POST /patient/auth/create-account  { token, password } → account + session (201)
+POST /patient/auth/password/reset  { token, password } → new password, all sessions out (200)
+```
+
+**Requesting** (`RequestAccountLinkAction`, run by `SendAccountLinkJob`):
+
+- **Only `email` is read**, trimmed and lowercased. Gmail dots and `+tags` are
+  kept: other providers treat them as different mailboxes, and each still needs its
+  own order or account plus mailbox proof.
+- **The decision runs in a queued job, not the request.** Anonymous, a response
+  that took longer when an account or order existed would answer what the 202
+  refuses to. The admin runs PHP as an Apache module, so nothing can run after the
+  response is flushed; the queue is the only way to answer first. The job is
+  `ShouldBeEncrypted` (its payload is an address and an IP) and holds **no token** —
+  the credential is minted inside the worker. `tries = 1` on the job itself: a retry
+  after a send that went out would mail twice and supersede the first link.
+- **503 describes the installation only**: portal URL, exactly one usable
+  transactional-email integration, and a running Horizon supervisor
+  (`PatientMail::queueOrFail` — the redis/Horizon connection only; an install on
+  another queue connection must watch its own workers). The job re-runs the first
+  two; if the installation changed in between, nothing is sent and it is logged.
+- **A failure inside the job records only the exception class.** A database
+  exception's message embeds its bindings — the address — and would otherwise land
+  in `failed_jobs`, the Horizon failed-job screen and the log.
+- **An account of either verification state gets a reset link.** That is how a
+  pre-existing unverified (squatted) row stops blocking its real owner.
+- **A soft-deleted account gets nothing.** It still holds the unique address, so a
+  create link would dead-end and a reset would revive what an operator removed.
+- One live link per purpose per address; a new request supersedes it. A failed send
+  deletes the row (hygiene — the plain value only ever existed in worker memory).
+- **Nothing anyone typed is in either email** — not the order's name, not the
+  account's (which may be a squatter's). Settings, constants and server-composed
+  values only; link tracking off.
+- Rate limits (`account-link`): 3/hour and 10/day **per address** — normalised in
+  the limiter itself, which runs before the controller, and hashed — plus 20/hour
+  per IP. `throttle:auth` (10/min per IP) also applies to the whole prefix. A 429
+  counts requests, not sends, so it says nothing about whether an account or order
+  exists. Because the per-address bucket is shared across callers, a 429 on
+  someone's *first* try does reveal that the address was asked for three times this
+  hour — inherent to limiting per mailbox, and accepted.
+
+**Creating** (`CreatePatientAccountAction`):
+
+- **The email is the token's `sent_to`.** No email field is accepted.
+  `email_verified_at` is stamped, the chart is linked through
+  `LinkPatientToPrxChartAction`, and the lead is claimed — one transaction, with
+  consumption by conditional UPDATE on the primary key, exactly as the claim does.
+  A link refusal (no chart yet, order claimed meanwhile) rolls the account and the
+  consumption back, so the link still works once fixed.
+- **No confused deputy**: no session takes part, so the only person who can finish
+  it holds the mailbox, and requesting a link for a stranger produces the stranger's
+  own account.
+- **One account per address.** If any account — including a soft-deleted one — holds
+  the address when the link is used, the ordinary refusal; asking again sends a
+  reset link instead. The unique index backs this up for two racing links.
+- Names are copied from the order onto the row (typed by whoever paid) and never
+  into mail. Returns a `patient:*` session, like login.
+- Fires `AccountCreated`, `RecordClaimed`, `EmailVerified`.
+
+**Resetting** (`ResetPatientPasswordAction`):
+
+- Bound to the account (`patient_id`) **and** the address it was sent to: an
+  operator who changed the account's email after sending has moved it, and the old
+  mailbox's link stops working. A deleted account's links die with it.
+- Sets the password, stamps `email_verified_at` if unset, **deletes every Sanctum
+  token**, and deletes any other outstanding reset link for the account.
+- **Does not sign in.** The link is the mailbox factor; once two-factor sign-in
+  exists it must not stand in for the second one.
+- A chart already on an unverified account **stays** — only an operator could have
+  put it there. A first verification of such an account logs a warning.
+- Queues a token-free "your password was changed" notice to the account's address,
+  pointing at the portal's forgot-password page. Fires `PasswordChanged` and, on
+  first verification, `EmailVerified`.
+
+**All three purposes share `patient_email_tokens`** and are looked up as
+`token_hash + purpose`, so no token can be spent as another kind — pinned in both
+directions. No route accepts a token in a URL.
+
+| Event key | Fired |
+|---|---|
+| `patient.account_created` | after create-account commits |
+| `patient.password_changed` | after a reset commits |
+
+🔴 Like the claim events, each carries only `patient` (`PatientWorkflowEventsTest`).
+
+**Existing accounts at cutover.** Nothing reads `email_verified_at` for sign-in, so
+accounts registered the old way (including test accounts on undeliverable domains)
+keep signing in. **Do not gate login on verification**: those
+addresses can never receive mail. Login sessions now carry `patient:*` abilities
+(they carried `*`; nothing checks abilities yet).
+
+**Deploy:** `php artisan horizon:terminate` after shipping — workers must load the
+new job classes.
 
 ## Endpoints
 
 | Route | Token | Notes |
 |---|---|---|
+| `POST /patient/auth/register` | anonymous | `{email}` only. Uniform 202; creates nothing; queues the link decision. 503 = install cannot send. |
+| `POST /patient/auth/password/forgot` | anonymous | Identical to register. |
+| `POST /patient/auth/create-account` | anonymous | `{token, password}`. 201 with a session; 422 `errors.token`. |
+| `POST /patient/auth/password/reset` | anonymous | `{token, password}`. 200, no session; every session revoked. |
 | `POST /patient/claim-links` | **none** | Account, not clinical. Empty body; uniform 202; 503 when this install cannot send; 429 over 3/hour. Emails the order's address. |
 | `POST /patient/claim` | **none** | `{token}`. 200 with the patient; 422 `errors.token`. Links the record and verifies the address in one transaction. |
 | `GET /patient/home` | patient | **Screen-shaped and server-ranked.** One call, not six. |

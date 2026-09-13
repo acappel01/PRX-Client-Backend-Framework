@@ -293,7 +293,25 @@ Route::prefix('v1')->name('api.v1.')->group(function (): void {
     // Rate-limited aggressively to prevent credential stuffing.
 
     Route::prefix('patient/auth')->name('patient.auth.')->middleware('throttle:auth')->group(function (): void {
-        Route::post('register', [PatientAuthController::class, 'register'])->name('register');
+        // Registration creates NOTHING: it emails a link, and the link creates
+        // the account. "Forgot password" is the same request. Both answer 202
+        // whatever exists under the address — see RequestAccountLinkAction.
+        Route::post('register', [PatientAuthController::class, 'register'])
+            ->middleware('throttle:account-link')
+            ->name('register');
+        Route::post('password/forgot', [PatientAuthController::class, 'forgotPassword'])
+            ->middleware('throttle:account-link')
+            ->name('password.forgot');
+
+        // Using those links. The token is in the BODY of a POST — mail scanners
+        // follow links, and there is deliberately no GET that accepts one.
+        Route::post('create-account', [PatientAuthController::class, 'createAccount'])
+            ->middleware('throttle:account-token')
+            ->name('create-account');
+        Route::post('password/reset', [PatientAuthController::class, 'resetPassword'])
+            ->middleware('throttle:account-token')
+            ->name('password.reset');
+
         Route::post('login', [PatientAuthController::class, 'login'])->name('login');
 
         Route::middleware(['auth:sanctum', 'patient'])->group(function (): void {
