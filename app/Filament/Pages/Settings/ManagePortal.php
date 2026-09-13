@@ -4,8 +4,10 @@ namespace App\Filament\Pages\Settings;
 
 use App\Actions\Settings\UpdatePortalSettingsAction;
 use App\Data\Settings\PortalSettingsData;
+use App\Enums\Patient\TwoFactorPolicy;
 use App\Settings\PortalSettings;
 use BackedEnum;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Section;
@@ -38,6 +40,17 @@ class ManagePortal extends BaseSettingsPage
     {
         return $schema
             ->components([
+                Section::make('Two-step verification')
+                    ->description('A code from an authenticator app (Google Authenticator, 1Password, Authy…) after the password, with one-time recovery codes for a lost phone.')
+                    ->components([
+                        Select::make('two_factor_policy')
+                            ->label('Two-step verification for patients')
+                            ->required()
+                            ->native(false)
+                            ->options(collect(TwoFactorPolicy::cases())->mapWithKeys(fn (TwoFactorPolicy $policy): array => [$policy->value => $policy->label()])->all())
+                            ->helperText('Off: not offered, but patients who already turned it on keep it. Optional: every patient is invited to set it up and can skip. Required: patients without it are sent to set it up on their next screen — they are not signed out.'),
+                    ]),
+
                 Section::make('Sessions')
                     ->description('How long a patient stays signed in to the portal. A shorter value applies to patients already signed in on their next request; a longer maximum applies from their next sign-in.')
                     ->columns(2)

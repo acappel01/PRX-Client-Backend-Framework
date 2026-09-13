@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Commerce\Cart;
+use App\Models\PatientAuthChallenge;
 use App\Models\PatientSecurityEvent;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
@@ -66,6 +67,11 @@ Schedule::command('model:prune', ['--model' => [Cart::class]])
 // list above, so either can be changed without reasoning about the other.
 Schedule::command('model:prune', ['--model' => [PatientSecurityEvent::class]])
     ->dailyAt('03:30')
+    ->onOneServer();
+
+// Two-step sign-in challenges live five minutes; the dead ones go after a day.
+Schedule::command('model:prune', ['--model' => [PatientAuthChallenge::class]])
+    ->dailyAt('03:35')
     ->onOneServer();
 
 // Signatures on that history. Weekly is enough to learn that a row was edited;

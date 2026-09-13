@@ -6,8 +6,11 @@ use App\Data\Patient\RequestContext;
 use App\Enums\Patient\SecurityEventActor;
 use App\Enums\Patient\SecurityEventType;
 use App\Models\Patient;
+use App\Models\PatientAuthChallenge;
+use App\Models\PatientEmailToken;
 use App\Services\Patient\PatientSecurityLog;
 use App\Services\Patient\PatientSessionLifetime;
+use Carbon\CarbonInterface;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Support\Facades\Hash;
 
@@ -29,6 +32,15 @@ use Illuminate\Support\Facades\Hash;
  * address, so repeated attempts against one address — or from one IP across
  * many — can be seen without storing what was typed. `context.reason` says
  * which failure it was; it is internal and never returned to the caller.
+ *
+ * ── Two-step verification ───────────────────────────────────────────────────
+ *
+ * For an account with it on, a correct password opens NO session. It creates a
+ * short-lived challenge (PatientAuthChallenge) and returns only that; the
+ * session is minted by CompleteTwoFactorLoginAction once a code is given. That
+ * branch is reached only past a correct password, so it tells a caller nothing a
+ * correct password does not; the unknown-address and wrong-password answers are
+ * unchanged whether or not the account has two-step verification.
  */
 class LoginPatientAction
 {
@@ -38,7 +50,7 @@ class LoginPatientAction
     ) {}
 
     /**
-     * @return array{patient: Patient, token: string}
+     * @return array{patient: Patient, token: string}|array{patient: Patient, challenge: string, expires_at: CarbonInterface}
      *
      * @throws AuthenticationException
      */
@@ -57,6 +69,10 @@ class LoginPatientAction
             $this->failed($patient, $email, $client, 'bad_password');
         }
 
+        if ($patient->hasTwoFactor()) {
+            return $this->challenge($patient, $deviceName, $client);
+        }
+
         // `patient:*`, the same as every other patient session. It was `['*']`,
         // which nothing checks today (EnsurePatientToken tests the model type),
         // but a token that claims every ability is one refactor from meaning it.
@@ -70,6 +86,36 @@ class LoginPatientAction
         );
 
         return ['patient' => $patient, 'token' => $session->plainTextToken];
+    }
+
+    /**
+     * @return array{patient: Patient, challenge: string, expires_at: CarbonInterface}
+     */
+    private function challenge(Patient $patient, string $deviceName, ?RequestContext $client): array
+    {
+        $plain = PatientEmailToken::newPlainToken();
+
+        $challenge = PatientAuthChallenge::create([
+            'patient_id' => $patient->getKey(),
+            'purpose' => PatientAuthChallenge::PURPOSE_LOGIN,
+            'token_hash' => PatientEmailToken::hash($plain),
+            'expires_at' => now()->addMinutes(PatientAuthChallenge::TTL_MINUTES),
+            'device_name' => mb_substr($deviceName, 0, 255),
+            'requested_ip' => $client?->ip,
+            'user_agent' => $client?->userAgent,
+        ]);
+
+        // Unverified: the password was right, but nobody has proven the second
+        // factor. For the account holder this is the earliest sign that someone
+        // else knows their password.
+        $this->log->record(
+            SecurityEventType::TwoFactorChallenged,
+            patient: $patient,
+            client: $client,
+            actor: SecurityEventActor::Anonymous,
+        );
+
+        return ['patient' => $patient, 'challenge' => $plain, 'expires_at' => $challenge->expires_at];
     }
 
     /**

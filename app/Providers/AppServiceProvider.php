@@ -306,6 +306,12 @@ class AppServiceProvider extends ServiceProvider
             ];
         });
 
+        // Managing two-step verification — each attempt checks a code, so this
+        // bounds guessing from inside a stolen session. Per account.
+        RateLimiter::for('two-factor-manage', fn (Request $request) => Limit::perMinutes(10, 10)->by(
+            'two-factor-manage:'.($request->user()?->id ?? $request->ip())
+        ));
+
         // Using a create-account or reset link. No session to key on.
         RateLimiter::for('account-token', fn (Request $request) => Limit::perMinute(10)->by(
             'account-token:'.$request->ip()

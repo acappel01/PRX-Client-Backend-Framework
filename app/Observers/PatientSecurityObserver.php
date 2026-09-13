@@ -6,6 +6,7 @@ use App\Data\Patient\RequestContext;
 use App\Enums\Patient\SecurityEventActor;
 use App\Enums\Patient\SecurityEventType;
 use App\Models\Patient;
+use App\Models\PatientAuthChallenge;
 use App\Models\User;
 use App\Services\Patient\PatientSecurityLog;
 
@@ -61,6 +62,7 @@ class PatientSecurityObserver
         }
 
         $revoked = $patient->tokens()->delete();
+        PatientAuthChallenge::voidOutstandingFor($patient);
 
         $this->record(SecurityEventType::AccountDeleted, $patient, $this->operator(), [
             'reason' => self::REASON_ACCOUNT_DELETED,

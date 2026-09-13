@@ -9,6 +9,7 @@ use App\Events\Patient\EmailVerified;
 use App\Events\Patient\PasswordChanged;
 use App\Jobs\Patient\SendPasswordChangedNoticeJob;
 use App\Models\Patient;
+use App\Models\PatientAuthChallenge;
 use App\Models\PatientEmailToken;
 use App\Services\Patient\PatientSecurityLog;
 use Illuminate\Support\Facades\Log;
@@ -100,6 +101,12 @@ class ResetPatientPasswordAction
 
             // Every session, including any a squatter or a password thief holds.
             $revoked = $patient->tokens()->delete();
+
+            // Two-step verification STAYS ON: the link proves the mailbox, which
+            // must never stand in for the second factor. A sign-in already waiting
+            // on a code, and an unfinished authenticator setup, do not survive.
+            PatientAuthChallenge::voidOutstandingFor($patient);
+            $patient->forceFill(['two_factor_pending_secret' => null, 'two_factor_pending_at' => null])->save();
 
             // Any other reset link still in an inbox is now a way back in.
             PatientEmailToken::query()

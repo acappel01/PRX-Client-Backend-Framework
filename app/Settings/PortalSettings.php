@@ -2,6 +2,7 @@
 
 namespace App\Settings;
 
+use App\Enums\Patient\TwoFactorPolicy;
 use Spatie\LaravelSettings\Settings;
 
 /**
@@ -25,6 +26,14 @@ class PortalSettings extends Settings
     public int $session_idle_minutes;
 
     public int $session_max_hours;
+
+    /** A TwoFactorPolicy value. */
+    public string $two_factor_policy;
+
+    public function twoFactorPolicy(): TwoFactorPolicy
+    {
+        return TwoFactorPolicy::tryFrom($this->two_factor_policy) ?? TwoFactorPolicy::Off;
+    }
 
     public static function group(): string
     {

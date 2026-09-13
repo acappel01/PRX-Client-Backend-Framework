@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Schema;
  * One-time recovery codes for two-step verification.
  *
  * ONLY THE HASH IS STORED — sha256, not bcrypt, for the reason the email-link
- * tokens use it: each code carries 80 bits of entropy, which is out of reach of
+ * tokens use it: each code carries ~79 bits of entropy, which is out of reach of
  * an offline search whatever the hash, while bcrypt on every code for every
  * attempt would be a CPU-exhaustion lever on an endpoint anyone holding the
  * password can reach. Consumed by a conditional UPDATE on `used_at`.

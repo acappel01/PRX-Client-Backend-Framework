@@ -45,6 +45,12 @@ class PatientInfolist
                     ->columns(2)
                     ->schema([
                         TextEntry::make('email_verified_at')->label('Email verified')->dateTime()->placeholder('Not verified'),
+                        TextEntry::make('two_factor_confirmed_at')
+                            ->label('Two-step verification')
+                            ->state(fn ($record) => $record->hasTwoFactor() ? $record->two_factor_confirmed_at : null)
+                            ->dateTime()
+                            ->prefix(fn ($record) => $record->hasTwoFactor() ? 'On since ' : null)
+                            ->placeholder('Off'),
                         TextEntry::make('created_at')->label('Registered')->dateTime(),
                         TextEntry::make('updated_at')->label('Last updated')->dateTime(),
                         TextEntry::make('deleted_at')->label('Deleted')->dateTime()->placeholder('—'),

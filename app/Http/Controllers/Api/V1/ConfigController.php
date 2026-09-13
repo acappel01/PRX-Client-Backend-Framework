@@ -159,6 +159,9 @@ class ConfigController extends ApiController
                         'idle_minutes' => $portal->session_idle_minutes,
                         'max_hours' => $portal->session_max_hours,
                     ],
+                    'two_factor' => [
+                        'policy' => $portal->twoFactorPolicy()->value,
+                    ],
                 ],
                 'provider' => [
                     'name' => $provider->getName(),

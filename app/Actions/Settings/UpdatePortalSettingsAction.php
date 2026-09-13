@@ -19,6 +19,7 @@ class UpdatePortalSettingsAction
             $this->settings->security_events_retention_days = $data->security_events_retention_days;
             $this->settings->session_idle_minutes = $data->session_idle_minutes;
             $this->settings->session_max_hours = $data->session_max_hours;
+            $this->settings->two_factor_policy = $data->two_factor_policy;
             $this->settings->save();
 
             // The portal reads the idle limit from /config to warn before it.

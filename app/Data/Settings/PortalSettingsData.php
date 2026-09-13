@@ -3,6 +3,7 @@
 namespace App\Data\Settings;
 
 use Spatie\LaravelData\Attributes\Validation\Between;
+use Spatie\LaravelData\Attributes\Validation\In;
 use Spatie\LaravelData\Attributes\Validation\Required;
 use Spatie\LaravelData\Data;
 
@@ -29,5 +30,7 @@ class PortalSettingsData extends Data
         public int $session_idle_minutes,
         #[Required, Between(self::MAX_MIN_HOURS, self::MAX_MAX_HOURS)]
         public int $session_max_hours,
+        #[Required, In(['off', 'optional', 'required'])]
+        public string $two_factor_policy,
     ) {}
 }

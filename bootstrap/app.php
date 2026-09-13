@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\EnsurePatientToken;
+use App\Http\Middleware\EnsurePatientTwoFactorEnrolled;
 use App\Http\Middleware\NoStorePhiResponse;
 use App\Http\Middleware\VerifyApiClientOrigin;
 use App\Services\PrescribeRx\Exceptions\PrescribeRxException;
@@ -30,6 +31,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->alias([
             'patient' => EnsurePatientToken::class,
+            'patient.2fa' => EnsurePatientTwoFactorEnrolled::class,
             'no-store' => NoStorePhiResponse::class,
         ]);
 

@@ -512,9 +512,8 @@ Found on the way and fixed: the patient **view** page had thrown since it was ad
 (`PatientInfolist` imported `Filament\Infolists\Components\Section`, which Filament 4 moved to
 `Filament\Schemas\Components`). Nothing tested it.
 
-**Reserved for later increments** (names only, not built): `two_factor_enrolled`,
-`two_factor_removed`, `two_factor_challenge_failed`, `recovery_code_used`, `device_trusted`,
-`device_revoked`, `step_up_succeeded`. Trusted devices must be revoked on password change and first
+**Reserved for later increments** (names only, not built): `device_trusted`, `device_revoked`,
+`step_up_succeeded`. The two-step events are built — see "Two-step verification". Trusted devices must be revoked on password change and first
 verification when they exist. Patient sessions now end — see "Session lifetime".
 
 **Deploy:** `php artisan migrate` (table + settings row), `php artisan horizon:terminate`
@@ -568,6 +567,106 @@ only sees stamped tokens.
 The `session_expired` event carries the IP and user agent of the request that presented the dead
 token (operators see it; the patient resource strips it on system events).
 
+## Two-step verification
+
+**Added 2026-09-13.** TOTP (RFC 6238) from an authenticator app plus eight one-time recovery codes.
+Passkeys and SMS are not built (a WebAuthn library would be a new dependency; the operator deferred it).
+Policy `PortalSettings::two_factor_policy` — `off` (install default) / `optional` / `required` —
+under Settings → Patient portal; Atlas's chosen starting value is `optional`.
+
+### Sign-in
+
+```
+POST /patient/auth/login {email,password}
+  unknown / wrong password ... 422 errors.email  (unchanged, identical with or without 2FA)
+  no 2FA ..................... 200 {token, token_type, patient}
+  2FA on ..................... 200 {two_factor_required, challenge, expires_at, methods}  — NO token, NO patient
+POST /patient/auth/two-factor {challenge, code | recovery_code}
+  ok ......................... 200 {token, token_type, patient}   ← the session is minted here
+  any refusal ................ 422 errors.code, one sentence
+  per-account limit .......... 429
+```
+
+- **The challenge is not a Sanctum token.** Nothing in this API enforces token abilities
+  (`EnsurePatientToken` checks the model type only, and `patient:*` is a literal string to
+  `PersonalAccessToken::can()`), so a "challenge-scoped" token would be a full session everywhere.
+  `patient_auth_challenges` holds the sha256 of a 256-bit value, `purpose = login`, five minutes,
+  five attempts. `LoginPatientAction` creates it; `CompleteTwoFactorLoginAction` exchanges it.
+- Attempts are claimed by a conditional `UPDATE … attempts < 5` **before** the code is checked; the
+  fifth failure voids the challenge (password again). A per-account limiter
+  (`two-factor:{patient_id}`, 10 failures / 15 min → 429) bounds guessing across challenges and
+  cannot lock a victim out — it is reachable only with their password. `throttle:auth` (10/min per
+  IP) still covers both routes.
+- The minted session gets `personal_access_tokens.two_factor_verified_at` — the future step-up
+  primitive (nothing reads it yet) — and the normal `PatientSessionLifetime` stamp, so the idle and
+  absolute clocks start at the second factor.
+- Events: `two_factor_challenged` (actor anonymous — "password accepted, code requested"; the
+  account holder's earliest sign that someone has their password), `two_factor_challenge_failed`
+  (`remaining_attempts`, `locked`), `login_succeeded` only at the exchange with
+  `context.method = totp | recovery_code`, `recovery_code_used` (`remaining`).
+
+### Secrets
+
+`App\Services\Patient\TwoFactor`, on `pragmarx/google2fa` directly (not Filament's MFA, which is
+bound to the panel user, keeps replay state in cache, accepts ±4 minutes and bcrypts codes).
+
+- `patients.two_factor_secret` and `two_factor_pending_secret` — `encrypted` cast (APP_KEY,
+  `previous_keys` honoured on decrypt); 32 base32 chars (160 bits). `two_factor_confirmed_at` is
+  what "on" means (`Patient::hasTwoFactor()`).
+- Window ±1 step (three codes valid at once). **Replay:** a code is accepted only by a conditional
+  UPDATE moving `two_factor_last_timestep` forward; confirm stamps it too, so the setup code cannot
+  be replayed as the first sign-in.
+- Recovery codes: `patient_recovery_codes`, sha256 of the normalised code (16 symbols from a 31-symbol
+  alphabet without look-alikes ≈ 79 bits; bcrypt would add CPU cost per attempt and no security at
+  that entropy), consumed by conditional UPDATE on `used_at`.
+- 🔴 **Every two-factor column is in `Patient::$hidden`.** Not tidiness: `RunWorkflowChain` copies
+  visible attributes into queued workflow payloads. `TwoFactorTest::test_secrets_are_encrypted_hashed_and_never_serialised`
+  pins it.
+- QR codes: `chillerlan/php-qrcode` SVG data URI, rendered per request, never stored. Issuer is
+  `BrandSettings::name`, never `APP_NAME`. Both libraries are pinned as direct requirements.
+- The race-only guards (`attempts < 5` on the claim, the `last_timestep <` clause, `used_at IS NULL`
+  on consumption) are **pinned by reasoning, not tests**: sequentially an earlier read refuses first,
+  so only concurrent requests exercise them.
+
+### Managing it (patient group, `throttle:two-factor-manage` 10/10 min per account)
+
+| Route | Needs | Effect |
+|---|---|---|
+| `GET /patient/two-factor` | — | `{policy, enabled, offered, setup_required, can_disable, confirmed_at, recovery_codes_remaining}` |
+| `POST /patient/two-factor/setup` | first setup: `password` (so an unattended session can't enrol someone else's phone); if already on: `code` (TOTP or recovery — the lost-phone path) | pending secret + `otpauth_uri` + `qr_code`; nothing turns on. 403 under `off` for an account without it |
+| `POST /patient/two-factor/confirm` | `code` from the pending secret, within 15 min | on; voids waiting challenges; returns 8 recovery codes **once**; `two_factor_enrolled` (`method new|replaced`) |
+| `POST /patient/two-factor/recovery-codes` | a **TOTP** code (a recovery code must not mint a new set) | new set once; `recovery_codes_regenerated` |
+| `POST /patient/two-factor/disable` | `password` AND `code` (TOTP or recovery), one sentence either way | off; other sessions revoked; 403 under `required` |
+
+Each change queues `SendTwoFactorNoticeJob` (token-free, to the account's address, same rules as
+the password-changed notice) and `enrolled`/`removed` fire token-free workflow events
+`patient.two_factor_enrolled` / `patient.two_factor_removed`.
+
+### Policy
+
+- `off` stops **offering** it. An account whose owner turned it on is still challenged and can still
+  manage or remove it — a switch in the admin never lowers an account below its owner's choice.
+- `required`: middleware `patient.2fa` (`EnsurePatientTwoFactorEnrolled`) answers
+  `403 {code: "two_factor_setup_required"}` for an unenrolled patient on every portal route except
+  `GET /patient/session` and the `/patient/two-factor*` group (and `/patient/auth/*`). Judged per
+  request, never stamped on the token: switching to `required` confines live sessions on their next
+  request without signing anyone out, and confirming releases the same session.
+  `PatientResource::two_factor.setup_required` lets a client land a new session on setup.
+
+### Interactions
+
+- **Password reset keeps two-step on** — the link proves the mailbox, which must never stand in for
+  the second factor. It voids waiting challenges and discards an unfinished setup.
+- **Support reset** (Filament → patient → *Reset two-step verification*, gated on `update`,
+  `ResetPatientTwoFactorAction`): clears secret, codes and challenges, revokes every session, records
+  `two_factor_removed` + `sessions_revoked` with the operator, emails the patient. Identity proofing is
+  offline; the modal says the admin records who pressed it, not that anyone checked.
+- Account soft delete voids challenges (observer); the secret stays on the row so a restore keeps
+  the owner's choice.
+
+**Deploy order used:** schema + settings row migrated first (`085970b`), then code. The portal's
+`prx_challenge` cookie and screens are documented in the portal repo's `docs/security/dev.md`.
+
 ## Endpoints
 
 | Route | Token | Notes |
@@ -577,6 +676,8 @@ token (operators see it; the patient resource strips it on system events).
 | `POST /patient/auth/create-account` | anonymous | `{token, password}`. 201 with a session; 422 `errors.token`. |
 | `POST /patient/auth/password/reset` | anonymous | `{token, password}`. 200, no session; every session revoked. |
 | `POST /patient/claim-links` | **none** | Account, not clinical. Empty body; uniform 202; 503 when this install cannot send; 429 over 3/hour. Emails the order's address. |
+| `POST /patient/auth/two-factor` | anonymous | `{challenge, code \| recovery_code}` → session. See "Two-step verification". |
+| `GET\|POST /patient/two-factor*` | **none** | Status, setup, confirm, recovery codes, disable. Reachable while `required` confines a session. |
 | `GET /patient/session` | **none** | Current session's `idle_expires_at` / `expires_at`. Counts as use — the portal's keep-alive. |
 | `GET /patient/security/events` | **none** | The account's own security history. `?limit=` 1–100. `meta.retention_days`. See "Security history". |
 | `POST /patient/claim` | **none** | `{token}`. 200 with the patient; 422 `errors.token`. Links the record and verifies the address in one transaction. |

@@ -51,6 +51,31 @@ Accounts registered the old way (before 2026-09-13) still sign in normally. If s
 was registered by someone other than the inbox owner, the real owner can take it over with
 **Forgot password**: the reset proves their inbox and signs everyone else out.
 
+## Two-step verification
+
+Patients can protect their account with a code from an authenticator app on their phone (Google
+Authenticator, Microsoft Authenticator, 1Password and similar) as well as their password. Choose how
+it applies under **Settings → Patient portal → Two-step verification**:
+
+- **Off** — not offered. Patients who already turned it on keep it.
+- **Optional** — every patient sees a "Protect your account" invitation on Home and can set it up
+  from **Record → Two-step verification**, or skip it for 30 days.
+- **Required** — patients without it are sent to set it up on their next screen before they can see
+  anything else. Nobody is signed out when you switch this on.
+
+When a patient sets it up they get **eight recovery codes**, shown once. Each signs them in once if
+they lose their phone. They can create a new set, switch to a new phone (with a code from the old
+app or a recovery code), or turn it off (password and a code; not allowed under Required). The
+patient is emailed whenever any of this changes.
+
+| The patient says | What to do |
+|---|---|
+| "I got a new phone" | If they still have the old phone or a recovery code: Record → Two-step verification → *Switch to a new phone or app*. |
+| "I lost my phone and my recovery codes" | Confirm you are talking to the account holder (for example, call the phone number on their order). Then open their patient record and press **Reset two-step verification**. They are signed out everywhere, can sign in with their password, and are emailed. **The admin records that you reset it — it cannot record that you checked who you were talking to.** |
+| "It says my code didn't work" | The phone's clock must be set automatically. Codes change every 30 seconds; use the newest. After five wrong codes they must enter their password again. |
+| "It says too many attempts" | Ten wrong codes in 15 minutes on one account. Wait 15 minutes. If they did not try that many times, someone else has their password — ask them to reset it. |
+| "A 'password accepted, code requested' entry I don't recognise" | Someone has their password but not their phone. Ask them to reset their password now. |
+
 ## How long patients stay signed in
 
 A patient is signed out of the portal automatically after **30 minutes without using it**, and

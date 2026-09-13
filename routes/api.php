@@ -31,6 +31,7 @@ use App\Http\Controllers\Api\V1\Patient\AccountController as PatientAccountContr
 use App\Http\Controllers\Api\V1\Patient\AuthController as PatientAuthController;
 use App\Http\Controllers\Api\V1\Patient\PortalController;
 use App\Http\Controllers\Api\V1\Patient\SecurityController as PatientSecurityController;
+use App\Http\Controllers\Api\V1\Patient\TwoFactorController as PatientTwoFactorController;
 use App\Http\Controllers\Api\V1\Quiz\QuizController;
 use App\Http\Controllers\Api\V1\Recommendations\ProtocolPreviewController;
 use App\Http\Controllers\Api\V1\Referral\ReferralClickController;
@@ -315,6 +316,11 @@ Route::prefix('v1')->name('api.v1.')->group(function (): void {
 
         Route::post('login', [PatientAuthController::class, 'login'])->name('login');
 
+        // The second step of a two-step sign-in: the challenge `login` returned,
+        // plus a code, for a session. Anonymous; `throttle:auth` per IP here,
+        // and a per-challenge and per-account limit inside the action.
+        Route::post('two-factor', [PatientAuthController::class, 'twoFactor'])->name('two-factor');
+
         Route::middleware(['auth:sanctum', 'patient'])->group(function (): void {
             Route::post('logout', [PatientAuthController::class, 'logout'])->name('logout');
             Route::get('me', [PatientAuthController::class, 'me'])->name('me');
@@ -333,7 +339,22 @@ Route::prefix('v1')->name('api.v1.')->group(function (): void {
     // authenticator regardless. The registration in bootstrap/app.php is what
     // places it. Listing it first here only keeps the two from reading as though
     // they disagree. See App\Http\Middleware\NoStorePhiResponse.
+    // Reachable by every patient session, including one the `required`
+    // two-step policy has confined: the keep-alive, and setting two-step
+    // verification up. Everything else sits behind `patient.2fa` below.
     Route::prefix('patient')->name('patient.portal.')->middleware(['no-store', 'auth:sanctum', 'patient', 'throttle:api'])->group(function (): void {
+        Route::get('session', [PatientSecurityController::class, 'session'])->name('session');
+
+        Route::get('two-factor', [PatientTwoFactorController::class, 'show'])->name('two-factor.show');
+        Route::middleware('throttle:two-factor-manage')->group(function (): void {
+            Route::post('two-factor/setup', [PatientTwoFactorController::class, 'setup'])->name('two-factor.setup');
+            Route::post('two-factor/confirm', [PatientTwoFactorController::class, 'confirm'])->name('two-factor.confirm');
+            Route::post('two-factor/recovery-codes', [PatientTwoFactorController::class, 'recoveryCodes'])->name('two-factor.recovery-codes');
+            Route::post('two-factor/disable', [PatientTwoFactorController::class, 'disable'])->name('two-factor.disable');
+        });
+    });
+
+    Route::prefix('patient')->name('patient.portal.')->middleware(['no-store', 'auth:sanctum', 'patient', 'patient.2fa', 'throttle:api'])->group(function (): void {
         // One composed, ranked call for the portal's first screen. See
         // PortalController::home() for why it is screen-shaped.
         // Account, not clinical data: the step between having a login and
@@ -351,7 +372,6 @@ Route::prefix('v1')->name('api.v1.')->group(function (): void {
         // The account's own security history. Not clinical, but it is who
         // signed in from where, so it lives behind `no-store` like the rest.
         Route::get('security/events', [PatientSecurityController::class, 'events'])->name('security.events');
-        Route::get('session', [PatientSecurityController::class, 'session'])->name('session');
 
         Route::get('home', [PortalController::class, 'home'])->name('home');
         Route::get('dashboard', [PortalController::class, 'dashboard'])->name('dashboard');

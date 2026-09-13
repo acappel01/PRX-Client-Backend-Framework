@@ -29,8 +29,22 @@ class Patient extends Authenticatable
         'email_verified_at',
     ];
 
-    /** @var list<string> */
-    protected $hidden = ['password', 'remember_token'];
+    /**
+     * Every two-factor column is hidden, not for tidiness: workflow payloads copy
+     * the visible attributes into the queue (RunWorkflowChain), so a column
+     * missing from here is a secret in Redis, `failed_jobs` and Horizon.
+     *
+     * @var list<string>
+     */
+    protected $hidden = [
+        'password',
+        'remember_token',
+        'two_factor_secret',
+        'two_factor_pending_secret',
+        'two_factor_pending_at',
+        'two_factor_confirmed_at',
+        'two_factor_last_timestep',
+    ];
 
     /** @return array<string, string> */
     protected function casts(): array
@@ -41,6 +55,11 @@ class Patient extends Authenticatable
             'prx_chart_verified_at' => 'datetime',
             'prx_chart_collision_flagged' => 'boolean',
             'email_verified_at' => 'datetime',
+            'two_factor_secret' => 'encrypted',
+            'two_factor_pending_secret' => 'encrypted',
+            'two_factor_pending_at' => 'datetime',
+            'two_factor_confirmed_at' => 'datetime',
+            'two_factor_last_timestep' => 'integer',
         ];
     }
 
@@ -52,6 +71,11 @@ class Patient extends Authenticatable
     public function getFullNameAttribute(): string
     {
         return trim("{$this->first_name} {$this->last_name}");
+    }
+
+    public function hasTwoFactor(): bool
+    {
+        return $this->two_factor_confirmed_at !== null && filled($this->two_factor_secret);
     }
 
     public function hasPrxChart(): bool
@@ -72,5 +96,15 @@ class Patient extends Authenticatable
     public function securityEvents(): HasMany
     {
         return $this->hasMany(PatientSecurityEvent::class);
+    }
+
+    public function recoveryCodes(): HasMany
+    {
+        return $this->hasMany(PatientRecoveryCode::class);
+    }
+
+    public function authChallenges(): HasMany
+    {
+        return $this->hasMany(PatientAuthChallenge::class);
     }
 }

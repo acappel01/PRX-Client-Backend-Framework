@@ -8,11 +8,14 @@ use App\Enums\Patient\SecurityEventType;
 use App\Filament\Pages\Settings\ManagePortal;
 use App\Filament\Resources\Patients\Pages\ViewPatient;
 use App\Filament\Resources\Patients\RelationManagers\SecurityEventsRelationManager;
+use App\Jobs\Patient\SendTwoFactorNoticeJob;
 use App\Models\Patient;
 use App\Models\PatientSecurityEvent;
 use App\Models\User;
+use App\Services\Patient\TwoFactor;
 use App\Settings\PortalSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Bus;
 use Laravel\Sanctum\PersonalAccessToken;
 use Livewire\Livewire;
 use Spatie\Permission\Models\Permission;
@@ -137,6 +140,42 @@ class PatientSecurityOperatorTest extends TestCase
             ->assertActionHidden('signOutEverywhere');
     }
 
+    public function test_resetting_two_step_clears_it_signs_out_and_records_the_operator(): void
+    {
+        Bus::fake([SendTwoFactorNoticeJob::class]);
+        $patient = Patient::factory()->create();
+        $patient->forceFill(['two_factor_secret' => app(TwoFactor::class)->newSecret(), 'two_factor_confirmed_at' => now()])->save();
+        app(TwoFactor::class)->replaceRecoveryCodes($patient);
+        $patient->createToken('phone');
+        $this->actingAs($this->operator);
+
+        Livewire::test(ViewPatient::class, ['record' => $patient->getRouteKey()])
+            ->callAction('resetTwoFactor')
+            ->assertHasNoActionErrors();
+
+        $fresh = $patient->fresh();
+        $this->assertFalse($fresh->hasTwoFactor());
+        $this->assertSame(0, $fresh->recoveryCodes()->count());
+        $this->assertSame(0, $patient->tokens()->count());
+
+        $removed = PatientSecurityEvent::where('type', SecurityEventType::TwoFactorRemoved)->sole();
+        $this->assertSame(SecurityEventActor::Operator, $removed->actor_type);
+        $this->assertSame($this->operator->id, $removed->actor_user_id);
+        $this->assertSame(['reason' => 'operator_reset'], $removed->context);
+        $this->assertEquals(['reason' => 'two_factor_reset', 'revoked' => 1], PatientSecurityEvent::where('type', SecurityEventType::SessionsRevoked)->sole()->context);
+        Bus::assertDispatched(SendTwoFactorNoticeJob::class, fn ($job) => $job->kind === SendTwoFactorNoticeJob::RESET_BY_SUPPORT);
+    }
+
+    public function test_reset_two_step_is_only_offered_when_the_patient_has_it(): void
+    {
+        $patient = Patient::factory()->create();
+        $this->actingAs($this->operator);
+
+        Livewire::test(ViewPatient::class, ['record' => $patient->getRouteKey()])
+            ->assertActionHidden('resetTwoFactor')
+            ->assertSeeInOrder(['Two-step verification', 'Off']);
+    }
+
     public function test_the_security_history_renders_on_the_patient_record(): void
     {
         $patient = Patient::factory()->create();
@@ -159,8 +198,8 @@ class PatientSecurityOperatorTest extends TestCase
         $this->actingAs($this->operator);
 
         Livewire::test(ManagePortal::class)
-            ->assertFormSet(['security_events_retention_days' => 730, 'session_idle_minutes' => 30, 'session_max_hours' => 12])
-            ->fillForm(['security_events_retention_days' => 400, 'session_idle_minutes' => 15, 'session_max_hours' => 8])
+            ->assertFormSet(['security_events_retention_days' => 730, 'session_idle_minutes' => 30, 'session_max_hours' => 12, 'two_factor_policy' => 'off'])
+            ->fillForm(['security_events_retention_days' => 400, 'session_idle_minutes' => 15, 'session_max_hours' => 8, 'two_factor_policy' => 'optional'])
             ->call('save')
             ->assertHasNoFormErrors();
 
@@ -168,6 +207,7 @@ class PatientSecurityOperatorTest extends TestCase
         $this->assertSame(400, $stored->security_events_retention_days);
         $this->assertSame(15, $stored->session_idle_minutes);
         $this->assertSame(8, $stored->session_max_hours);
+        $this->assertSame('optional', $stored->two_factor_policy);
     }
 
     public function test_the_retention_setting_refuses_values_outside_its_bounds(): void

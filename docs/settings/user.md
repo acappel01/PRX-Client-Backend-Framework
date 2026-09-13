@@ -120,6 +120,10 @@ Mail the provider receives for a no-reply address is not forwarded anywhere unle
 
 ### Patient portal
 
+- **Two-step verification for patients** — Off / Optional / Required. Off stops offering it but never
+  removes it from patients who turned it on. Required sends patients without it to set it up on their
+  next screen; nobody is signed out. See `docs/portal/user.md` → "Two-step verification", including
+  how support resets it for a patient who lost their phone.
 - **Sign out after inactivity** — minutes, 5 to 240, default 30. A patient session unused for this long
   ends; the portal warns two minutes before. Shortening it applies to patients already signed in.
 - **Always sign out after** — hours, 1 to 720, default 12. Every session ends this long after sign-in,

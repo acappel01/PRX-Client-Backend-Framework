@@ -11,6 +11,8 @@ use App\Events\Patient\ClaimLinkRequested;
 use App\Events\Patient\EmailVerified;
 use App\Events\Patient\PasswordChanged;
 use App\Events\Patient\RecordClaimed;
+use App\Events\Patient\TwoFactorEnrolled;
+use App\Events\Patient\TwoFactorRemoved;
 use App\Events\Quiz\QuizCompleted;
 use App\Filament\Support\IntegrationActionForms;
 use App\Models\Lead;
@@ -213,6 +215,8 @@ class WorkflowServiceProvider extends ServiceProvider
         $registry->registerEvent('patient.email_verified', EmailVerified::class, 'Patient verified their email', 'patient');
         $registry->registerEvent('patient.account_created', AccountCreated::class, 'Patient created their account from an emailed link', 'patient');
         $registry->registerEvent('patient.password_changed', PasswordChanged::class, 'Patient reset their password', 'patient');
+        $registry->registerEvent('patient.two_factor_enrolled', TwoFactorEnrolled::class, 'Patient turned on two-step verification', 'patient');
+        $registry->registerEvent('patient.two_factor_removed', TwoFactorRemoved::class, 'Two-step verification was turned off for a patient', 'patient');
     }
 
     private function attachObservers(WorkflowRegistry $registry): void

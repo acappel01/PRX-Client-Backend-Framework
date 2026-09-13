@@ -8,8 +8,7 @@ namespace App\Enums\Patient;
  * without a migration.
  *
  * Reserved for later increments, deliberately not built yet:
- * `two_factor_enrolled`, `two_factor_removed`, `two_factor_challenge_failed`,
- * `recovery_code_used`, `device_trusted`, `device_revoked`, `step_up_succeeded`.
+ * `device_trusted`, `device_revoked`, `step_up_succeeded`.
  */
 enum SecurityEventType: string
 {
@@ -30,6 +29,12 @@ enum SecurityEventType: string
     case AccountDeleted = 'account_deleted';
     case AccountRestored = 'account_restored';
     case AccountPurged = 'account_purged';
+    case TwoFactorChallenged = 'two_factor_challenged';
+    case TwoFactorChallengeFailed = 'two_factor_challenge_failed';
+    case TwoFactorEnrolled = 'two_factor_enrolled';
+    case TwoFactorRemoved = 'two_factor_removed';
+    case RecoveryCodeUsed = 'recovery_code_used';
+    case RecoveryCodesRegenerated = 'recovery_codes_regenerated';
 
     /** Written for the patient as much as the operator — the portal shows it. */
     public function label(): string
@@ -52,13 +57,21 @@ enum SecurityEventType: string
             self::AccountDeleted => 'Account deleted',
             self::AccountRestored => 'Account restored',
             self::AccountPurged => 'Account permanently deleted',
+            self::TwoFactorChallenged => 'Password accepted, code requested',
+            self::TwoFactorChallengeFailed => 'Wrong verification code',
+            self::TwoFactorEnrolled => 'Two-step verification turned on',
+            self::TwoFactorRemoved => 'Two-step verification turned off',
+            self::RecoveryCodeUsed => 'Recovery code used',
+            self::RecoveryCodesRegenerated => 'New recovery codes created',
         };
     }
 
     public function color(): string
     {
         return match ($this) {
-            self::LoginFailed, self::AccountDeleted, self::AccountPurged => 'danger',
+            self::LoginFailed, self::AccountDeleted, self::AccountPurged, self::TwoFactorChallengeFailed, self::TwoFactorRemoved => 'danger',
+            self::RecoveryCodeUsed, self::RecoveryCodesRegenerated => 'warning',
+            self::TwoFactorEnrolled => 'success',
             self::SessionsRevoked, self::PasswordChanged, self::EmailChanged, self::ChartLinkChanged => 'warning',
             self::LoginSucceeded, self::AccountCreated, self::RecordClaimed, self::EmailVerified, self::AccountRestored => 'success',
             default => 'gray',

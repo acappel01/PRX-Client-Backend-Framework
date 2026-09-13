@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1\Patient;
 
 use App\Actions\Exceptions\ActionException;
+use App\Actions\Patient\CompleteTwoFactorLoginAction;
 use App\Actions\Patient\CreatePatientAccountAction;
 use App\Actions\Patient\LoginPatientAction;
 use App\Actions\Patient\LogoutPatientAction;
@@ -136,7 +137,7 @@ class AuthController extends ApiController
         ]);
 
         try {
-            ['patient' => $patient, 'token' => $token] = $action->execute(
+            $result = $action->execute(
                 $validated['email'],
                 $validated['password'],
                 $validated['device_name'] ?? ($request->userAgent() ?? 'api'),
@@ -144,6 +145,56 @@ class AuthController extends ApiController
             );
         } catch (AuthenticationException $e) {
             throw ValidationException::withMessages(['email' => [$e->getMessage()]]);
+        }
+
+        // Two-step verification on: no session and nothing about the account
+        // until the code is given at `two-factor`.
+        if (isset($result['challenge'])) {
+            return $this->success([
+                'two_factor_required' => true,
+                'challenge' => $result['challenge'],
+                'expires_at' => $result['expires_at']->toIso8601String(),
+                'methods' => ['totp', 'recovery_code'],
+            ]);
+        }
+
+        return $this->success([
+            'token' => $result['token'],
+            'token_type' => 'Bearer',
+            'patient' => PatientResource::fromModel($result['patient'])->toArray(),
+        ]);
+    }
+
+    /**
+     * Finish a two-step sign-in.
+     *
+     * Send the `challenge` from `login` with either `code` (6 digits from the
+     * authenticator app) or `recovery_code`. Returns a session exactly as
+     * `login` does without two-step verification. Every refusal is the same 422
+     * on `code`; too many wrong codes for the account is a 429. A challenge
+     * lasts five minutes and allows five attempts.
+     *
+     * @tags PatientAuth
+     *
+     * @unauthenticated
+     */
+    public function twoFactor(Request $request, CompleteTwoFactorLoginAction $action): JsonResponse
+    {
+        $request->validate([
+            'challenge' => ['required', 'string', 'max:64'],
+            'code' => ['required_without:recovery_code', 'nullable', 'string', 'max:16'],
+            'recovery_code' => ['required_without:code', 'nullable', 'string', 'max:32'],
+        ]);
+
+        try {
+            ['patient' => $patient, 'token' => $token] = $action->execute(
+                $request->input('challenge'),
+                $request->input('code'),
+                $request->input('recovery_code'),
+                RequestContext::fromRequest($request),
+            );
+        } catch (ActionException $e) {
+            return $this->error($e->getMessage(), $e->getCode());
         }
 
         return $this->success([
