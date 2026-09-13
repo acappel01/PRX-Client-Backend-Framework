@@ -117,10 +117,14 @@
                                         "message": {
                                             "type": "string",
                                             "const": "This account has been deactivated."
+                                        },
+                                        "errors": {
+                                            "type": "string"
                                         }
                                     },
                                     "required": [
-                                        "message"
+                                        "message",
+                                        "errors"
                                     ]
                                 }
                             }
@@ -859,10 +863,14 @@
                                         "message": {
                                             "type": "string",
                                             "const": "Page not found."
+                                        },
+                                        "errors": {
+                                            "type": "string"
                                         }
                                     },
                                     "required": [
-                                        "message"
+                                        "message",
+                                        "errors"
                                     ]
                                 }
                             }
@@ -954,10 +962,14 @@
                                         "message": {
                                             "type": "string",
                                             "const": "Menu not found."
+                                        },
+                                        "errors": {
+                                            "type": "string"
                                         }
                                     },
                                     "required": [
-                                        "message"
+                                        "message",
+                                        "errors"
                                     ]
                                 }
                             }
@@ -1732,6 +1744,13 @@
                     "Catalog"
                 ],
                 "parameters": [
+                    {
+                        "name": "goal",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
                     {
                         "name": "category",
                         "in": "query",
@@ -2669,6 +2688,13 @@
                 ],
                 "parameters": [
                     {
+                        "name": "goal",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
                         "name": "category",
                         "in": "query",
                         "schema": {
@@ -3472,6 +3498,10 @@
                                         "data": {
                                             "type": "object",
                                             "properties": {
+                                                "goals": {
+                                                    "type": "string",
+                                                    "description": "FIRST, because it is the only classification the catalog is\nactually populated with: every published product carries health\ngoals, while categories are a merchandising axis an operator\nfills in per install. A UI that renders groups in payload order\ntherefore leads with the filter that has options in it. Same vocabulary as the quiz (`show_in_quiz` decides only whether\na goal is OFFERED there, not whether it classifies), so filtering\na listing and matching a quiz answer cannot disagree about what a\nproduct is for.\n`packages` here is the OVERRIDE edge, which is empty in the\nnormal case \u2014 counting it alone reported zero for every goal and\nhid the whole group from the stacks filter while the cards were\nvisibly badged. `packagesEffective` counts what the listing\nactually returns: an override when the package has one, otherwise\nthe goals of its published contents."
+                                                },
                                                 "categories": {
                                                     "type": "string"
                                                 },
@@ -3562,6 +3592,7 @@
                                                 }
                                             },
                                             "required": [
+                                                "goals",
                                                 "categories",
                                                 "classes",
                                                 "types",
@@ -3607,32 +3638,7 @@
                                     "properties": {
                                         "data": {
                                             "type": "object",
-                                            "properties": {
-                                                "gateway_provider": {
-                                                    "type": "string"
-                                                },
-                                                "environment": {
-                                                    "type": "string"
-                                                },
-                                                "public_key": {
-                                                    "type": [
-                                                        "string",
-                                                        "null"
-                                                    ]
-                                                },
-                                                "location_id": {
-                                                    "type": [
-                                                        "string",
-                                                        "null"
-                                                    ]
-                                                }
-                                            },
-                                            "required": [
-                                                "gateway_provider",
-                                                "environment",
-                                                "public_key",
-                                                "location_id"
-                                            ]
+                                            "additionalProperties": {}
                                         },
                                         "meta": {
                                             "type": "string"
@@ -3651,15 +3657,39 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "message": {
-                                            "type": "string",
-                                            "const": "No active payment gateway is configured."
+                                    "anyOf": [
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "message": {
+                                                    "type": "string",
+                                                    "const": "The configured payment gateway is missing credentials required to accept a card."
+                                                },
+                                                "errors": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "message",
+                                                "errors"
+                                            ]
+                                        },
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "message": {
+                                                    "type": "string",
+                                                    "const": "No active payment gateway is configured."
+                                                },
+                                                "errors": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "message",
+                                                "errors"
+                                            ]
                                         }
-                                    },
-                                    "required": [
-                                        "message"
                                     ]
                                 }
                             }
@@ -3706,10 +3736,37 @@
                                         "message": {
                                             "type": "string",
                                             "const": "Checkout could not be completed. Please try again."
+                                        },
+                                        "errors": {
+                                            "type": "string"
                                         }
                                     },
                                     "required": [
-                                        "message"
+                                        "message",
+                                        "errors"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "const": "We could not complete this order. Please try again in a moment."
+                                        },
+                                        "errors": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "message",
+                                        "errors"
                                     ]
                                 }
                             }
@@ -3725,11 +3782,29 @@
                                             "type": "object",
                                             "properties": {
                                                 "message": {
-                                                    "type": "string"
+                                                    "type": "string",
+                                                    "const": "Some of those details could not be accepted."
+                                                },
+                                                "errors": {
+                                                    "anyOf": [
+                                                        {
+                                                            "type": "string"
+                                                        },
+                                                        {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "string"
+                                                            },
+                                                            "minItems": 0,
+                                                            "maxItems": 0,
+                                                            "additionalItems": false
+                                                        }
+                                                    ]
                                                 }
                                             },
                                             "required": [
-                                                "message"
+                                                "message",
+                                                "errors"
                                             ]
                                         },
                                         {
@@ -3738,13 +3813,27 @@
                                                 "message": {
                                                     "type": "string",
                                                     "const": "payment_method is required for local checkout."
+                                                },
+                                                "errors": {
+                                                    "type": "string"
                                                 }
                                             },
                                             "required": [
-                                                "message"
+                                                "message",
+                                                "errors"
                                             ]
                                         }
                                     ]
+                                }
+                            }
+                        }
+                    },
+                    "200": {
+                        "description": "The ONLY branch that relays a message. `ActionException` means the\nsentence was written to be shown to a customer \u2014 an empty cart, a\ndeclined card. Catching `RuntimeException` here instead, as this\ndid, is a rule about a PHP class rather than about who a sentence\nwas written for, and three different things went out through it:\nshopper copy, an operator diagnostic naming our provider id\ncolumns, and PrescribeRxException \u2014 whose message is the clinical\nprovider's own error text, absolute paths and, on one endpoint,\nthe full SQL statement with a patient_chart_id in it.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "string"
                                 }
                             }
                         }
@@ -3766,23 +3855,6 @@
                                     },
                                     "required": [
                                         "message"
-                                    ]
-                                }
-                            }
-                        }
-                    },
-                    "200": {
-                        "description": "",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "anyOf": [
-                                        {
-                                            "type": "object"
-                                        },
-                                        {
-                                            "$ref": "#/components/schemas/PrescribeRxException"
-                                        }
                                     ]
                                 }
                             }
@@ -4008,7 +4080,37 @@
                                                     "properties": {
                                                         "path": {
                                                             "type": "string",
-                                                            "description": "'prx' \u2014 frontend collects lead info then redirects to the\nbackend handoff page (lead.handoff_url) where the PRX embed\nruns clinical intake + payment. 'local' \u2014 frontend tokenizes\npayment via the gateway SDK and posts it to /api/v1/checkout."
+                                                            "description": "WHO SUBMITS THE ORDER. 'prx' \u2014 the storefront collects\nlead info, then hosts the provider's clinical intake embed\nand the encounter is created there. 'local' \u2014 the\nstorefront tokenises a card and posts it to\n/api/v1/checkout."
+                                                        },
+                                                        "payment": {
+                                                            "type": "object",
+                                                            "description": "WHO TAKES THE MONEY, which is a different question. A\ndeployment can route orders through the provider while\nstill taking the card itself, so the storefront needs\nboth answers: this one decides whether it renders its own\npayment step, and the provider's embed skips its payment\nstep on exactly the same setting. One source of truth, so\nthe two can never both try to collect.",
+                                                            "properties": {
+                                                                "collector": {
+                                                                    "type": "string"
+                                                                },
+                                                                "collect_on_site": {
+                                                                    "type": "boolean",
+                                                                    "description": "The storefront renders a card form ONLY when this is\ntrue; otherwise the embed's own checkout step handles\neverything and no payment UI exists on this site."
+                                                                },
+                                                                "bypass": {
+                                                                    "type": [
+                                                                        "string",
+                                                                        "null"
+                                                                    ],
+                                                                    "description": "Which bypass shape the intake will be handed, so the\nstorefront knows whether to CHARGE or to AUTHORISE\nAND VAULT \u2014 the difference between money taken before\na clinician sees the case and money taken after.",
+                                                                    "enum": [
+                                                                        "transaction",
+                                                                        "vaultedCard",
+                                                                        null
+                                                                    ]
+                                                                }
+                                                            },
+                                                            "required": [
+                                                                "collector",
+                                                                "collect_on_site",
+                                                                "bypass"
+                                                            ]
                                                         },
                                                         "upsells": {
                                                             "type": "object",
@@ -4028,6 +4130,7 @@
                                                     },
                                                     "required": [
                                                         "path",
+                                                        "payment",
                                                         "upsells"
                                                     ]
                                                 },
@@ -4075,6 +4178,94 @@
                                 }
                             }
                         }
+                    }
+                },
+                "security": []
+            }
+        },
+        "/slug-redirect": {
+            "get": {
+                "operationId": "v1.slug-redirect",
+                "tags": [
+                    "Content"
+                ],
+                "parameters": [
+                    {
+                        "name": "type",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                ""
+                            ]
+                        }
+                    },
+                    {
+                        "name": "slug",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 255
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "type": {
+                                                    "type": "string"
+                                                },
+                                                "slug": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "type",
+                                                "slug"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "const": "Not found"
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
                     }
                 },
                 "security": []
@@ -4756,10 +4947,14 @@
                                         "message": {
                                             "type": "string",
                                             "const": "No quiz is configured."
+                                        },
+                                        "errors": {
+                                            "type": "string"
                                         }
                                     },
                                     "required": [
-                                        "message"
+                                        "message",
+                                        "errors"
                                     ]
                                 }
                             }
@@ -5499,6 +5694,125 @@
                 "security": []
             }
         },
+        "/referrals/clicks": {
+            "post": {
+                "operationId": "v1.referrals.clicks.store",
+                "description": "POST /api/v1/referrals/clicks\n\nCALLED BY THE STOREFRONT'S EDGE MIDDLEWARE, not by page JavaScript. That\nmatters for the audit trail: the middleware runs on the Next.js server, so\nthe visitor's real address arrives via X-Forwarded-For and is trusted here\nbecause TRUSTED_PROXIES already names that host. A browser-side call would\nbe trivially forgeable by anyone wanting to inflate a commission.\n\nALWAYS 200, EVEN FOR A CODE THAT MATCHES NOTHING. This is fire-and-forget on\na visitor's very first page view; a 404 here would teach the middleware to\nretry or log noise on every mistyped link, and the row is written either way\nso the arrival is still auditable.\n\nANONYMOUS AND UNAUTHENTICATED TODAY, which bounds what it can be trusted\nfor: anyone can post here with a fresh random `visitor_id` per request and\nmint clicks, throttle and proxies permitting. What that CANNOT be forged is\nthe IP, which arrives via the storefront's forwarded header from a trusted\npeer. So this is safe while commissions are paid on CONVERSIONS \u2014 leads,\nwhich require a real checkout \u2014 and it is not a safe basis for paying\nper-click. When item 43 step 2 lands, this is the strongest candidate for\n`auth:sanctum` plus an ability, with the throttle keyed on the forwarded\naddress rather than the shared client id.",
+                "summary": "Record a referral arrival",
+                "tags": [
+                    "General"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "code": {
+                                        "type": "string",
+                                        "maxLength": 64
+                                    },
+                                    "visitor_id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "landing_url": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 2048
+                                    },
+                                    "referrer": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 2048
+                                    },
+                                    "utm_source": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 255
+                                    },
+                                    "utm_medium": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 255
+                                    },
+                                    "utm_campaign": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 255
+                                    },
+                                    "utm_term": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 255
+                                    },
+                                    "utm_content": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 255
+                                    }
+                                },
+                                "required": [
+                                    "code",
+                                    "visitor_id"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "REPORTS NOTHING ABOUT THE CODE. An earlier version returned whether it\nresolved to a live source, which no caller ever read and which handed\nan anonymous prober one bit per request \u2014 enough to enumerate a live\naffiliate roster from a public endpoint. `recorded` is only whether the\nrequest was well-formed enough to store.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "recorded": {
+                                                    "type": "boolean"
+                                                }
+                                            },
+                                            "required": [
+                                                "recorded"
+                                            ]
+                                        },
+                                        "meta": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "meta"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    }
+                },
+                "security": []
+            }
+        },
         "/intake/schema": {
             "get": {
                 "operationId": "v1.intake.schema",
@@ -5672,6 +5986,54 @@
                                         "minLength": 2,
                                         "maxLength": 2
                                     },
+                                    "billing_same_as_shipping": {
+                                        "type": "boolean",
+                                        "description": "The address above is the SHIPPING address \u2014 its state decides\nwhich licensed clinician can take the encounter. Billing is\noptional and only required when it differs."
+                                    },
+                                    "billing_address_line1": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 255
+                                    },
+                                    "billing_address_line2": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 255
+                                    },
+                                    "billing_city": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 100
+                                    },
+                                    "billing_state": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "minLength": 2,
+                                        "maxLength": 2
+                                    },
+                                    "billing_postal_code": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 16
+                                    },
+                                    "billing_country": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "minLength": 2,
+                                        "maxLength": 2
+                                    },
                                     "sms_consent": {
                                         "type": "boolean"
                                     },
@@ -5717,8 +6079,62 @@
                                             "array",
                                             "null"
                                         ],
+                                        "description": "VALIDATED PER ENTRY, not just as \"an array\". It was the loose\nrule that let a mis-shaped cart through: the frontend sent\n`{type: \"Product\", name: \u2026}` while everything downstream reads\n`resource_type` / `resource_id`, so leads stored a cart the\nembed could never resolve and NOTHING failed. A shape mismatch\nmust now 422 at the edge instead of surfacing as an empty\nclinical intake days later.",
                                         "items": {
-                                            "type": "string"
+                                            "type": "object",
+                                            "properties": {
+                                                "resource_type": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "product",
+                                                        "package",
+                                                        "plan"
+                                                    ]
+                                                },
+                                                "resource_id": {
+                                                    "type": "integer",
+                                                    "minimum": 1
+                                                },
+                                                "quantity": {
+                                                    "type": [
+                                                        "integer",
+                                                        "null"
+                                                    ],
+                                                    "minimum": 1
+                                                },
+                                                "name": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ],
+                                                    "maxLength": 255
+                                                },
+                                                "unit_price": {
+                                                    "type": [
+                                                        "number",
+                                                        "null"
+                                                    ],
+                                                    "minimum": 0
+                                                },
+                                                "price_suffix": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ],
+                                                    "maxLength": 32
+                                                },
+                                                "billing_period": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ],
+                                                    "maxLength": 32
+                                                }
+                                            },
+                                            "required": [
+                                                "resource_type",
+                                                "resource_id"
+                                            ]
                                         }
                                     },
                                     "cart_subtotal": {
@@ -5778,6 +6194,21 @@
                                         ],
                                         "format": "uri",
                                         "maxLength": 2048
+                                    },
+                                    "referral_code": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "description": "Referral attribution, carried by the storefront from the visitor's\nfirst-party cookie. `referral_code` is accepted even when it matches\nno live link \u2014 an unresolvable code is recorded as evidence that\nsomeone arrived claiming it, exactly as an unmatched click is. DELIBERATELY LENIENT, and it is not sloppiness. A strict rule here\nrejects the whole LEAD over a malformed marketing code \u2014 and since\nthe code arrives from a 30-day cookie, one crafted `?ref=` link\nwould lock a visitor out of checkout until they cleared it. The\nshape is enforced where it can fail safely instead:\nReferralLink::normalizeCode() drops anything unusable and the lead\nis still captured. A lost commission is recoverable from\nreferral_clicks; a lost lead is not.",
+                                        "maxLength": 255
+                                    },
+                                    "referral_visitor_id": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 64
                                     },
                                     "quiz_slug": {
                                         "type": [
@@ -6493,6 +6924,430 @@
                 "security": []
             }
         },
+        "/leads/{lead}/intake": {
+            "get": {
+                "operationId": "v1.leads.intake",
+                "summary": "Embed configuration, cart summary and payment mode for one lead",
+                "tags": [
+                    "Leads"
+                ],
+                "parameters": [
+                    {
+                        "name": "lead",
+                        "in": "path",
+                        "required": true,
+                        "description": "The lead UUID",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "embed": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "embedCode": {
+                                                            "type": [
+                                                                "string",
+                                                                "null"
+                                                            ]
+                                                        },
+                                                        "prefill": {
+                                                            "type": "array",
+                                                            "description": "THE KEY NAMES ARE THEIRS, NOT OURS, and ours were wrong. Their\nprefill vocabulary is `address` / `city` / `state` / `zip`; we were\nsending `address_line1` / `postal_code` / `country`, none of which\nthey document, so the whole address silently failed to prefill. `gender` is passed through rather than mapped: their prefill accepts\nmale / female / other, and this lead column is already constrained\nto that vocabulary at capture.",
+                                                            "items": {}
+                                                        },
+                                                        "packages": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": [
+                                                                    "string",
+                                                                    "null"
+                                                                ]
+                                                            }
+                                                        },
+                                                        "products": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": [
+                                                                    "string",
+                                                                    "null"
+                                                                ]
+                                                            }
+                                                        },
+                                                        "productTypes": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "anyOf": [
+                                                                    {
+                                                                        "type": "object",
+                                                                        "properties": {
+                                                                            "product_type_slug": {
+                                                                                "type": [
+                                                                                    "string",
+                                                                                    "null"
+                                                                                ]
+                                                                            }
+                                                                        },
+                                                                        "required": [
+                                                                            "product_type_slug"
+                                                                        ]
+                                                                    },
+                                                                    {
+                                                                        "type": "null"
+                                                                    },
+                                                                    {
+                                                                        "type": "object",
+                                                                        "properties": {
+                                                                            "product_type_id": {
+                                                                                "type": [
+                                                                                    "string",
+                                                                                    "null"
+                                                                                ]
+                                                                            }
+                                                                        },
+                                                                        "required": [
+                                                                            "product_type_id"
+                                                                        ]
+                                                                    }
+                                                                ]
+                                                            }
+                                                        },
+                                                        "productClasses": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "anyOf": [
+                                                                    {
+                                                                        "type": "object",
+                                                                        "properties": {
+                                                                            "product_class_slug": {
+                                                                                "type": [
+                                                                                    "string",
+                                                                                    "null"
+                                                                                ]
+                                                                            }
+                                                                        },
+                                                                        "required": [
+                                                                            "product_class_slug"
+                                                                        ]
+                                                                    },
+                                                                    {
+                                                                        "type": "null"
+                                                                    },
+                                                                    {
+                                                                        "type": "object",
+                                                                        "properties": {
+                                                                            "product_class_id": {
+                                                                                "type": [
+                                                                                    "string",
+                                                                                    "null"
+                                                                                ]
+                                                                            }
+                                                                        },
+                                                                        "required": [
+                                                                            "product_class_id"
+                                                                        ]
+                                                                    }
+                                                                ]
+                                                            }
+                                                        },
+                                                        "planIds": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": [
+                                                                    "string",
+                                                                    "null"
+                                                                ]
+                                                            }
+                                                        },
+                                                        "skipSteps": {
+                                                            "type": "array",
+                                                            "description": "Step slugs are encounter-type-specific. The list comes from\nconfig/prescribe-rx.php \u2192 embed.skip_steps and contains the\ncommon variants for personal-info + product-selection. The\nSDK silently ignores unknown slugs, so listing multiple\nvariants is safe \u2014 the embed picks the ones that match its\ncurrent schema. Adjust the config when you find the exact\nslugs in PRX admin.",
+                                                            "items": {}
+                                                        },
+                                                        "metadata": {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "lead_uuid": {
+                                                                    "type": "string"
+                                                                },
+                                                                "lead_email": {
+                                                                    "type": "string"
+                                                                },
+                                                                "cart_subtotal": {
+                                                                    "type": [
+                                                                        "number",
+                                                                        "null"
+                                                                    ]
+                                                                },
+                                                                "utm_source": {
+                                                                    "type": [
+                                                                        "string",
+                                                                        "null"
+                                                                    ]
+                                                                },
+                                                                "utm_medium": {
+                                                                    "type": [
+                                                                        "string",
+                                                                        "null"
+                                                                    ]
+                                                                },
+                                                                "utm_campaign": {
+                                                                    "type": [
+                                                                        "string",
+                                                                        "null"
+                                                                    ]
+                                                                }
+                                                            },
+                                                            "required": [
+                                                                "lead_uuid",
+                                                                "lead_email",
+                                                                "cart_subtotal",
+                                                                "utm_source",
+                                                                "utm_medium",
+                                                                "utm_campaign"
+                                                            ]
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "embedCode",
+                                                        "prefill",
+                                                        "packages",
+                                                        "products",
+                                                        "productTypes",
+                                                        "productClasses",
+                                                        "planIds",
+                                                        "skipSteps",
+                                                        "metadata"
+                                                    ]
+                                                },
+                                                "environment": {
+                                                    "type": "string"
+                                                },
+                                                "payment": {
+                                                    "type": "object",
+                                                    "description": "Where payment is taken. The embed renders its own payment\nstep only when the provider is collecting; when this side\ncollects, that step is skipped and the storefront shows its\nown. One setting, so the two can never both claim it.",
+                                                    "properties": {
+                                                        "collector": {
+                                                            "type": "string"
+                                                        },
+                                                        "collect_on_site": {
+                                                            "type": "boolean"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "collector",
+                                                        "collect_on_site"
+                                                    ]
+                                                },
+                                                "cart": {
+                                                    "type": "object",
+                                                    "description": "Enough to render a summary beside the embed, so a visitor\ncan see what they are buying and get back to the cart\nwithout losing the page.",
+                                                    "properties": {
+                                                        "items": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "object",
+                                                                "properties": {
+                                                                    "name": {
+                                                                        "type": [
+                                                                            "string",
+                                                                            "null"
+                                                                        ]
+                                                                    },
+                                                                    "quantity": {
+                                                                        "anyOf": [
+                                                                            {
+                                                                                "type": "string"
+                                                                            },
+                                                                            {
+                                                                                "type": "integer",
+                                                                                "enum": [
+                                                                                    1
+                                                                                ]
+                                                                            }
+                                                                        ]
+                                                                    },
+                                                                    "unit_price": {
+                                                                        "type": [
+                                                                            "number",
+                                                                            "null"
+                                                                        ]
+                                                                    }
+                                                                },
+                                                                "required": [
+                                                                    "name",
+                                                                    "quantity",
+                                                                    "unit_price"
+                                                                ]
+                                                            }
+                                                        },
+                                                        "subtotal": {
+                                                            "type": [
+                                                                "number",
+                                                                "null"
+                                                            ]
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "items",
+                                                        "subtotal"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "embed",
+                                                "environment",
+                                                "payment",
+                                                "cart"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "402": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "const": "This order has no completed payment, so the clinical intake is not available."
+                                        },
+                                        "errors": {
+                                            "type": "object",
+                                            "properties": {
+                                                "payment": {
+                                                    "type": "array",
+                                                    "prefixItems": [
+                                                        {
+                                                            "type": "string",
+                                                            "const": "Payment must be completed before the medical intake."
+                                                        }
+                                                    ],
+                                                    "minItems": 1,
+                                                    "maxItems": 1,
+                                                    "additionalItems": false
+                                                }
+                                            },
+                                            "required": [
+                                                "payment"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "message",
+                                        "errors"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
+                    }
+                },
+                "security": []
+            }
+        },
+        "/leads/{lead}/intake/complete": {
+            "post": {
+                "operationId": "v1.leads.intake.complete",
+                "description": "NOT AUTHORITATIVE. The body is client-supplied and unverified; the\nsigned webhook remains the source of truth for status, encounter\ncreation and fulfilment. Never make a billing or fulfilment decision\nfrom this.\n\nThe same ping already existed for the server-rendered handoff page, but\nthat route is session- and CSRF-protected on the web middleware \u2014 it is\nunreachable from the storefront's origin, so moving the embed there\ndropped it silently. This is the cross-origin equivalent, with the lead\nUUID in the path as the credential rather than in the body.",
+                "summary": "Advisory \"the visitor appears to have submitted\" ping from the embed's\nonComplete, so the storefront can flip to a thank-you state without\nwaiting on the webhook",
+                "tags": [
+                    "Leads"
+                ],
+                "parameters": [
+                    {
+                        "name": "lead",
+                        "in": "path",
+                        "required": true,
+                        "description": "The lead UUID",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "encounter_id": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 64
+                                    },
+                                    "patient_id": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 64
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "ok": {
+                                                    "type": "boolean"
+                                                }
+                                            },
+                                            "required": [
+                                                "ok"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
+                    }
+                },
+                "security": []
+            }
+        },
         "/orders/{uuid}": {
             "get": {
                 "operationId": "v1.orders.show",
@@ -6551,10 +7406,14 @@
                                         "message": {
                                             "type": "string",
                                             "const": "Order not found."
+                                        },
+                                        "errors": {
+                                            "type": "string"
                                         }
                                     },
                                     "required": [
-                                        "message"
+                                        "message",
+                                        "errors"
                                     ]
                                 }
                             }
@@ -6567,22 +7426,142 @@
         "/patient/auth/register": {
             "post": {
                 "operationId": "v1.patient.auth.register",
-                "description": "Creates a local patient record and attempts to link an existing PRX chart\nif one is found for the supplied email. Returns the patient resource and\na Sanctum bearer token.",
-                "summary": "Register a new patient account",
+                "description": "Creates NOTHING. Registration used to create an unverified account from a\ntyped address, which let anyone register a customer's email first and\nlock them out. Now the link creates the account, and only for an address\nwith a claimable order; an address that already has an account is sent a\npassword-reset link instead. The answer is the same 202 either way, and\nthe decision runs in a queued job so its timing cannot tell them apart.\nSee RequestAccountLinkAction.\n\nOnly `email` is read. A 503 describes the installation (no portal URL, no\nusable mail integration, no queue worker), never the address.",
+                "summary": "Start an account: email a link to the address",
+                "tags": [
+                    "PatientAuth"
+                ],
+                "responses": {
+                    "202": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "sent": {
+                                                    "type": "boolean"
+                                                }
+                                            },
+                                            "required": [
+                                                "sent"
+                                            ]
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "const": "Check your email. If that address has an order or an account with us, we have sent it a link."
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": []
+            }
+        },
+        "/patient/auth/password/forgot": {
+            "post": {
+                "operationId": "v1.patient.auth.password.forgot",
+                "summary": "Forgot password: email a reset link \u2014 or, for an address with an order and\nno account yet, a create-account link. Identical to `register` on purpose",
+                "tags": [
+                    "PatientAuth"
+                ],
+                "responses": {
+                    "202": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "sent": {
+                                                    "type": "boolean"
+                                                }
+                                            },
+                                            "required": [
+                                                "sent"
+                                            ]
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "const": "Check your email. If that address has an order or an account with us, we have sent it a link."
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": []
+            }
+        },
+        "/patient/auth/create-account": {
+            "post": {
+                "operationId": "v1.patient.auth.create-account",
+                "summary": "Use a create-account link. The account's email is the address the link\nwas sent to \u2014 none is accepted here. Returns a session, as login does",
                 "tags": [
                     "PatientAuth"
                 ],
                 "requestBody": {
+                    "required": true,
                     "content": {
                         "application/json": {
                             "schema": {
                                 "type": "object",
                                 "properties": {
+                                    "token": {
+                                        "type": "string",
+                                        "maxLength": 64
+                                    },
+                                    "password": {
+                                        "type": "string",
+                                        "minLength": 8,
+                                        "maxLength": 255
+                                    },
                                     "device_name": {
                                         "type": "string",
-                                        "default": "api"
+                                        "maxLength": 255
                                     }
-                                }
+                                },
+                                "required": [
+                                    "token",
+                                    "password"
+                                ]
                             }
                         }
                     }
@@ -6627,6 +7606,80 @@
                                 }
                             }
                         }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    }
+                },
+                "security": []
+            }
+        },
+        "/patient/auth/password/reset": {
+            "post": {
+                "operationId": "v1.patient.auth.password.reset",
+                "summary": "Use a password-reset link. Signs every session out and does NOT sign in:\nthe link proves the mailbox, which must not stand in for a second factor",
+                "tags": [
+                    "PatientAuth"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "token": {
+                                        "type": "string",
+                                        "maxLength": 64
+                                    },
+                                    "password": {
+                                        "type": "string",
+                                        "minLength": 8,
+                                        "maxLength": 255
+                                    }
+                                },
+                                "required": [
+                                    "token",
+                                    "password"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "changed": {
+                                                    "type": "boolean"
+                                                }
+                                            },
+                                            "required": [
+                                                "changed"
+                                            ]
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "const": "Your password has been changed and you have been signed out everywhere. Sign in with your new password."
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
                     }
                 },
                 "security": []
@@ -6800,6 +7853,228 @@
                 }
             }
         },
+        "/patient/claim-links": {
+            "post": {
+                "operationId": "v1.patient.portal.claim-links.store",
+                "description": "Takes no body. The order is resolved from the session's own account and\nthe link goes to the address that order was placed under. The answer is\nthe same 202 whether or not anything matched \u2014 see RequestClaimLinkAction.",
+                "summary": "Email a link to connect the record an order created",
+                "tags": [
+                    "PatientPortal"
+                ],
+                "responses": {
+                    "202": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "sent": {
+                                                    "type": "boolean"
+                                                }
+                                            },
+                                            "required": [
+                                                "sent"
+                                            ]
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "const": "If there is an order under your email address, we have sent a link to connect your record to it."
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/patient/claim": {
+            "post": {
+                "operationId": "v1.patient.portal.claim",
+                "summary": "Use a claim link. The token arrives in the BODY of a POST, never a URL:\nmail scanners follow links, and a single-use token spent by a scanner is\na link the patient can no longer use",
+                "tags": [
+                    "PatientPortal"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "token": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "patient": {
+                                                    "type": "object",
+                                                    "additionalProperties": {}
+                                                }
+                                            },
+                                            "required": [
+                                                "patient"
+                                            ]
+                                        },
+                                        "meta": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "meta"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/patient/home": {
+            "get": {
+                "operationId": "v1.patient.portal.home",
+                "description": "SCREEN-SHAPED ON PURPOSE. The portal makes ONE call here rather than six,\nand the reason is not tidiness. The obvious way to make a clinical portal\nfast is to cache the reads \u2014 but a cache of clinical reads IS storing PHI,\nwith a retention policy nobody wrote and a revocation path nobody built.\nThat lever is unavailable to us, so the one we do have is fan-out\nreduction: compose the screen here, close to the provider, instead of\nmaking a phone on a bad connection do six sequential round-trips.\n\nThe RANKING is also here, and that is architectural rather than\nincidental \u2014 see PatientActionStackService. The portal renders a ranked\nlist; it never decides what is urgent.",
+                "summary": "The portal home screen, composed and ranked server-side",
+                "tags": [
+                    "PatientPortal"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "anyOf": [
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "data": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "greeting": {
+                                                            "type": "string"
+                                                        },
+                                                        "linked": {
+                                                            "type": "boolean"
+                                                        },
+                                                        "tasks": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "object",
+                                                                "additionalProperties": {}
+                                                            }
+                                                        },
+                                                        "summary": {
+                                                            "type": "array",
+                                                            "description": "The filtered dashboard rides along so Home can show progress\nwithout a second call. Same allowlist as the standalone endpoint.",
+                                                            "items": {}
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "greeting",
+                                                        "linked",
+                                                        "tasks",
+                                                        "summary"
+                                                    ]
+                                                },
+                                                "meta": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "data",
+                                                "meta"
+                                            ]
+                                        },
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "data": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "greeting": {
+                                                            "type": "string"
+                                                        },
+                                                        "tasks": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "string"
+                                                            },
+                                                            "minItems": 0,
+                                                            "maxItems": 0,
+                                                            "additionalItems": false
+                                                        },
+                                                        "linked": {
+                                                            "type": "boolean"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "greeting",
+                                                        "tasks",
+                                                        "linked"
+                                                    ]
+                                                },
+                                                "meta": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "data",
+                                                "meta"
+                                            ]
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
         "/patient/dashboard": {
             "get": {
                 "operationId": "v1.patient.portal.dashboard",
@@ -6815,7 +8090,10 @@
                                 "schema": {
                                     "type": "object",
                                     "properties": {
-                                        "data": {},
+                                        "data": {
+                                            "type": "array",
+                                            "items": {}
+                                        },
                                         "meta": {
                                             "type": "string"
                                         }
@@ -6849,7 +8127,10 @@
                                 "schema": {
                                     "type": "object",
                                     "properties": {
-                                        "data": {},
+                                        "data": {
+                                            "type": "array",
+                                            "items": {}
+                                        },
                                         "meta": {
                                             "type": "string"
                                         }
@@ -6894,7 +8175,10 @@
                                 "schema": {
                                     "type": "object",
                                     "properties": {
-                                        "data": {},
+                                        "data": {
+                                            "type": "array",
+                                            "items": {}
+                                        },
                                         "meta": {
                                             "type": "string"
                                         }
@@ -6928,7 +8212,10 @@
                                 "schema": {
                                     "type": "object",
                                     "properties": {
-                                        "data": {},
+                                        "data": {
+                                            "type": "array",
+                                            "items": {}
+                                        },
                                         "meta": {
                                             "type": "string"
                                         }
@@ -6960,7 +8247,10 @@
                                 "schema": {
                                     "type": "object",
                                     "properties": {
-                                        "data": {},
+                                        "data": {
+                                            "type": "array",
+                                            "items": {}
+                                        },
                                         "meta": {
                                             "type": "string"
                                         }
@@ -6994,7 +8284,10 @@
                                 "schema": {
                                     "type": "object",
                                     "properties": {
-                                        "data": {},
+                                        "data": {
+                                            "type": "array",
+                                            "items": {}
+                                        },
                                         "meta": {
                                             "type": "string"
                                         }
@@ -7028,7 +8321,10 @@
                                 "schema": {
                                     "type": "object",
                                     "properties": {
-                                        "data": {},
+                                        "data": {
+                                            "type": "array",
+                                            "items": {}
+                                        },
                                         "meta": {
                                             "type": "string"
                                         }
@@ -7062,7 +8358,10 @@
                                 "schema": {
                                     "type": "object",
                                     "properties": {
-                                        "data": {},
+                                        "data": {
+                                            "type": "array",
+                                            "items": {}
+                                        },
                                         "meta": {
                                             "type": "string"
                                         }
@@ -7106,7 +8405,10 @@
                                 "schema": {
                                     "type": "object",
                                     "properties": {
-                                        "data": {},
+                                        "data": {
+                                            "type": "array",
+                                            "items": {}
+                                        },
                                         "meta": {
                                             "type": "string"
                                         }
@@ -7147,13 +8449,13 @@
                             "schema": {
                                 "type": "object",
                                 "properties": {
-                                    "body": {
+                                    "content": {
                                         "type": "string",
-                                        "maxLength": 10000
+                                        "maxLength": 5000
                                     }
                                 },
                                 "required": [
-                                    "body"
+                                    "content"
                                 ]
                             }
                         }
@@ -7167,7 +8469,10 @@
                                 "schema": {
                                     "type": "object",
                                     "properties": {
-                                        "data": {},
+                                        "data": {
+                                            "type": "array",
+                                            "items": {}
+                                        },
                                         "meta": {
                                             "type": "string"
                                         }
@@ -7192,10 +8497,54 @@
         "/patient/scheduling/slots": {
             "get": {
                 "operationId": "v1.patient.portal.scheduling.slots",
-                "description": "Scheduling uses the sales-org token (not the patient token).",
+                "description": "Scheduling uses the sales-org token, NOT the patient token, and that is\ndeliberate: PRX resolves the eligible provider pool from the *token's*\norganisation, and a patient token carries none, which would widen the pool\nto every licensed provider rather than the org's own.\n\nThe price of that choice is that PRX cannot tell which of our patients is\nasking, so `patient_chart_id` is injected from the session here and the\ncaller's own value is never read. It is a required PRX field and we were\nnot sending it at all, so this endpoint returned 422 on every call.",
                 "summary": "List available scheduling slots",
                 "tags": [
                     "PatientPortal"
+                ],
+                "parameters": [
+                    {
+                        "name": "encounter_type_id",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "start_date",
+                        "in": "query",
+                        "description": "Mirrors PRX's own rule, so a past date fails at the field that\ncaused it rather than as a 422 one hop away.",
+                        "schema": {
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "format": "date-time"
+                        }
+                    },
+                    {
+                        "name": "end_date",
+                        "in": "query",
+                        "schema": {
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "format": "date-time"
+                        }
+                    },
+                    {
+                        "name": "timezone",
+                        "in": "query",
+                        "schema": {
+                            "type": [
+                                "string",
+                                "null"
+                            ]
+                        }
+                    }
                 ],
                 "responses": {
                     "200": {
@@ -7206,29 +8555,8 @@
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "anyOf": [
-                                                {
-                                                    "type": "object",
-                                                    "additionalProperties": {}
-                                                },
-                                                {
-                                                    "type": "object",
-                                                    "properties": {
-                                                        "data": {
-                                                            "type": "array",
-                                                            "items": {
-                                                                "type": "string"
-                                                            },
-                                                            "minItems": 0,
-                                                            "maxItems": 0,
-                                                            "additionalItems": false
-                                                        }
-                                                    },
-                                                    "required": [
-                                                        "data"
-                                                    ]
-                                                }
-                                            ]
+                                            "type": "array",
+                                            "items": {}
                                         },
                                         "meta": {
                                             "type": "string"
@@ -7242,6 +8570,9 @@
                             }
                         }
                     },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
                     "401": {
                         "$ref": "#/components/responses/AuthenticationException"
                     }
@@ -7251,11 +8582,60 @@
         "/patient/scheduling/appointments": {
             "post": {
                 "operationId": "v1.patient.portal.scheduling.appointments.store",
-                "description": "Injects the patient's PRX chart ID. Scheduling uses the sales-org token.",
+                "description": "THIS IS THE MOST DANGEROUS ENDPOINT IN THE PROXY, and it used to forward\n`$request->except('_token')` wholesale under the sales-org token.\n\nPRX validates `encounter_id` with `exists:encounters,id` and then gates it\nwith `ApiEncounterAccess::canAccess($encounter, $request->user())`\n(prx-demo@07969f8, Scheduling/AppointmentController.php:101,117-126). That\ngate is correct for PRX and useless for us: `$request->user()` is our\nORGANISATION, so it returns true for every encounter in the org \u2014 every\nother patient's included. Booking then runs ScheduleEncounterAction\nagainst it (:183-189), writing `scheduled_at`, assigning the caller's\nchosen provider and provisioning a video room. On the victim's encounter.\n\nSo `encounter_id` is proven to belong to the session's own chart HERE,\nusing the patient token \u2014 whose global scope PRX pins to the chart \u2014 before\nthe org token is allowed anywhere near it.\n\n`client_id` and `sales_organization_id` are accepted by PRX and flow into\nApiTenantResolver, letting a caller stamp any organisation onto the row.\nThey are never forwarded. Nor are `provider_timezone` (an internal display\nconcern) or `duration_minutes` (the encounter type's to decide).",
                 "summary": "Book an appointment",
                 "tags": [
                     "PatientPortal"
                 ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "encounter_type_id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "provider_profile_id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "scheduled_start": {
+                                        "type": "string",
+                                        "format": "date-time"
+                                    },
+                                    "patient_timezone": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ]
+                                    },
+                                    "notes": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 1000
+                                    },
+                                    "encounter_id": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "uuid"
+                                    }
+                                },
+                                "required": [
+                                    "encounter_type_id",
+                                    "provider_profile_id",
+                                    "scheduled_start"
+                                ]
+                            }
+                        }
+                    }
+                },
                 "responses": {
                     "201": {
                         "description": "",
@@ -7265,29 +8645,8 @@
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "anyOf": [
-                                                {
-                                                    "type": "object",
-                                                    "additionalProperties": {}
-                                                },
-                                                {
-                                                    "type": "object",
-                                                    "properties": {
-                                                        "id": {
-                                                            "type": "string",
-                                                            "const": "stub-appt-id"
-                                                        },
-                                                        "": {
-                                                            "type": "array",
-                                                            "items": {}
-                                                        }
-                                                    },
-                                                    "required": [
-                                                        "id",
-                                                        null
-                                                    ]
-                                                }
-                                            ]
+                                            "type": "array",
+                                            "items": {}
                                         },
                                         "meta": {
                                             "type": "string"
@@ -7300,6 +8659,32 @@
                                 }
                             }
                         }
+                    },
+                    "403": {
+                        "description": "Deliberately the same shape as PRX's own refusal, and\ndeliberately not \"no such encounter\" \u2014 whether an id exists is\nnot something an unauthorised caller should learn.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "const": "You do not have access to the specified encounter."
+                                        },
+                                        "errors": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "message",
+                                        "errors"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
                     },
                     "401": {
                         "$ref": "#/components/responses/AuthenticationException"
@@ -7345,10 +8730,14 @@
                                         "message": {
                                             "type": "string",
                                             "const": "Invalid signature."
+                                        },
+                                        "errors": {
+                                            "type": "string"
                                         }
                                     },
                                     "required": [
-                                        "message"
+                                        "message",
+                                        "errors"
                                     ]
                                 }
                             }
@@ -9071,29 +10460,6 @@
                     "provider"
                 ],
                 "title": "PlanResource"
-            },
-            "PrescribeRxException": {
-                "type": "object",
-                "properties": {
-                    "httpStatus": {
-                        "type": [
-                            "integer",
-                            "null"
-                        ]
-                    },
-                    "errors": {
-                        "type": [
-                            "array",
-                            "null"
-                        ],
-                        "items": {}
-                    }
-                },
-                "required": [
-                    "httpStatus",
-                    "errors"
-                ],
-                "title": "PrescribeRxException"
             },
             "ProductResource": {
                 "type": "object",
