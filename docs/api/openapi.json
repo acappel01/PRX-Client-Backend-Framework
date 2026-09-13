@@ -9160,6 +9160,145 @@
                 }
             }
         },
+        "/patient/profile": {
+            "get": {
+                "operationId": "v1.patient.portal.profile",
+                "summary": "The patient's details as the clinical provider holds them \u2014 name, date of\nbirth, contact and the provider's patient number. Read live every time; not\nstored here",
+                "tags": [
+                    "PatientPortal"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {}
+                                        },
+                                        "meta": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "meta"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/patient/vitals/goals": {
+            "get": {
+                "operationId": "v1.patient.portal.vitals.goals",
+                "summary": "The patient's weight goal: `{goal_weight, goal_date}`",
+                "tags": [
+                    "PatientPortal"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {}
+                                        },
+                                        "meta": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "meta"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            },
+            "post": {
+                "operationId": "v1.patient.portal.vitals.goals.update",
+                "summary": "Set the weight goal. `goal_weight` in lbs (80\u2013500, the provider's own\nbounds), optional `goal_date` after today. POST here (the portal's proxy\nspeaks GET/POST); PUT upstream",
+                "tags": [
+                    "PatientPortal"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "goal_weight": {
+                                        "type": "number",
+                                        "minimum": 80,
+                                        "maximum": 500
+                                    },
+                                    "goal_date": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date-time"
+                                    }
+                                },
+                                "required": [
+                                    "goal_weight"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {}
+                                        },
+                                        "meta": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "meta"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
         "/patient/orders": {
             "get": {
                 "operationId": "v1.patient.portal.orders.index",
