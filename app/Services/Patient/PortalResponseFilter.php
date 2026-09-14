@@ -40,6 +40,11 @@ class PortalResponseFilter
      * @var array<string, array<int|string, mixed>>
      */
     private const SPECS = [
+        'labs' => [
+            'items' => ['id', 'lab_order_number', 'status', 'collection_method', 'ordered_at', 'results_received_at', 'completed_at', 'created_at'],
+            'pagination' => ['current_page', 'last_page', 'per_page', 'total'],
+        ],
+
         'dashboard' => [
             'current_weight',
             'weight_goal',

@@ -875,3 +875,7 @@ provider adds pool validation, or if booking moves to the patient token.
 - `docs/prescribe-rx/gap-register.md` — provider-side gaps.
 - Frontend runbook: `atlas-protocol-web/docs/runbook/08-prx-api-parity.md` (capability matrix) and
   `09-prx-change-request.md` (the six upstream blockers).
+
+## Read-only lab-order status
+
+`GET /api/v1/patient/labs` is the bounded patient-token/linked-chart status list documented in [labs/dev.md](../labs/dev.md). It preserves pagination and projects only order references, status, collection method and dates; no results, billing data, clinical persistence or provider links. The matching portal page requires this admin increment first.

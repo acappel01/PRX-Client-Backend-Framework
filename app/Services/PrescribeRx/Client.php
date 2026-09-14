@@ -9,6 +9,7 @@ use App\Data\PrescribeRx\UnifiedIntakeResponseData;
 use App\Http\Middleware\AssignRequestId;
 use App\Services\PrescribeRx\Exceptions\PrescribeRxException;
 use App\Settings\IntegrationSettings;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
 use Illuminate\Http\UploadedFile;
@@ -355,6 +356,71 @@ class Client
         }
 
         return $this->extractData($this->patientRequest($patientToken)->get('/me/patient/orders', $query));
+    }
+
+    /**
+     * Read lab-order status through the existing patient token and the account's
+     * recorded chart. This endpoint's list does not contain test results.
+     *
+     * @return array{items: array, pagination: array}
+     */
+    public function getPatientLabOrders(string $patientToken, string $chartId, int $page = 1, int $perPage = 20): array
+    {
+        if (config('prescribe-rx.stub')) {
+            return ['items' => [], 'pagination' => ['current_page' => $page, 'last_page' => 1, 'per_page' => $perPage, 'total' => 0]];
+        }
+
+        try {
+            $response = $this->patientRequest($patientToken)->withoutRedirecting()->withHeaders(['Accept-Encoding' => 'identity'])->withOptions([
+                // php://temp can spill clinical bodies to disk; keep this read in memory.
+                'sink' => fopen('php://memory', 'w+b'),
+                'decode_content' => false,
+                'progress' => static function (float $total, float $downloaded): void {
+                    if ($total > 524288 || $downloaded > 524288) {
+                        throw new PrescribeRxException('Lab order history returned an invalid response.', 502);
+                    }
+                },
+            ])->get('/patients/'.rawurlencode($chartId).'/labs', ['page' => $page, 'per_page' => $perPage]);
+        } catch (ConnectionException) {
+            throw new PrescribeRxException('Lab order history is temporarily unavailable.', 0);
+        }
+        if (! $response->successful()) {
+            // Do not pass clinical provider error bodies to the generic client's logger.
+            throw new PrescribeRxException('Lab order history is unavailable.', $response->status());
+        }
+        if (strlen($response->body()) > 524288) {
+            throw new PrescribeRxException('Lab order history returned an invalid response.', 502);
+        }
+        $body = $response->json();
+        $items = is_array($body) ? ($body['data'] ?? null) : null;
+        $pagination = is_array($body) ? ($body['meta']['pagination'] ?? null) : null;
+        if (! is_array($items) || ! array_is_list($items) || count($items) > $perPage || ! is_array($pagination)) {
+            throw new PrescribeRxException('Lab order history returned an invalid response.', 502);
+        }
+        foreach (['current_page', 'last_page', 'per_page', 'total'] as $field) {
+            if (! isset($pagination[$field]) || ! is_int($pagination[$field]) || $pagination[$field] < ($field === 'total' ? 0 : 1)) {
+                throw new PrescribeRxException('Lab order history returned invalid pagination.', 502);
+            }
+        }
+        if ($pagination['current_page'] !== $page || $pagination['per_page'] !== $perPage
+            || $pagination['last_page'] !== max(1, (int) ceil($pagination['total'] / $perPage))
+            || count($items) > $pagination['total']) {
+            throw new PrescribeRxException('Lab order history returned invalid pagination.', 502);
+        }
+        foreach ($items as $item) {
+            if (! is_array($item) || ($item['patient_chart_id'] ?? null) !== $chartId
+                || ! is_string($item['id'] ?? null) || $item['id'] === ''
+                || ! is_string($item['status'] ?? null)) {
+                throw new PrescribeRxException('Lab order history could not be verified.', 502);
+            }
+            foreach (['lab_order_number', 'collection_method', 'ordered_at', 'results_received_at', 'completed_at', 'created_at'] as $field) {
+                if (isset($item[$field]) && ! is_string($item[$field])) {
+                    throw new PrescribeRxException('Lab order history returned an invalid response.', 502);
+                }
+            }
+        }
+
+        return ['items' => $items, 'pagination' => $pagination];
     }
 
     /**

@@ -169,6 +169,26 @@ class PortalController extends ApiController
         );
     }
 
+    /**
+     * Paginated read-only lab-order status for the session's linked chart.
+     * No result values, billing fields or provider links are exposed.
+     *
+     * @tags Patient Portal
+     */
+    public function labs(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'page' => ['sometimes', 'integer', 'between:1,10000'],
+            'per_page' => ['sometimes', 'integer', 'between:1,100'],
+        ]);
+        $patient = $request->user();
+        $data = $this->withPatientToken($patient, fn ($token) => $this->prx->getPatientLabOrders(
+            $token, $patient->prx_patient_chart_id, (int) ($validated['page'] ?? 1), (int) ($validated['per_page'] ?? 20)
+        ));
+
+        return $this->success($this->filter->apply('labs', $data));
+    }
+
     /** Readings the Health charts ask the provider for. A patient logging daily is inside it for ~2.7 years. */
     private const HEALTH_SERIES_READINGS = 1000;
 

@@ -1,0 +1,58 @@
+openapi: 3.0.3
+info:
+  title: Patient lab-order status
+  version: 1.0.0
+paths:
+  /api/v1/patient/labs:
+    get:
+      summary: Read lab-order status for the signed-in Patient's linked chart
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 10000, default: 1}
+        - name: per_page
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+      responses:
+        '200':
+          description: No-store lab-order status and bounded numeric pagination; no test values or billing fields
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id: {type: string}
+                            lab_order_number: {type: string, nullable: true}
+                            status: {type: string}
+                            collection_method: {type: string, nullable: true}
+                            ordered_at: {type: string, nullable: true}
+                            results_received_at: {type: string, nullable: true}
+                            completed_at: {type: string, nullable: true}
+                            created_at: {type: string, nullable: true}
+                      pagination:
+                        type: object
+                        properties:
+                          current_page: {type: integer}
+                          last_page: {type: integer}
+                          per_page: {type: integer}
+                          total: {type: integer}
+        '401': {description: Missing or expired Patient session}
+        '403': {description: Missing patient ability or required two-factor enrollment}
+        '409': {description: No linked clinical chart; code no_linked_chart}
+        '422': {description: Invalid pagination}
+        '429': {description: Rate limited}
+        '502': {description: Unavailable or invalid provider response}
+        '503': {description: Provider transport/configuration unavailable}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer}
