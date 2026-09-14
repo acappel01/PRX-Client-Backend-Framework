@@ -1,6 +1,8 @@
 # Payments Module — Developer Guide
 
-**Status:** Shipped 2026-06-28
+**Status:** Gateway abstractions shipped 2026-06-28; passive intent/uncertainty ledger added 2026-09-14. Financial execution remains unqualified.
+
+See [passive ledger contract](passive-ledger.md) for current local persistence, tested boundaries and concrete gateway integration blockers. Older gateway descriptions below do not establish payment readiness.
 
 ---
 
@@ -14,7 +16,7 @@ merchant_accounts
   └── surcharge config
 ```
 
-Single table. No payment transaction table exists yet — the module provides the gateway abstraction layer only. Transaction recording (linking a `PaymentResult` to an order record) is the responsibility of the Cart/Orders module when it is built.
+The original gateway layer stores merchant accounts. The passive ledger now adds `payment_intents` and `payment_operations`; neither table records confirmed financial transactions. Verified transaction ingestion and usable vault references remain future work.
 
 ### Table: `merchant_accounts`
 
@@ -323,5 +325,5 @@ The field tracks running monthly volume but there is no scheduled command or cro
 **Soft deletes**
 `MerchantAccount` uses `SoftDeletes`. Deleted accounts are excluded from all queries by default. The Filament resource configures `getRecordRouteBindingEloquentQuery` to include soft-deleted records so admins can still view/restore them.
 
-**No Actions layer yet**
-The module has no `app/Actions/Payments/` classes. Gateway calls are intended to be made from Actions in the Cart/Orders modules. Direct gateway calls from controllers are not the intended pattern.
+**Actions and financial readiness**
+`app/Actions/Payments/` now contains passive ledger preparation/uncertainty actions as well as the existing unwired checkout-payment and merchant-usage actions. Passive actions never call a gateway. The existing checkout-payment action requires the contract repairs listed in [passive ledger](passive-ledger.md) before integration; direct gateway calls from controllers are not the intended pattern.

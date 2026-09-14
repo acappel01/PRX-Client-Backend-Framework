@@ -172,3 +172,15 @@ If a gateway has a monthly processing limit in its merchant agreement:
 - **One default account**: only one account should have **Default** toggled on. If multiple accounts are marked default, the system uses the first active one it finds.
 - **CIM (Authorize.Net)**: Enable CIM only if your Authorize.Net account has the Customer Information Manager feature enabled in the merchant portal. Enabling the toggle here without CIM active on the Authorize.Net side will cause vault operations to fail.
 - **NMI public key vs. security key**: the Security Key is server-side only. The Public Key is what you embed in your frontend for Collect.js tokenization. Never expose the Security Key to the browser.
+
+
+## Payment intent and uncertainty foundation
+
+The internal commerce ledger can now retain planned payment operations and
+unresolved outcomes with frozen account, amount and executor identities. It does
+not add payment buttons, take payments, import historical gateway transactions or
+make stored cards usable. A prepared or uncertain operation is not confirmed
+revenue, and an order total or accepted intake is not evidence of collection.
+Gateway verification, reconciliation and instrument-readiness contracts remain
+required before enabling execution. No new operator configuration is needed for
+this passive development increment.
