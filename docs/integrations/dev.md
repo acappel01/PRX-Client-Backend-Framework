@@ -415,10 +415,12 @@ Notes worth carrying, each of which shaped the code:
   400. `TwilioDriver` uses `asForm()` and a test pins the content type.
 - **Twilio will sign a BAA**, making SMS one of the few channels where health content can be
   legitimate. That is still the operator's attestation; no driver enforces it.
-- **Klaviyo's acceptable-use policy bars health data and they sign no BAA.** That is a fact
-  about their terms, not a rule any class here enforces — `FieldMap` and the operator's
-  attestation decide. Do not add a hardcoded refusal: it would be wrong for an install whose
-  contract differs, and stale the moment their terms change.
+- **Destination data permissions depend on the configured purpose and applicable contract.**
+  Do not encode a permanent vendor-wide legal verdict in the driver. Generalized aspirational
+  goals already default to `Sensitive`, not `Phi`, and can be mapped for marketing segmentation.
+  The [unified attribution contract](../attribution/design.md) specifies approved goal/source/
+  commerce projections and excludes conditions, medications, allergies and clinical records
+  from marketing delivery. No destination permissions are changed by this documentation.
 
 ## Messages whose links are credentials
 
