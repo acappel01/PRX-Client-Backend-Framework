@@ -4,9 +4,11 @@ namespace App\Filament\Resources\Commerce\Orders;
 
 use App\Filament\Resources\Commerce\Orders\Pages\EditOrder;
 use App\Filament\Resources\Commerce\Orders\Pages\ListOrders;
+use App\Filament\Resources\Commerce\Orders\Pages\ViewOrder;
 use App\Filament\Resources\Commerce\Orders\RelationManagers\ItemsRelationManager;
 use App\Filament\Resources\Commerce\Orders\RelationManagers\ShipmentsRelationManager;
 use App\Filament\Resources\Commerce\Orders\Schemas\OrderForm;
+use App\Filament\Resources\Commerce\Orders\Schemas\OrderInfolist;
 use App\Filament\Resources\Commerce\Orders\Tables\OrdersTable;
 use App\Models\Commerce\Order;
 use BackedEnum;
@@ -35,6 +37,11 @@ class OrderResource extends Resource
         return OrderForm::configure($schema);
     }
 
+    public static function infolist(Schema $schema): Schema
+    {
+        return OrderInfolist::configure($schema);
+    }
+
     public static function table(Table $table): Table
     {
         return OrdersTable::configure($table);
@@ -52,6 +59,7 @@ class OrderResource extends Resource
     {
         return [
             'index' => ListOrders::route('/'),
+            'view' => ViewOrder::route('/{record}'),
             'edit' => EditOrder::route('/{record}/edit'),
         ];
     }

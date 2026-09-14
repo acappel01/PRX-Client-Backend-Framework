@@ -1,93 +1,43 @@
-# Orders Module — Operator Guide
+# Orders — operator guide
 
-## Overview
+The Customer commerce branch adds local order history and a read-only order view. Deployment and migrations are separate; these changes do not enable payment processing or import provider history.
 
-Orders are local mirror records of purchases processed through PrescribeRx (or, in future, a local payment gateway). An order is created the moment a customer completes checkout, and updated automatically as PrescribeRx sends webhook events (status changes, shipment tracking, delivery confirmation).
+## Finding an order
 
-Operators manage orders in **Admin → Commerce → Orders**. Orders are read-only in the admin — all status changes originate from PrescribeRx webhooks.
+Open **Commerce → Orders** and search by local order UUID or provider order number. Authorized staff can also open a Customer's Orders relation to see active orders explicitly assigned to that Customer. Customer permission alone does not grant access to orders; the order permissions still apply.
 
----
+Open the order view to inspect its recorded status, amounts, items, shipment information and local checkout-attempt state where available. The new view has no payment, refund, retry or status-edit controls. Existing privileged edit routes are separate; changing a local record there does not charge, refund or modify a provider order.
 
-## Order Lifecycle
+An unowned order remains visible to authorized order operators in the main order directory, but does not appear under a Customer until a trusted ownership writer links it. Do not use matching email or an order UUID as evidence to assign ownership.
 
-```
-Cart → Lead → Checkout submission → Order created (Pending)
-                                          ↓
-                              PRX webhook: status = processing
-                                          ↓
-                              PRX webhook: status = shipped  (+ tracking)
-                                          ↓
-                              PRX webhook: status = delivered
-```
+## Understanding the records
 
-| Status | Meaning |
+API-driven checkout saves a pending local order and item snapshots before the provider request. A pending order therefore may exist even if the request never completed. Its displayed amount is the recorded order amount, not proof of a captured payment or realized revenue. Keep amounts in their recorded currency.
+
+Where a checkout attempt exists:
+
+| State | Meaning |
 |---|---|
-| **Pending** | Order submitted to PRX; awaiting physician review or fulfillment |
-| **Processing** | Physician approved; being prepared for shipment |
-| **Shipped** | Dispatched from fulfillment center; tracking number available |
-| **Partially Shipped** | Multi-item order with some items shipped, others pending |
-| **Delivered** | Confirmed delivery by carrier |
-| **Cancelled** | Cancelled before shipment (by patient, physician, or admin) |
-| **Refunded** | Payment reversed after delivery |
+| Submitting | Local purchase intent exists; the provider request may still be running or its worker may have stopped. |
+| Unknown | A provider request or local finalization failed. The outcome needs reconciliation. |
+| Completed | A provider response was recorded and attached to the local order. This does not prove payment capture. |
 
----
+A received provider receipt can survive a later local finalization failure. The read-only view exposes only operational attempt information, not the encrypted receipt, intake answers, request fingerprints or raw provider response. An order from an older or different checkout path may have no local attempt.
 
-## Order Fields
+Do not delete/reset an uncertain attempt or submit the same purchase again to resolve it. Reconciliation tooling is still being built. Completed purchases receive a new cart through the normal cart endpoints for a new purchase; original checkout retries return the saved result.
 
-| Field | Description |
-|---|---|
-| Order number | PrescribeRx order number (e.g. `RX-123456`). Populated by the first webhook after checkout. |
-| Status | Current fulfillment status (see lifecycle above). |
-| Subtotal / Total | Dollar amounts snapshotted at checkout time. Tax and shipping added by PRX. |
-| Currency | Always USD. |
-| Placed at | When the order was submitted to PRX. |
-| Shipped / Delivered / Cancelled at | Timestamps set when the corresponding webhook event arrives. |
+## Items and shipments
 
-## Order Items
+Items retain the name, quantity and price recorded for the order. Later catalog price changes do not rewrite those snapshots. Item names are encrypted at rest and are not searchable through SQL.
 
-Each order has one or more line items snapshotted from the cart at checkout:
+Shipments show the recorded carrier, tracking reference, status and lifecycle timestamps. A shipment status describes fulfillment; it is separate from payment status. Provider order numbers may remain blank until a matching update is received. Imported provider order history is not supplied by this release.
 
-| Field | Description |
-|---|---|
-| Name | Product name at checkout time (encrypted at rest). |
-| SKU | Provider SKU. |
-| Quantity | Number of units. |
-| Unit price / Line total | Price snapshotted from the cart. |
-| Billing period | For subscription plans: monthly, quarterly, etc. |
+## Portal history
 
-## Shipments
+The local commerce API lists only orders explicitly owned by the signed-in account's active Customer. It requires the existing portal session, token abilities, session lifetime and two-factor policy. Deleted orders, deleted Customers, detached account associations and conflicting legacy owners are excluded. List totals count only that account's eligible local orders.
 
-A shipment is created per fulfillment center dispatch. Most orders have a single shipment; multi-FC orders can have several.
+The existing clinical portal order endpoint remains separate. Adding the local history API does not switch the portal frontend automatically or grant access to a clinical chart.
 
-| Field | Description |
-|---|---|
-| Carrier | Shipping carrier (USPS, UPS, FedEx, DHL). |
-| Tracking number | Carrier tracking number — click the tracking URL to open the carrier page. |
-| Status | Pending → Shipped → In Transit → Delivered (or Exception). |
-| Exception reason | Set if the carrier reports a delivery problem. |
+## Provider updates
 
----
-
-## Searching and Filtering
-
-The Orders table supports:
-- **Search** by order UUID or PRX order number
-- **Filter** by status
-- **Filter** by date range (placed_at)
-- **Soft-delete** — deleted orders are hidden by default; use the trashed filter to view them
-
----
-
-## Webhooks
-
-Orders are updated automatically when PrescribeRx sends events. No manual action is needed. Webhooks only update orders this site created at checkout — they never create one. Re-delivering an event is safe.
-
-Webhook endpoint: `POST /api/webhooks/prescribe-rx`. Connecting it and checking it works: see the [inbound webhooks guide](../webhooks/user.md).
-
----
-
-## Notes for Operators
-
-- **Addresses are not shown in admin** — shipping and billing addresses are encrypted and only accessible to authorized staff with direct database access.
-- **Order items are immutable snapshots** — editing catalog prices after checkout does not affect existing orders.
-- **The PRX order number is blank briefly after checkout** — it is backfilled when the first webhook arrives (typically within seconds). If it never appears, the webhook may not have fired; check the PRX admin.
+The existing signed webhook receiver updates matched local orders; it does not create missing orders. See the [webhook guide](../webhooks/user.md). Unknown checkout contexts, provider-instance reconciliation and financial transaction history require later work. The order screen alone does not establish that a charge, refund or affiliate conversion occurred.

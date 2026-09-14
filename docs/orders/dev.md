@@ -1,6 +1,6 @@
 # Orders Module — Developer Guide
 
-**Status:** Shipped 2026-06-28
+**Status:** Existing order records and provider updates; September 14 Customer commerce branch adds owned local history and read-only admin visibility. Deployment remains separate.
 
 ---
 
@@ -86,7 +86,23 @@ timestamps set once; an older event never overwrites a newer one.
 
 ---
 
+## Read-only admin history
+
+The Customer Orders relation requires Customer view plus Order viewAny/view permissions. It lists active rows through the explicit Customer relationship and rechecks authorization during Livewire requests. Customer access does not imply order access.
+
+`Commerce/Orders/Pages/ViewOrder` provides a separate read-only view route under the existing Filament Order list/view authorization; Update permission is not required. It rejects soft-deleted records and defines no header actions or relation managers, so the existing shipment edit action is not mounted there. Explicit infolist fields show recorded amounts in their currency, items, shipments and operational checkout-attempt identity/state/times. It does not fill a generic editable form or serialize encrypted receipts/results, fingerprints or raw metadata. The existing privileged EditOrder path remains separate.
+
+The main Orders table uses explicit Customer UUID association, local order UUID search and recorded currency. Neither the page nor the relation provisions ownership, calls a provider or processes a payment. Attempt completion is a local provider-response milestone, not proof of captured funds.
+
 ## API endpoints
+
+### `GET /api/v1/orders`
+
+Local commerce history for the existing authenticated portal account. It shares the detail route's middleware and ownership predicate: active Order, active Customer linked to the current Patient, and a null or matching legacy `patient_id`. This query never claims orders and never calls the provider. `/api/v1/patient/orders` remains the existing separate clinical provider projection.
+
+Pagination accepts `page` from 1 to 10,000 and `per_page` from 1 to 100 (default 20). Invalid pagination returns 422. Results use `placed_at DESC, id DESC` for deterministic ordering. Only validated pagination parameters are echoed in pagination URLs. The response uses Laravel's paginated `data`, `links` and `meta` envelope; totals count only owned eligible records. New inserts can shift offset pages, so this is not a frozen historical export.
+
+Each list entry contains only `uuid`, `status`, `total_amount`, `currency`, `placed_at`, `shipped_at`, `delivered_at`, `cancelled_at` and `items_count`. It omits item details, contact/address fields, provider identifiers, checkout receipts and arbitrary metadata. Use the owned detail endpoint for items and shipments. An account with no eligible Customer/orders receives an empty paginated result. Authentication, ability and two-factor failures retain the detail endpoint's status codes and no-store headers.
 
 ### `GET /api/v1/orders/{uuid}`
 
@@ -194,4 +210,4 @@ The `prescribe_rx_order_id` on the order is blank until the first PRX order webh
 
 - **Timestamp columns set once** — the webhook handler only sets `shipped_at`, `delivered_at`, `cancelled_at`, `refunded_at` when the field is currently null. Re-delivering an event does not reset the timestamp.
 
-- **No local payment path yet** — `CheckoutController` returns 503 for `checkout_path = local`. When NMI/AuthNet local checkout is wired, it will go through `PaymentGatewayManager` and create the Order directly rather than via PRX.
+- **Local payment durability remains incomplete** — the configured local checkout action is separate from the new provider attempt ledger. Its gateway-before-local-write flow still needs durable financial intent, outcome reconciliation and tested frontend integration; order-history availability does not establish payment readiness.

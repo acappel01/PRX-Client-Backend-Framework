@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
 
@@ -97,6 +98,11 @@ class Order extends Model
     public function encounter(): BelongsTo
     {
         return $this->belongsTo(Encounter::class);
+    }
+
+    public function checkoutAttempt(): HasOne
+    {
+        return $this->hasOne(CheckoutAttempt::class);
     }
 
     public function items(): HasMany

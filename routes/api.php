@@ -255,6 +255,7 @@ Route::prefix('v1')->name('api.v1.')->group(function (): void {
     // policy. The UUID identifies an order; it does not authorize access.
 
     Route::prefix('orders')->name('orders.')->middleware(['no-store', 'auth:sanctum', 'patient', CheckAbilities::class.':patient:*', 'patient.2fa', 'throttle:api'])->group(function (): void {
+        Route::get('/', [OrderController::class, 'index'])->name('index');
         Route::get('{uuid}', [OrderController::class, 'show'])->name('show');
     });
 
