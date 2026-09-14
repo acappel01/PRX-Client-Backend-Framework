@@ -24,7 +24,7 @@ Where a checkout attempt exists:
 
 A received provider receipt can survive a later local finalization failure. The read-only view exposes only operational attempt information, not the encrypted receipt, intake answers, request fingerprints or raw provider response. An order from an older or different checkout path may have no local attempt.
 
-Do not delete/reset an uncertain attempt or submit the same purchase again to resolve it. Reconciliation tooling is still being built. Completed purchases receive a new cart through the normal cart endpoints for a new purchase; original checkout retries return the saved result.
+Do not delete/reset an uncertain attempt or submit the same purchase again to resolve it. Authorized operators can preview and apply [local receipt reconciliation](../checkout/reconciliation.md) using the recorded checkout context and provider instance. Attempts without a receipt or recorded binding still require separate investigation. Completed purchases receive a new cart through the normal cart endpoints for a new purchase; original checkout retries return the saved result.
 
 ## Items and shipments
 

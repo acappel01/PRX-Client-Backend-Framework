@@ -12,6 +12,7 @@ use App\Models\Catalog\ProductType;
 use App\Models\Commerce\Cart;
 use App\Models\Commerce\CheckoutAttempt;
 use App\Models\Lead;
+use App\Models\ProviderInstance;
 use App\Services\PrescribeRx\Exceptions\PrescribeRxException;
 use App\Settings\IntegrationSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -49,6 +50,11 @@ class UnifiedIntakeSelectionTest extends TestCase
         $settings->prescribe_rx_environment = 'sandbox';
         $settings->prescribe_rx_encounter_type_id = '019d2842-0000-4000-8000-00000000abcd';
         $settings->prescribe_rx_sales_org_id = '019d2842-0000-4000-8000-00000000ffff';
+        $settings->prescribe_rx_provider_instance_key = 'checkout-test';
+        ProviderInstance::create([
+            'key' => 'checkout-test', 'provider' => 'prescribe_rx', 'environment' => 'sandbox',
+            'account_type' => 'sales_organization', 'external_account_id' => $settings->prescribe_rx_sales_org_id,
+        ]);
 
         Http::fake(['*/telehealth/intake/unified' => Http::response([
             'data' => [
@@ -424,6 +430,11 @@ class UnifiedIntakeSelectionTest extends TestCase
     {
         $settings = app(IntegrationSettings::class);
         $settings->prescribe_rx_environment = 'production';
+        $settings->prescribe_rx_provider_instance_key = 'checkout-production';
+        ProviderInstance::create([
+            'key' => 'checkout-production', 'provider' => 'prescribe_rx', 'environment' => 'production',
+            'account_type' => 'sales_organization', 'external_account_id' => $settings->prescribe_rx_sales_org_id,
+        ]);
 
         $product = Product::factory()->create([
             'provider_product_id' => '019d2842-0000-4000-8000-000000000008',

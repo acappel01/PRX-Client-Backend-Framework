@@ -9,22 +9,23 @@ use Illuminate\Support\Facades\Validator;
 
 class RegisterProviderInstanceCommand extends Command
 {
-    protected $signature = 'customers:provider-instance {key} {provider} {environment} {external-account-id}';
+    protected $signature = 'customers:provider-instance {key} {provider} {environment} {external-account-id} {--account-type=tenant : Stable provider account namespace type}';
 
     protected $description = 'Register an immutable provider namespace without credentials or remote calls';
 
     public function handle(): int
     {
         $data = ['key' => $this->argument('key'), 'provider' => $this->argument('provider'),
-            'environment' => $this->argument('environment'), 'external_account_id' => $this->argument('external-account-id')];
+            'environment' => $this->argument('environment'), 'account_type' => $this->option('account-type'), 'external_account_id' => $this->argument('external-account-id')];
         $validator = Validator::make($data, [
             'key' => ['required', 'max:64', 'regex:/^[a-z0-9][a-z0-9_-]*$/'],
             'provider' => ['required', 'max:64', 'regex:/^[a-z0-9][a-z0-9_-]*$/'],
             'environment' => ['required', 'in:sandbox,production'],
+            'account_type' => ['required', 'max:64', 'regex:/^[a-z0-9][a-z0-9_-]*$/'],
             'external_account_id' => ['required', 'string', 'max:128', 'regex:/^\S+$/u'],
         ]);
         if ($validator->fails()) {
-            $this->error('Invalid provider namespace. Use a stable key, provider, sandbox/production and external account ID.');
+            $this->error('Invalid provider namespace. Use a stable key, provider, account type, sandbox/production and external account ID.');
 
             return self::FAILURE;
         }

@@ -31,6 +31,9 @@ class IntegrationSettings extends Settings
      */
     public string $prescribe_rx_environment = 'sandbox';
 
+    /** Registered provider namespace used only for new API checkout attempts. */
+    public ?string $prescribe_rx_provider_instance_key = null;
+
     /**
      * Sales-organization API token issued by the prescribe-rx production
      * admin (used against either environment). Sanctum-format, includes

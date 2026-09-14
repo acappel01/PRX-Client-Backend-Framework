@@ -34,6 +34,17 @@ class OrderInfolist
                         ->placeholder('No local checkout attempt')->badge(),
                     TextEntry::make('checkout_context')->label('Checkout context ID')
                         ->state(fn (Order $record): ?string => $record->checkoutAttempt()->value('uuid'))->placeholder('—'),
+                    TextEntry::make('checkout_provider_instance')->label('Recorded provider instance')
+                        ->state(fn (Order $record): ?string => $record->checkoutAttempt()
+                            ->join('provider_instances', 'provider_instances.id', '=', 'checkout_attempts.provider_instance_id')
+                            ->value('provider_instances.key'))
+                        ->placeholder('Not bound'),
+                    TextEntry::make('checkout_receipt_available')->label('Provider receipt available')
+                        ->state(fn (Order $record): string => $record->checkoutAttempt()
+                            ->whereNotNull('provider_receipt')->exists() ? 'Yes' : 'No'),
+                    TextEntry::make('checkout_receipt_received')->label('Receipt received')
+                        ->state(fn (Order $record): mixed => $record->checkoutAttempt()->value('receipt_received_at'))
+                        ->dateTime()->placeholder('Not recorded'),
                     TextEntry::make('checkout_submitted')->label('Submitted')
                         ->state(fn (Order $record): mixed => $record->checkoutAttempt()->value('submitted_at'))->dateTime()->placeholder('—'),
                     TextEntry::make('checkout_completed')->label('Completed')

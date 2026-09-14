@@ -11,8 +11,6 @@ use App\Data\PrescribeRx\IntakeProductSelectionData;
 use App\Data\PrescribeRx\PatientData;
 use App\Data\PrescribeRx\UnifiedIntakeRequestData;
 use App\Enums\Catalog\IntakeSelectionMode;
-use App\Enums\EncounterStatus;
-use App\Enums\LeadStatus;
 use App\Enums\OrderStatus;
 use App\Models\Catalog\Package;
 use App\Models\Catalog\Plan;
@@ -24,6 +22,9 @@ use App\Models\Commerce\Encounter;
 use App\Models\Commerce\Order;
 use App\Models\Lead;
 use App\Models\Patient;
+use App\Models\ProviderInstance;
+use App\Services\Checkout\CheckoutFingerprint;
+use App\Services\Checkout\CheckoutProviderBinding;
 use App\Services\PrescribeRx\Client;
 use App\Settings\IntegrationSettings;
 use Illuminate\Database\Eloquent\Collection;
@@ -111,6 +112,7 @@ class SubmitPrescribeRxCheckoutAction
                 throw ActionException::failed('This order is awaiting confirmation. Please contact support before trying again.', 409);
             }
 
+            $providerInstance = app(CheckoutProviderBinding::class)->configured($this->settings);
             $customerId = null;
             if ($lead->patient_id !== null) {
                 $account = Patient::findOrFail($lead->patient_id);
@@ -142,6 +144,11 @@ class SubmitPrescribeRxCheckoutAction
             }
             $attempt = CheckoutAttempt::create([
                 'uuid' => $contextUuid,
+                'provider_instance_id' => $providerInstance->id,
+                'provider_tenant_kind' => filled($this->settings->prescribe_rx_client_id) ? 'client' : 'sales_organization',
+                'provider_client_id' => $this->settings->prescribe_rx_client_id,
+                'provider_sales_org_id' => $this->settings->prescribe_rx_sales_org_id,
+                'order_fingerprint' => CheckoutFingerprint::order($order, $order->items()->orderBy('id')->get()),
                 'cart_id' => $cart->id,
                 'lead_id' => $lead->id,
                 'order_id' => $order->id,
@@ -176,7 +183,7 @@ class SubmitPrescribeRxCheckoutAction
                 if ($stored->status !== 'submitting' || $stored->provider_receipt !== null) {
                     throw ActionException::failed('This order requires confirmation before it can be updated. Please contact support.', 409);
                 }
-                $stored->update(['provider_receipt' => [
+                $stored->update(['receipt_received_at' => now(), 'provider_receipt' => [
                     'encounter_id' => $response->encounter_id,
                     'encounter_number' => $response->encounter_number,
                     'patient_id' => $response->patient_chart_id,
@@ -184,59 +191,9 @@ class SubmitPrescribeRxCheckoutAction
                 ]]);
             });
 
-            return DB::transaction(function () use ($attempt, $response): CheckoutResultData {
-                $lead = Lead::query()->lockForUpdate()->findOrFail($attempt->lead_id);
-                $cart = Cart::query()->lockForUpdate()->findOrFail($attempt->cart_id);
-                $attempt = CheckoutAttempt::query()->lockForUpdate()->findOrFail($attempt->id);
-                $order = Order::query()->lockForUpdate()->findOrFail($attempt->order_id);
-                if ($attempt->status !== 'submitting' || $order->encounter_id !== null) {
-                    throw ActionException::failed('This order requires confirmation before it can be updated. Please contact support.', 409);
-                }
-                if ($lead->patient_id === null && $order->customer_id !== null) {
-                    throw ActionException::failed('We could not verify the owner of this checkout. Please contact support.', 409);
-                }
-                $encounter = Encounter::create([
-                    'lead_id' => $lead->id,
-                    'prescribe_rx_encounter_id' => $response->encounter_id,
-                    'prescribe_rx_patient_id' => $response->patient_chart_id,
-                    'prescribe_rx_encounter_type_id' => $attempt->provider_encounter_type_id,
-                    'status' => EncounterStatus::Submitted,
-                    'submitted_at' => now(),
-                    'is_sandbox' => $attempt->provider_environment === 'sandbox',
-                    'total_amount' => $order->total_amount,
-                    'metadata' => ['checkout_context_uuid' => $attempt->uuid],
-                ]);
-                $order->update(['encounter_id' => $encounter->id]);
-                $lead->update([
-                    'status' => LeadStatus::HandedOff->value,
-                    'prescribe_rx_encounter_id' => $response->encounter_id,
-                    'prescribe_rx_patient_id' => $response->patient_chart_id,
-                    'handed_off_at' => now(),
-                ]);
-                if ($lead->patient_id !== null) {
-                    app(LinkCustomerToClaimedLeadAction::class)->execute(Patient::findOrFail($lead->patient_id), $lead);
-                }
-                $result = CheckoutResultData::from([
-                    'order_uuid' => $order->uuid,
-                    'checkout_path' => 'prx',
-                    'prescribe_rx' => [
-                        'encounter_id' => $response->encounter_id,
-                        'encounter_number' => $response->encounter_number,
-                        'patient_id' => $response->patient_chart_id,
-                        'status' => $response->status,
-                    ],
-                ]);
-                $attempt->update(['status' => 'completed', 'result' => $result->toArray(), 'completed_at' => now()]);
-                // Lock all existing rows while comparing so later quantity/price
-                // edits cannot be deleted by a stale snapshot. Delete only IDs
-                // observed here; newly inserted cart rows survive independently.
-                $items = $cart->items()->orderBy('id')->lockForUpdate()->get();
-                if (hash_equals($attempt->cart_fingerprint, $this->cartFingerprint($cart, $items))) {
-                    $cart->items()->whereIn('id', $items->modelKeys())->delete();
-                }
+            $instance = ProviderInstance::findOrFail($attempt->provider_instance_id);
 
-                return $result;
-            });
+            return app(FinalizePrescribeRxCheckoutAction::class)->execute($attempt, $instance->key);
         } catch (\Throwable $exception) {
             CheckoutAttempt::whereKey($attempt->id)->where('status', 'submitting')->update([
                 'status' => 'unknown', 'updated_at' => now(),
@@ -255,31 +212,12 @@ class SubmitPrescribeRxCheckoutAction
 
     private function cartFingerprint(Cart $cart, Collection $items): string
     {
-        return $this->fingerprint([
-            'coupon_code' => $cart->coupon_code,
-            'items' => $items->map(fn (CartItem $item) => $item->only([
-                'id', 'itemable_type', 'itemable_id', 'plan_id', 'quantity', 'unit_price_snapshot',
-            ]))->all(),
-        ]);
+        return CheckoutFingerprint::cart($cart, $items);
     }
 
-    /** Keyed hashes prevent guessing low-entropy clinical answers from the ledger. */
     private function fingerprint(array $value): string
     {
-        $normalize = function (array $data) use (&$normalize): array {
-            if (! array_is_list($data)) {
-                ksort($data);
-            }
-            foreach ($data as &$entry) {
-                if (is_array($entry)) {
-                    $entry = $normalize($entry);
-                }
-            }
-
-            return $data;
-        };
-
-        return hash_hmac('sha256', json_encode($normalize($value), JSON_THROW_ON_ERROR), (string) config('app.key'));
+        return CheckoutFingerprint::make($value);
     }
 
     /**

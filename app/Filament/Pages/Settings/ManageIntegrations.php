@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages\Settings;
 
+use App\Models\ProviderInstance;
 use App\Services\PrescribeRx\Client;
 use App\Services\PrescribeRx\Exceptions\PrescribeRxException;
 use App\Settings\IntegrationSettings;
@@ -76,6 +77,19 @@ class ManageIntegrations extends BaseSettingsPage
                             ->maxLength(64)
                             ->hintIcon(Heroicon::InformationCircle, 'UUID of the client record in PrescribeRx. Leave blank to use the token\'s default client.')
                             ->helperText('UUID. Leave blank to use the token\'s default client.'),
+                        Select::make('prescribe_rx_provider_instance_key')
+                            ->label('API checkout provider instance')
+                            ->options(fn (): array => ProviderInstance::query()
+                                ->where('provider', 'prescribe_rx')
+                                ->whereIn('account_type', ['client', 'sales_organization'])
+                                ->orderBy('key')->get(['key', 'environment', 'account_type'])
+                                ->mapWithKeys(fn (ProviderInstance $instance): array => [
+                                    $instance->key => $instance->key.' ('.$instance->environment.', '.$instance->account_type.')',
+                                ])->all())
+                            ->searchable()
+                            ->native(false)
+                            ->helperText('Choose a registered instance matching the API environment and explicit Client ID, or Sales organization ID when Client ID is blank. Required for new API checkout; existing attempts retain their original instance.')
+                            ->columnSpanFull(),
                         TextInput::make('prescribe_rx_encounter_type_id')
                             ->label('Universal encounter type ID')
                             ->maxLength(64)

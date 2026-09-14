@@ -13,6 +13,7 @@ use App\Models\Commerce\Order;
 use App\Models\Commerce\OrderShipment;
 use App\Models\Customer;
 use App\Models\Lead;
+use App\Models\ProviderInstance;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
@@ -83,7 +84,13 @@ class CustomerOrderHistoryTest extends TestCase
         $shipment = OrderShipment::factory()->create(['order_id' => $order->id, 'metadata' => ['private' => 'secret-shipment-metadata']]);
         $cart = Cart::factory()->create();
         $lead = Lead::factory()->create(['cart_ulid' => $cart->ulid]);
+        $instance = ProviderInstance::create([
+            'key' => 'recorded-checkout-instance', 'provider' => 'prescribe_rx', 'environment' => 'sandbox',
+            'account_type' => 'client', 'external_account_id' => 'secret-provider-client',
+        ]);
         CheckoutAttempt::create([
+            'provider_instance_id' => $instance->id, 'provider_tenant_kind' => 'client',
+            'provider_client_id' => 'secret-provider-client', 'receipt_received_at' => now(),
             'uuid' => (string) Str::uuid(), 'cart_id' => $cart->id, 'lead_id' => $lead->id, 'order_id' => $order->id,
             'status' => 'unknown', 'provider_idempotency_key' => 'secret-provider-key',
             'request_fingerprint' => str_repeat('a', 64), 'answers_fingerprint' => str_repeat('b', 64),
@@ -93,9 +100,10 @@ class CustomerOrderHistoryTest extends TestCase
         ]);
         $page = Livewire::test(ViewOrder::class, ['record' => $order->uuid])
             ->assertOk()->assertSee('unknown')->assertSee('Frozen purchase')->assertSee('€12.50')
+            ->assertSee('recorded-checkout-instance')->assertSee('Provider receipt available')
             ->assertSee('not that payment was confirmed')->assertSet('data', [])
             ->assertActionDoesNotExist('edit')->assertActionDoesNotExist('delete');
-        foreach (['secret-order-metadata', 'secret-shipment-metadata', 'secret-receipt-chart', 'secret-result-data', 'secret-provider-key', str_repeat('a', 64)] as $secret) {
+        foreach (['secret-provider-client', 'secret-order-metadata', 'secret-shipment-metadata', 'secret-receipt-chart', 'secret-result-data', 'secret-provider-key', str_repeat('a', 64)] as $secret) {
             $page->assertDontSee($secret);
         }
         $this->assertSame([], $page->instance()->getRelationManagers());

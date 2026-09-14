@@ -24,7 +24,7 @@ The capture event freezes the original source tuple before existing best-effort 
 
 Verified mailbox/chart claims now bind Lead, Customer and trusted local encounter orders. API checkout persists a local order intent and `CheckoutAttempt` before the provider request; its opaque context is included in metadata and its minimal provider receipt is encrypted separately before finalization. See [Customer implementation](../customers/dev.md) and [checkout implementation](../checkout/dev.md).
 
-Checkout context currently freezes environment and request identity, but does not yet pin a `ProviderInstance` tenant or implement a verified embed/session binding. Do not use returned metadata or anonymous browser completion as a new ownership proof. Provider callbacks, unknown-attempt reconciliation, checkout/payment canonical event producers and provider-instance context binding remain future work. Existing explicit Customer/provider-instance mapping is separate from that future callback contract.
+New API checkout contexts now pin a typed `ProviderInstance`, environment, both explicit routing IDs and request/order identity. [Local reconciliation](../checkout/reconciliation.md) can finish a retained verified receipt without resubmitting intake or replaying marketing automation. Legacy unbound attempts and attempts without receipts remain unresolved. Verified embed/session binding, provider reads/callback ingestion and checkout/payment canonical event producers remain future work. Do not use anonymous metadata or browser completion as a new ownership proof.
 
 ## Next increments
 

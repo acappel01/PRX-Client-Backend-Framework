@@ -15,8 +15,10 @@ use App\Models\Commerce\Order;
 use App\Models\Customer;
 use App\Models\Lead;
 use App\Models\Patient;
+use App\Models\ProviderInstance;
 use App\Services\PrescribeRx\Client;
 use App\Services\PrescribeRx\Exceptions\PrescribeRxException;
+use App\Settings\IntegrationSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
@@ -24,6 +26,19 @@ use Tests\TestCase;
 class LocalFirstPrescribeRxCheckoutTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        ProviderInstance::create([
+            'key' => 'checkout-test', 'provider' => 'prescribe_rx', 'environment' => 'sandbox',
+            'account_type' => 'sales_organization', 'external_account_id' => 'org-test',
+        ]);
+        app(IntegrationSettings::class)->fill([
+            'prescribe_rx_provider_instance_key' => 'checkout-test', 'prescribe_rx_sales_org_id' => 'org-test',
+            'prescribe_rx_client_id' => null, 'prescribe_rx_environment' => 'sandbox',
+        ]);
+    }
 
     private function purchase(): array
     {
