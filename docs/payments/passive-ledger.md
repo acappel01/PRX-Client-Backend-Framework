@@ -160,3 +160,87 @@ uncertainty evidence, with a repeatable-read snapshot established before the
 winning commit. Each retained one logical identity/evidence record. All fixtures
 were synthetic, the private MySQL listener was socket-only and no gateway
 qualification or payment was performed.
+
+## Follow-up outcome observations (September 14 continuation)
+
+`RecordPaymentOutcomeObservationAction(PaymentOutcomeObservationData)` appends
+allowlisted **unverified reports** against an existing operation. Its caller supplies
+a durable observation UUID, operation UUID, frozen local MerchantAccount UUID,
+gateway/environment, bounded internal source key, typed reported outcome,
+subsecond UTC occurrence time, optional transaction/original/event references and
+an optional nonnegative integer amount/currency pair. This action has no public
+route, receiver, worker, gateway call or authentication adapter. Trusted callers
+must establish authorization separately; naming a source cannot authenticate it.
+
+Only the observation UUID deduplicates ingestion. Identical replay returns the
+same row; changing any evidence under that UUID conflicts. A new UUID with the
+same source-event reference remains another report. This is not canonical
+remote-event inbox deduplication or shared-account transaction deduplication.
+The local account UUID/provider/environment must match the intent's frozen scope;
+this does not verify the actual remote merchant. Duplicate local account rows are
+not merged. Account mapping and receiver ownership must be qualified separately.
+
+Evidence remains encrypted and hidden from generic model serialization. No raw
+provider payload, arbitrary metadata, clinical data, payment token, vault profile,
+card or bank fields are accepted. Reference syntax is not a secret classifier:
+trusted producers must supply only appropriate operational references. Ordinary
+model updates/deletes are blocked, with a restrictive operation foreign key;
+query-builder/raw SQL maintenance can bypass hooks and requires separate review.
+The unique UUID, transaction/savepoint and locking current-read recovery preserve
+replay semantics for duplicate writers.
+
+Reports survive later account credential or order drift. Multiple conflicting or
+out-of-order reports are retained without choosing a winner. Reported amount and
+currency may disagree with the intent because rejecting that discrepancy would
+lose evidence. `captured`, `settled`, `refunded` and other enum values describe the
+producer's claim, never a verified local result. No observation updates operation
+state, resolves uncertainty, authorizes another attempt, changes refund balances,
+creates a transaction, exports events or projects paid revenue. This increment
+supplies durable follow-up evidence, not a reconciliation decision.
+
+### Concrete Authorize.Net adapter contract still required
+
+Read-only investigation checked local `AuthorizeNetGateway::ctx()` and
+`executeTransaction()` plus installed SDK reporting types on September 14, 2026.
+The driver selects a local numeric MerchantAccount primary key and environment,
+builds merchant authentication, and invokes mutation controllers. It does not
+implement transaction reporting, a signed receiver, canonical account binding or
+a durable operation-aware outcome verifier. `PaymentResult` normalization is not
+sufficient evidence of current settlement.
+
+Authorize.Net says notifications are historical triggers; use authenticated
+`getTransactionDetails` for current status and reject invalid notification HMACs.
+The receiver must retain the selected account/environment and verify the exact
+raw body using that account's Signature Key before accepting a durable event.
+[Official webhook contract](https://developer.authorize.net/api/reference/features/webhooks.html).
+
+The next read adapter needs a receiver-selected, explicitly mapped account;
+`GetTransactionDetailsRequest` with merchant authentication and transaction ID;
+and exact checks of returned transaction ID, type, status and original reference.
+Keep authorized, captured-pending-settlement, settled and refund states distinct;
+unknown/error/review statuses cannot become success. Preserve failed reads for
+retry without issuing a mutation. [Official API reference](https://developer.authorize.net/api/reference/index.html#transaction-reporting-get-transaction-details).
+
+Installed `TransactionDetailsType` exposes `getTransactionStatus()`,
+`getRefTransId()`, `getAuthAmount()` and `getSettleAmount()`; its amount annotations
+are floats and it has no currency getter. The adapter therefore needs a qualified
+exact decimal parsing path and merchant currency authority, not float rounding or
+blindly trusting the intent currency. `getMerchantDetails` is a candidate account
+configuration read, not yet a qualified proof that two configured local/PRX rows
+represent the same account. [Official reporting capabilities](https://developer.authorize.net/api/reference/features/transaction-reporting.html).
+
+Before enabling any verified projection, qualify duplicate local account mapping,
+wrong-account reads/signatures, original-lineage mismatches, same transaction ID
+in different accounts/environments, amount/currency mismatch, timeout/missing
+transaction, unknown status, delayed refund/capture ordering and concurrent refund
+balance enforcement. No credential or remote account was queried in this work;
+no claim that these prerequisites are satisfied follows from the SDK's existence.
+
+### Follow-up observation qualification
+
+Seven focused observation tests plus thirteen existing passive-ledger tests passed
+on SQLite and disposable socket-only MySQL (20 tests, 204 assertions per engine).
+Six two-process MySQL races (three identical, three conflicting observation UUID
+writers) retained one row and the expected replay/conflict result with an older
+repeatable-read snapshot established before the winning commit. Fixtures used
+synthetic local customers, orders, accounts and references; no gateway was called.

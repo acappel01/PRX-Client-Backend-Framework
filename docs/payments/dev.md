@@ -327,3 +327,12 @@ The field tracks running monthly volume but there is no scheduled command or cro
 
 **Actions and financial readiness**
 `app/Actions/Payments/` now contains passive ledger preparation/uncertainty actions as well as the existing unwired checkout-payment and merchant-usage actions. Passive actions never call a gateway. The existing checkout-payment action requires the contract repairs listed in [passive ledger](passive-ledger.md) before integration; direct gateway calls from controllers are not the intended pattern.
+
+
+### Durable follow-up reports
+
+The passive ledger now also contains `PaymentOutcomeObservationData`,
+`RecordPaymentOutcomeObservationAction`, `PaymentOutcomeObservation` and the
+`ReportedPaymentOutcome` enum. These append encrypted unverified evidence without
+changing payment state. See [passive ledger](passive-ledger.md#follow-up-outcome-observations-september-14-continuation)
+for replay/account boundaries and the concrete Authorize.Net read-adapter gaps.

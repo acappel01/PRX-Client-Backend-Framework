@@ -184,3 +184,13 @@ revenue, and an order total or accepted intake is not evidence of collection.
 Gateway verification, reconciliation and instrument-readiness contracts remain
 required before enabling execution. No new operator configuration is needed for
 this passive development increment.
+
+
+## Follow-up outcome evidence
+
+Internal payment observations can now retain later reported outcomes alongside an
+uncertain operation. These records are unverified evidence only. There is no new
+operator screen or action to charge, retry, resolve uncertainty, refund, save a
+card, or mark an order paid. A reported capture/settlement/refund does not establish
+that money moved. Gateway account qualification and authenticated current-state
+reconciliation remain prerequisites; do not treat a report as permission to retry.
