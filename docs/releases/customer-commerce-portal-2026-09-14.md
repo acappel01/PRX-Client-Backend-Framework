@@ -6,7 +6,7 @@ Status: preparation only. No merge, deployment, served migration, backfill, perm
 
 | Application | Served baseline verified September 14 | Candidate branch | Required ordering |
 |---|---|---|---|
-| Admin | `9909105` on `main` | `codex/customer-commerce-foundation`, code `d8087b5076172788b6ee633eb896e95e0e53f8ec` | Schema/settings, admin code and permissions before dependent portal |
+| Admin | `9909105` on `main` | `codex/customer-commerce-foundation`, code `d2803ecd66f81d6a1e0a0d5efc79e56350eb2c94` | Schema/settings, admin code and permissions before dependent portal |
 | Portal | `116799f` on `main` | `codex/portal-local-commerce-history`, `c583128c7b4e620723b899a98057dbb433962c29` | After owned local history API qualification |
 | Storefront | `dde5f4b` on `main` | `codex/storefront-lead-idempotency`, `323cd0b7780595c6bd2d4ffc9ed4420ace876209` | After backend Lead retry schema and two-header contract qualification |
 
@@ -50,6 +50,8 @@ Apply the complete candidate migration set in chronological order under the appr
 | `2026_09_14_203107_create_payment_intents_and_operations_tables` | Passive immutable financial intent/operation identity and encrypted uncertainty; no executor |
 | `2026_09_14_223822_create_payment_outcome_observations_table` | Append-only unverified observations; no uncertainty resolution or financial effects |
 | `2026_09_14_230000_create_attribution_delivery_previews` | Capture touchpoints, passive delivery identities and immutable policy evaluations; no sending |
+| `2026_09_14_231100_create_gateway_account_bindings_table` | Read-verified local gateway account bindings; no automatic mapping or payment execution |
+| `2026_09_14_231000_create_email_suppression_observations` | Scoped read-only suppression evidence; no subscriptions or destination sending |
 
 The passive payment tables have no automatic producers or public API. Their presence does not enable collection, vaulting, financial reconciliation or revenue reporting. Add later reviewed candidate migrations to this table before approval. These schema migrations do not import historical accounts or infer historical attempt ownership. Old attempts remain unbound. The idempotency migration can sort before an already-applied later migration on an incremental upgrade; use the migration ledger and apply pending files, never rerun completed migrations. Storefront `323cd0b` adopts the two-header retry contract for quiz/checkout. Verify both headers survive only exact POST `/leads` and that a lost-response retry returns the original Lead before releasing that artifact; old backend code ignores those headers. Other no-header callers remain compatible and still create a new Lead per POST. Spatie settings migrations live under `database/settings` and must be included; checking only `database/migrations` is insufficient.
 
@@ -143,3 +145,57 @@ The release-record commit adds only this checklist and the synthetic upgrade tes
 The integrated final SQLite regression passed **1,588 tests / 6,690 assertions**.
 This supersedes earlier candidate application IDs in the historical evidence paragraphs;
 portal `c583128` and storefront `323cd0b` remain unchanged and qualified.
+
+
+## Gateway mapping and suppression-read continuation
+
+The new internal read adapters must remain explicitly invoked and scoped to configured
+accounts. Migrations do not populate account bindings, read live profiles or enable any
+sender. Existing payment operation uncertainty and reported observations remain unchanged;
+a current transaction read is not a refund balance, ledger projection or execution permit.
+Authorizing a future receiver/adapter requires independent account/environment mapping,
+current credentials and the documented verification/lineage contract.
+
+Suppression checks supplement local consent; they cannot grant it. A clear remote read
+is time- and identity-bound evidence for a passive policy preview, never approval to send.
+The preview retains an explicit delivery-disabled reason. No profile upsert, subscribe,
+list mutation, marketing event, gateway mutation or provider intake is part of this batch.
+The exact reviewed read/freshness limitations and required credential scopes are recorded
+in the payment and attribution module guides.
+
+Both new tables are included in the strictly in-memory additive-upgrade rehearsal. Existing
+served baselines and portal/storefront candidates remain unchanged; actual artifact and
+real-data snapshot/restore qualification still require the separate release process above.
+
+Read-only qualification: the integrated SQLite regression passed **1,609 tests / 7,045
+assertions**; final fixture-only additions were then covered by **30 / 463** focused
+payment/suppression/preview/upgrade tests. The upgrade rehearsal alone passed **1 / 44**.
+Independent review passed after bounded-stream/deadline, transaction-boundary and durable
+suppression-ordering fixes. An existing independent reviewer thread was reused after the
+agent service refused a new explicitly selected Astra thread due to its thread limit;
+this continuation does not claim a newly instantiated Astra review.
+
+Merchant mapping proves the authenticated reporting account at the time of the read;
+it does not independently prove ownership of a configured PRX provider mapping. Reported
+currency remains current merchant configuration, explicitly **not verified historical
+transaction currency**. Signed receiver key encoding, immutable operation correlation,
+verified financial projections, vault and execution remain separate contract work.
+A newer pending suppression request vetoes older clear evidence, including equal-clock
+or late-response races. Clear evidence expires after five minutes and never overrides
+current local consent or the delivery-disabled policy.
+
+Suppression MySQL qualification passed eight behavior scenarios / 222 assertions and
+**12/12** independent-process races. One test setup raced with the payment migration
+filename rename; its focused rerun passed, with no suppression assertion failure.
+Gateway database-relevant tests passed **5 / 26** on a separate disposable MySQL schema;
+its complete SQLite reporting suite passed **13 / 131**. All HTTP responses were faked.
+
+Gateway account binding also passed **6/6** two-process MySQL races (same and conflicting
+remote account identities). The disposable MySQL server was stopped after both tracks
+completed. Served checkout baselines were rechecked and remain unchanged.
+
+Final application candidate for this continuation: **`d2803ecd66f81d6a1e0a0d5efc79e56350eb2c94`**,
+including suppression **`2e22802`** and gateway reads **`d2803ec`**. The following
+release-record commit adds only this evidence and the two-table upgrade assertions.
+This candidate supersedes earlier admin application IDs; portal and storefront remain
+at the qualified IDs in the table above. Nothing deployed.
