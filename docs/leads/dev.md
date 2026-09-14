@@ -410,3 +410,67 @@ The `gender` column accepts any string up to 32 chars. The API validates it agai
 ### Soft deletes on admin list
 
 The `TrashedFilter` in `LeadsTable` lets operators see trashed records. The route model binding query removes the soft-delete scope so trashed leads remain accessible by UUID from the edit URL. This is intentional — operators need to be able to view and restore leads that were accidentally deleted.
+
+## Optional submission idempotency (2026-09-14)
+
+`POST /api/v1/leads` accepts **both** `Idempotency-Key` (a random UUID) and
+`X-Lead-Submission-Secret` (32 cryptographically random bytes encoded as exactly
+64 lowercase hexadecimal characters). The first-party client creates and retains
+both **before** the first request, reusing them and the same body/cart token for
+transport retries. Keep the secret in a protected first-party session, outside
+URLs, analytics and logs; it is an independent bearer credential for replay. A
+public submission UUID, referral visitor ID, email or cart ID alone never grants
+replay access. Use a fresh pair for a genuinely new submission. Do not generate
+the secret from public identifiers or put it into marketing payloads.
+
+Requests without either header keep the existing create-every-time behavior.
+One missing/invalid header produces 422. An identical accepted retry returns the
+original 201 `data` envelope, including the original credential-bearing Lead UUID
+and timestamps. A valid but different secret, changed body/cart token, deleted
+Lead or unavailable stored result produces the same generic 409 response with no
+Lead information. A changed submission must receive a new key rather than
+silently modifying the captured consent/referral/quiz evidence.
+
+`LeadSubmissionData` computes a versioned HMAC fingerprint of the validated
+request body and cart token using the independent secret. Object keys are sorted
+recursively; list order, explicit nulls/defaults and numeric strings versus
+numbers remain significant. JSON numeric values such as `1` and `1.0` share the
+same encoding. IP and User-Agent changes do not invalidate retries;
+the original audit remains. Fingerprinting occurs before mutable quiz-definition
+filtering, so changing otherwise discarded quiz answers still conflicts. Replay
+precedes quiz lookup/validation, allowing an accepted request to replay after a
+quiz is edited or disabled. Basic endpoint input validation still applies.
+
+`SubmitLeadAction` inserts a unique `lead_submissions` reservation, creates the
+Lead/consent/canonical event rows and encrypts the resolved public response in a
+single transaction. A failed capture rolls back the reservation too. Competing
+writers use unique-constraint savepoint recovery and a current locking read;
+the loser verifies the owner and fingerprint before returning anything. Only the
+secret hash and keyed fingerprint persist, never the secret or raw request.
+Lead deletion leaves a key tombstone and replay refuses soft-deleted Leads.
+There is deliberately no TTL/cleanup job in this increment: retain these keys
+with the Lead records; deleting keys would reopen duplicate creation.
+
+`CreateLeadAction` defers referral attribution and `LeadCreated` until the
+outermost capture transaction commits; referral credit remains best effort and
+precedes the workflow signal. `QuizCompleted` fires only on first creation, after
+commit. Canonical events are durable; these existing workflow notifications are
+still best effort, not a new durable workflow outbox. Replays never re-run them
+or change consent/referral evidence. The replay response is a capture snapshot;
+use the existing owner-authorized retrieval route for current Lead state.
+
+**Adoption remaining:** this is a compatible backend contract, not a storefront
+rollout. Existing storefront quiz/checkout clients must explicitly add protected
+first-party credential retention and retry behavior before their POSTs benefit.
+Ensure API/proxy header redaction includes `X-Lead-Submission-Secret` wherever
+request logging is enabled. No marketing sends or provider requests are added.
+
+Validation for this increment: eight focused submission tests cover exact encrypted
+replay, independent owner credentials, conflicts, quiz-definition drift, rollback,
+referral preservation, duplicate-insert recovery and deleted Leads. The related
+Lead/quiz/referral suite passed 114 tests / 387 assertions on disposable MySQL.
+Fifteen two-process races (five identical, five changed-content, five changed-owner)
+also passed with a repeatable-read snapshot established before either writer won.
+Both the submission and Lead availability checks use current reads on the racing
+path; an ordinary Lead read would falsely report the newly committed winner absent.
+Each race retained exactly one Lead, consent, canonical event and workflow signal.

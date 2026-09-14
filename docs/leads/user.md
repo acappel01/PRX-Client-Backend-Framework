@@ -203,3 +203,13 @@ Bulk soft-delete, force-delete, and restore are also available from the list vie
 - **Lead capture fields** are defined by the frontend checkout form and the API. You cannot add or remove fields from the admin.
 - **Automated status transitions** (New → Handed off → Completed) happen programmatically as checkout progresses. No manual action is required for normal lead lifecycle.
 - **Marketing consent handling** (unsubscribe, suppression lists) is outside this module's scope — you would manage that in your email/SMS platform.
+
+## Repeated form submissions
+
+The API now supports an optional retry credential pair for storefront developers.
+When a client adopts it, retrying the same accepted submission returns its original
+result and creates no extra Lead, consent record or capture event. It does not
+merge people by email or erase separate submissions. Changed submissions require
+a new key. Existing clients retain their current behavior until they adopt the
+contract in the developer guide; this backend change alone does not remove their
+duplicate POSTs. No new operator setting or marketing activation is required.

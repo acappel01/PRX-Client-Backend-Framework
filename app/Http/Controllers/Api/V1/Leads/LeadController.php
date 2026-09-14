@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Api\V1\Leads;
 
 use App\Actions\Leads\CreateLeadAction;
+use App\Actions\Leads\SubmitLeadAction;
 use App\Data\Leads\LeadData;
+use App\Data\Leads\LeadSubmissionData;
 use App\Enums\CheckoutPath;
 use App\Events\Quiz\QuizCompleted;
 use App\Http\Controllers\Api\V1\ApiController;
@@ -13,6 +15,7 @@ use App\Models\Quiz\Quiz;
 use App\Services\Quiz\QuizAnswerValidator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -28,12 +31,16 @@ class LeadController extends ApiController
      * The cart snapshot is passed in from the frontend's live cart state so the
      * backend Lead record captures what was selected at lead-capture time. Binds
      * the lead to the X-Cart-Token session when present.
+     * Optional Idempotency-Key UUID and X-Lead-Submission-Secret (64 lowercase
+     * hexadecimal characters from 32 random bytes) must be supplied together.
+     * Identical retries return the original 201 result; changed content or
+     * incorrect replay credentials return a generic 409 without Lead data.
      *
      * @tags Leads
      *
      * @unauthenticated
      */
-    public function store(Request $request, CreateLeadAction $action, QuizAnswerValidator $answers): JsonResponse
+    public function store(Request $request, CreateLeadAction $action, QuizAnswerValidator $answers, SubmitLeadAction $submissions): JsonResponse
     {
         $validated = $request->validate([
             'first_name' => ['required', 'string', 'max:100'],
@@ -118,6 +125,26 @@ class LeadController extends ApiController
             'age' => ['nullable', 'integer', 'min:18', 'max:120'],
         ]);
 
+        $submission = null;
+        if ($request->hasHeader('Idempotency-Key') || $request->hasHeader('X-Lead-Submission-Secret')) {
+            // Keep the bearer secret outside body validation/session old-input.
+            // Neither error messages nor persistence contain its value.
+            $credentials = Validator::make([
+                'submission_key' => $request->header('Idempotency-Key'),
+                'submission_secret' => $request->header('X-Lead-Submission-Secret'),
+            ], [
+                'submission_key' => ['required', 'uuid'],
+                'submission_secret' => ['required', 'string', 'regex:/\A[a-f0-9]{64}\z/'],
+            ])->validate();
+            $submission = LeadSubmissionData::forRequest(
+                $credentials['submission_key'], $credentials['submission_secret'],
+                $validated, $request->header('X-Cart-Token') ?: null,
+            );
+            if (($replay = $submissions->replay($submission)) !== null) {
+                return $this->success($replay->response, status: 201);
+            }
+        }
+
         // Answers are checked against the quiz that produced them, which is
         // what makes `visible_when` a constraint rather than a suggestion —
         // the browser's evaluation is a rendering decision and a submission is
@@ -185,6 +212,10 @@ class LeadController extends ApiController
             referral_code: $validated['referral_code'] ?? null,
             referral_visitor_id: $validated['referral_visitor_id'] ?? null,
         );
+
+        if ($submission !== null) {
+            return $this->success($submissions->execute($data, $submission)->response, status: 201);
+        }
 
         $lead = $action->execute($data);
 

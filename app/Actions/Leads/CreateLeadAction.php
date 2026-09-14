@@ -10,6 +10,7 @@ use App\Events\Leads\LeadCreated;
 use App\Models\Lead;
 use App\Models\LeadDisposition;
 use App\Services\Attribution\LeadEventPayload;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Spatie\LaravelData\DataCollection;
 use Throwable;
@@ -79,40 +80,42 @@ class CreateLeadAction
             return $lead;
         });
 
-        // ATTRIBUTION RUNS HERE — after the commit, before the event — and the
-        // ordering is load-bearing in both directions.
-        //
-        // After the commit, because a referral may never roll back a lead: a lost
-        // commission is recoverable from `referral_clicks`, a lost lead is not.
-        // Before the event, because `AttributeLeadAction` replaces `utm_*`,
-        // `referrer` and `landing_url` from the click — and `utm_source`,
-        // `utm_medium` and `utm_campaign` are in WorkflowServiceProvider's
-        // condition allow-list. Dispatching first would let a queued
-        // `lead.created` chain route a referred visitor on pre-backfill values.
-        // (`referral_*` itself is deliberately NOT in that allow-list.)
-        //
-        // Wrapped because nothing about attribution is worth failing a request
-        // that has already banked a lead.
-        if (filled($data->referral_code)) {
-            try {
-                app(AttributeLeadAction::class)->execute(
-                    $lead,
-                    $data->referral_code,
-                    $data->referral_visitor_id,
-                );
-            } catch (Throwable $e) {
-                Log::error('lead attribution failed', [
-                    'lead_id' => $lead->id,
-                    'code' => $data->referral_code,
-                    'exception' => $e->getMessage(),
-                ]);
+        DB::afterCommit(function () use ($lead, $data): void {
+            // ATTRIBUTION RUNS HERE — after the outermost commit, before the event — and the
+            // ordering is load-bearing in both directions.
+            //
+            // After the commit, because a referral may never roll back a lead: a lost
+            // commission is recoverable from `referral_clicks`, a lost lead is not.
+            // Before the event, because `AttributeLeadAction` replaces `utm_*`,
+            // `referrer` and `landing_url` from the click — and `utm_source`,
+            // `utm_medium` and `utm_campaign` are in WorkflowServiceProvider's
+            // condition allow-list. Dispatching first would let a queued
+            // `lead.created` chain route a referred visitor on pre-backfill values.
+            // (`referral_*` itself is deliberately NOT in that allow-list.)
+            //
+            // Wrapped because nothing about attribution is worth failing a request
+            // that has already banked a lead.
+            if (filled($data->referral_code)) {
+                try {
+                    app(AttributeLeadAction::class)->execute(
+                        $lead,
+                        $data->referral_code,
+                        $data->referral_visitor_id,
+                    );
+                } catch (Throwable $e) {
+                    Log::error('lead attribution failed', [
+                        'lead_id' => $lead->id,
+                        'code' => $data->referral_code,
+                        'exception' => $e->getMessage(),
+                    ]);
+                }
             }
-        }
 
-        // OUTSIDE the transaction, so a listener can never see — or act on — a
-        // lead whose insert then rolled back. Fires for EVERY lead, quiz or
-        // checkout; QuizCompleted is the narrower signal dispatched in addition.
-        LeadCreated::dispatch($lead);
+            // OUTSIDE the transaction, so a listener can never see — or act on — a
+            // lead whose insert then rolled back. Fires for EVERY lead, quiz or
+            // checkout; QuizCompleted is the narrower signal dispatched in addition.
+            LeadCreated::dispatch($lead);
+        });
 
         return $lead;
     }

@@ -10,7 +10,7 @@ An identical source identity and business payload returns the original event. Ch
 
 Only `lead.captured` and `quiz.completed`, schema version 1, are registered. `CreateLeadAction` records capture inside the same transaction as the Lead and consent rows; a validated quiz also records completion. Failure rolls back the local capture. Existing workflow signals retain their current behavior. No new destination is called by this event recorder.
 
-Deduplication is currently per persisted Lead. Repeating a public lead POST still creates another Lead and another pair of events where applicable. Submission/session idempotency remains a separate planned change; the event ledger alone does not solve browser retry duplication.
+Canonical-event deduplication is per persisted Lead. The optional [Lead submission contract](../leads/dev.md#optional-submission-idempotency-2026-09-14) now atomically reserves a submission key with an independent owner secret, records the Lead/consent/events and freezes an encrypted response. Identical authenticated retries return the original result; changed requests conflict without exposing a Lead UUID. Existing clients must adopt the headers and protected first-party credential retention; POSTs without them still create separate Leads.
 
 ## Source and goal projection
 
@@ -28,6 +28,6 @@ New API checkout contexts now pin a typed `ProviderInstance`, environment, both 
 
 ## Next increments
 
-Add compatible lead-submission idempotency, append-only attribution touchpoints and verified context reconciliation. Introduce destination policy previews and a delivery ledger before routing canonical events through the existing Klaviyo workflow driver. Preserve consent withdrawal and suppression on every retry. Add the financial ledger before reporting captured revenue, lifetime value, reversals or affiliate entitlements. Build Impact and further pixel/server adapters through that same delivery contract.
+Adopt compatible lead-submission idempotency in storefront clients; add append-only attribution touchpoints and verified context reconciliation. Introduce destination policy previews and a delivery ledger before routing canonical events through the existing Klaviyo workflow driver. Preserve consent withdrawal and suppression on every retry. Add the financial ledger before reporting captured revenue, lifetime value, reversals or affiliate entitlements. Build Impact and further pixel/server adapters through that same delivery contract.
 
 Focused capture tests cover encrypted payloads, approved goals, clinical-field exclusion, transaction rollback and original source retention. Event tests cover replay/conflict handling, versioned schemas, immutability and serialization. Release validation and exact suite results are recorded with the Customer implementation and session handoff. All tests use disposable local data and fake provider responses.

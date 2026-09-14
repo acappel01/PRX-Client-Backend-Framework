@@ -1,0 +1,28 @@
+# Supplement to Scramble-generated Lead endpoint documentation.
+paths:
+  /api/v1/leads:
+    post:
+      summary: Capture a Lead with optional owner-bound submission idempotency
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Random submission identity; requires X-Lead-Submission-Secret.
+        - in: header
+          name: X-Lead-Submission-Secret
+          required: false
+          schema:
+            type: string
+            pattern: '^[a-f0-9]{64}$'
+            writeOnly: true
+          description: Independent 32-byte cryptographically random owner secret encoded as lowercase hex; retain securely before first request. Never log or expose in analytics. Requires Idempotency-Key.
+      responses:
+        '201':
+          description: Lead captured, or original accepted public data envelope replayed unchanged to the matching owner.
+        '409':
+          description: Generic conflict for mismatched owner, changed payload/cart context, deleted Lead or unavailable stored result. No Lead identifiers returned.
+        '422':
+          description: Invalid input or missing/invalid header pair.
