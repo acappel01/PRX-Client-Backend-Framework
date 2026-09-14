@@ -8,9 +8,8 @@ use Illuminate\Http\Resources\Json\JsonResource;
 /**
  * GET /api/v1/orders/{uuid}
  *
- * Addresses are intentionally excluded — Order has no user_id so ownership
- * cannot be verified without an explicit patient-session scope. Address data
- * is available on the Lead record and in the Filament admin only.
+ * The controller enforces active Customer ownership. Shipping and billing
+ * addresses remain deliberately omitted from this response.
  */
 class OrderResource extends JsonResource
 {

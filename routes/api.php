@@ -36,6 +36,7 @@ use App\Http\Controllers\Api\V1\Quiz\QuizController;
 use App\Http\Controllers\Api\V1\Recommendations\ProtocolPreviewController;
 use App\Http\Controllers\Api\V1\Referral\ReferralClickController;
 use Illuminate\Support\Facades\Route;
+use Laravel\Sanctum\Http\Middleware\CheckAbilities;
 
 /*
 |--------------------------------------------------------------------------
@@ -250,10 +251,10 @@ Route::prefix('v1')->name('api.v1.')->group(function (): void {
     });
 
     // ── Orders ───────────────────────────────────────────────────────────
-    // Retrieve an order by UUID. The UUID is opaque — it is only returned
-    // to the client at checkout completion and treated as a bearer credential.
+    // Customer-owned commerce detail uses the existing portal session and 2FA
+    // policy. The UUID identifies an order; it does not authorize access.
 
-    Route::prefix('orders')->name('orders.')->middleware('throttle:api')->group(function (): void {
+    Route::prefix('orders')->name('orders.')->middleware(['no-store', 'auth:sanctum', 'patient', CheckAbilities::class.':patient:*', 'patient.2fa', 'throttle:api'])->group(function (): void {
         Route::get('{uuid}', [OrderController::class, 'show'])->name('show');
     });
 

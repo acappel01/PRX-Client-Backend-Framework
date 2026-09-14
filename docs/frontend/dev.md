@@ -514,7 +514,7 @@ The active checkout path comes from `GET /config` → `checkout.path` (`prx` | `
 2. **Upsells** — `GET /cart/suggestions` returns admin-curated Pairs With / Related light cards for the current cart (empty when the admin disabled upsells — just hide the placement). `config.checkout.upsells` carries the knobs. Products can be added directly (buy-once); link packages through to their page for plan selection.
 3. **Lead** — `POST /leads` with customer identity + consents + UTM attribution + referral (§9); include `X-Cart-Token` to bind the cart. Returns a lead `uuid` **and `handoff_url`**.
 4. **`prx` path (embed handoff — the default)** — after lead creation, redirect the browser to `lead.handoff_url`. That backend page hosts the provider embed with prefill + product selection already applied; clinical intake and payment happen there. Do **not** call `POST /checkout` on this path.
-5. **`local` path** — `GET /checkout/gateway-config` for the tokenization SDK, then `POST /checkout` with `cart_ulid`, `lead_uuid`, and the tokenized `payment_method`. Order status afterwards: `GET /orders/{uuid}`.
+5. **`local` path** — `GET /checkout/gateway-config` for the tokenization SDK, then `POST /checkout` with `cart_ulid`, `lead_uuid`, and the tokenized `payment_method`. Order detail: `GET /orders/{uuid}` requires an existing portal bearer session with `patient:*`, the portal two-factor policy, and an active Customer explicitly owning the order. The UUID alone cannot authorize access. Current checkout orders without Customer ownership return `404`; do not use this as anonymous checkout confirmation or infer ownership from email/provider chart data.
 
 ## 7. Local development
 

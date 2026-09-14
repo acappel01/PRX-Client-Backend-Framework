@@ -9,6 +9,7 @@ use App\Filament\Resources\Customers\Pages\EditCustomer;
 use App\Filament\Resources\Customers\Pages\ListCustomers;
 use App\Filament\Resources\Customers\Pages\ViewCustomer;
 use App\Filament\Resources\Customers\RelationManagers\AddressesRelationManager;
+use App\Filament\Resources\Patients\Pages\CreatePatient;
 use App\Models\Customer;
 use App\Models\Patient;
 use App\Models\User;
@@ -30,6 +31,19 @@ class CustomerAdminTest extends TestCase
         $operator = User::factory()->create();
         $operator->assignRole('super_admin');
         $this->actingAs($operator);
+    }
+
+    public function test_operator_account_creation_also_provisions_customer_without_verification_or_session(): void
+    {
+        Livewire::test(CreatePatient::class)
+            ->fillForm(['first_name' => 'Local', 'last_name' => 'Account', 'email' => 'local@example.test'])
+            ->call('create')->assertHasNoFormErrors();
+        $account = Patient::sole();
+        $this->assertSame($account->id, Customer::sole()->portal_account_id);
+        $this->assertNull($account->email_verified_at);
+        $this->assertNull($account->prx_chart_verified_at);
+        $this->assertDatabaseCount('personal_access_tokens', 0);
+        $this->assertDatabaseCount('customer_provider_links', 0);
     }
 
     public function test_customer_creation_does_not_enroll_a_portal_account(): void

@@ -7392,7 +7392,7 @@
         "/orders/{uuid}": {
             "get": {
                 "operationId": "v1.orders.show",
-                "description": "Returns an order with its items, shipments, and fulfillment center. The UUID is\nreturned only at checkout completion and serves as a bearer credential for this\nendpoint. Requires a valid Sanctum Bearer token.",
+                "description": "Returns order detail only for an authenticated Patient portal session with patient:* abilities and an active Customer whose portal_account_id matches the account and whose id matches order.customer_id. A conflicting legacy order.patient_id denies access. The UUID is an identifier, not a credential. Existing portal session expiry and two-factor policy apply. Unowned, deleted, conflicting, and missing orders return the same 404 without email or provider-chart fallback. This read never backfills ownership. Responses are no-store.",
                 "summary": "Retrieve an order by UUID",
                 "tags": [
                     "Orders"
@@ -7408,6 +7408,12 @@
                     }
                 ],
                 "responses": {
+                    "401": {
+                        "description": "Missing or invalid portal session, or non-Patient identity."
+                    },
+                    "403": {
+                        "description": "Missing patient:* abilities or required two-factor setup."
+                    },
                     "200": {
                         "description": "`OrderResource`",
                         "content": {
@@ -7438,7 +7444,7 @@
                         }
                     },
                     "404": {
-                        "description": "",
+                        "description": "Order not found or inaccessible to this Customer.",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -7461,7 +7467,11 @@
                         }
                     }
                 },
-                "security": []
+                "security": [
+                    {
+                        "http": []
+                    }
+                ]
             }
         },
         "/patient/auth/register": {

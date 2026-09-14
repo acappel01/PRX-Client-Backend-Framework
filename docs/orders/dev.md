@@ -18,7 +18,7 @@ encounters
 
 | Column | Type | Notes |
 |---|---|---|
-| `uuid` | char(36) | Public route key and bearer credential. Auto-generated on create. |
+| `uuid` | char(36) | Route key only; never an access credential. Auto-generated on create. |
 | `encounter_id` | bigint nullable | FK → encounters. Null until webhook backfills on first delivery. Set at checkout. |
 | `prescribe_rx_order_id` | varchar(64) nullable unique | PRX's internal order UUID. Null at checkout; backfilled by first webhook. |
 | `prescribe_rx_order_number` | varchar(64) nullable | Human-readable order number (e.g. `RX-123456`). Backfilled by webhook. |
@@ -90,9 +90,15 @@ timestamps set once; an older event never overwrites a newer one.
 
 ### `GET /api/v1/orders/{uuid}`
 
-Retrieve an order by UUID. The UUID is returned at checkout completion and treated as a bearer credential — there is no additional authentication on this endpoint.
+Retrieve an order by UUID using the existing authenticated portal session. The UUID identifies the order and does not grant access.
 
-**Auth:** Sanctum bearer token on the request (frontend client token), but no user-ownership check. UUID is the access control.
+**Auth:** Existing Patient Sanctum session with `patient:*` (legacy `*` tokens retain Sanctum wildcard semantics), including idle/absolute expiry and the current portal two-factor enrollment policy. Operator, partner, and API-client tokens cannot use this endpoint, even with wildcard abilities. No new shopper tokens or login flow are introduced.
+
+**Ownership:** `order.customer_id` must reference a non-deleted Customer whose `portal_account_id` is the authenticated Patient. A non-null legacy `order.patient_id` must also match that account. Missing orders, unowned orders, deleted Customers, detached accounts, and conflicting ownership all return the same `404`. There is no email, provider-chart, encounter, or legacy-account fallback, and this read never assigns or backfills ownership.
+
+**Responses:** `401` without a valid portal identity/session; `403` for missing portal abilities or when the portal requires two-factor setup; `404` for missing or inaccessible orders. Every response has `Cache-Control: no-store` and crawler exclusion headers. The authorized `200` resource shape is unchanged.
+
+**Compatibility:** This intentionally closes the former anonymous UUID lookup. Existing checkout paths still create orders without Customer ownership; these stay inaccessible here until an independently authorized ownership workflow exists. Do not infer ownership from checkout UUID possession. No caller of this detail endpoint was found in the current storefront source; `/api/v1/patient/orders` remains the existing separate clinical portal endpoint.
 
 **Response `200`:**
 ```json
@@ -139,7 +145,7 @@ Retrieve an order by UUID. The UUID is returned at checkout completion and treat
 }
 ```
 
-**Intentional omissions:** `shipping_address`, `billing_address` — encrypted, cannot verify ownership without patient session scope.
+**Intentional omissions:** `shipping_address`, `billing_address` — encrypted and omitted from the commerce detail response even for the owner.
 
 ### `POST /api/webhooks/prescribe-rx`
 

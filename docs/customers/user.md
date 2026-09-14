@@ -10,4 +10,12 @@ In Addresses, choose Add address, select Shipping or Billing, enter the address 
 
 For an associated account, authorized staff can use Portal account and security to open the existing session/verification controls. Portal accounts remain separately accessible under the Customers navigation group. Viewing Customer details does not automatically grant access to those security controls.
 
-Staff need Customer view/create/update permissions for the corresponding actions. There are no customer deletion controls in this increment. Existing accounts and PRX customers are not automatically imported yet. Orders, saved payment methods, transactions, refund/void actions and subscriptions will follow in later increments; these screens do not currently process payments.
+Staff need Customer view/create/update permissions for the corresponding actions. There are no customer deletion controls in this increment. New accounts created through the existing verified enrollment or staff Portal accounts screen now receive a Customer record. An operator can preview and apply a local backfill for existing active accounts; provider customers are not imported. Order-management screens, saved payment methods, transactions, refund/void actions and subscriptions will follow in later increments; these screens do not currently process payments.
+
+
+Provider mappings are maintained through local administrative commands, with an explicit provider tenant and environment. Existing references do not prove clinical access. A mapping conflict requires review; the backfill will not merge customers or change account security. These mappings are not yet exposed as a separate management screen.
+
+Future attribution reporting is intended to connect lead sources, Customer conversion, purchases and lifetime value across API and embedded checkout. Tracking and marketing delivery are not active in this release.
+
+
+Order details addressed by an order ID now require a valid portal session and an explicitly owned Customer order. An order ID or matching contact email alone does not grant access. Existing unassigned orders require a future trusted linking process before they can appear through this endpoint; there is no automatic ownership backfill.

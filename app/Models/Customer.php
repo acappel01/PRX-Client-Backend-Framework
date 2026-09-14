@@ -60,6 +60,11 @@ class Customer extends Model
         return $this->hasMany(CustomerAddress::class);
     }
 
+    public function providerLinks(): HasMany
+    {
+        return $this->hasMany(CustomerProviderLink::class);
+    }
+
     public function orders(): HasMany
     {
         return $this->hasMany(Order::class);

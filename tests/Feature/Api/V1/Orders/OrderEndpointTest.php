@@ -6,6 +6,8 @@ use App\Models\Commerce\Encounter;
 use App\Models\Commerce\Order;
 use App\Models\Commerce\OrderItem;
 use App\Models\Commerce\OrderShipment;
+use App\Models\Customer;
+use App\Models\Patient;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -13,9 +15,20 @@ class OrderEndpointTest extends TestCase
 {
     use RefreshDatabase;
 
+    private Customer $customer;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $patient = Patient::factory()->create();
+        $this->customer = Customer::factory()->create(['portal_account_id' => $patient->id]);
+        $this->withToken($patient->createToken('portal', ['patient:*'])->plainTextToken);
+    }
+
     public function test_show_returns_order_by_uuid(): void
     {
-        $order = Order::factory()->create();
+        $order = Order::factory()->state(['customer_id' => $this->customer->id])->create();
 
         $this->getJson("/api/v1/orders/{$order->uuid}")
             ->assertOk()
@@ -32,7 +45,7 @@ class OrderEndpointTest extends TestCase
 
     public function test_show_response_shape(): void
     {
-        Order::factory()->create(['subtotal' => 149.00, 'total_amount' => 149.00]);
+        Order::factory()->state(['customer_id' => $this->customer->id])->create(['subtotal' => 149.00, 'total_amount' => 149.00]);
         $order = Order::first();
 
         $this->getJson("/api/v1/orders/{$order->uuid}")
@@ -49,7 +62,7 @@ class OrderEndpointTest extends TestCase
 
     public function test_show_includes_items_when_present(): void
     {
-        $order = Order::factory()->create();
+        $order = Order::factory()->state(['customer_id' => $this->customer->id])->create();
         OrderItem::factory()->create(['order_id' => $order->id, 'name' => 'Test Product', 'quantity' => 2]);
 
         $response = $this->getJson("/api/v1/orders/{$order->uuid}")->assertOk();
@@ -61,7 +74,7 @@ class OrderEndpointTest extends TestCase
 
     public function test_show_includes_shipments_when_present(): void
     {
-        $order = Order::factory()->shipped()->create();
+        $order = Order::factory()->state(['customer_id' => $this->customer->id])->shipped()->create();
         OrderShipment::factory()->create([
             'order_id' => $order->id,
             'carrier' => 'USPS',
@@ -77,7 +90,7 @@ class OrderEndpointTest extends TestCase
 
     public function test_show_does_not_expose_addresses(): void
     {
-        $order = Order::factory()->create([
+        $order = Order::factory()->state(['customer_id' => $this->customer->id])->create([
             'shipping_address' => ['street' => '123 Main St', 'city' => 'Austin', 'state' => 'TX', 'zip' => '78701'],
         ]);
 
@@ -89,7 +102,7 @@ class OrderEndpointTest extends TestCase
 
     public function test_show_delivered_order_has_timestamps(): void
     {
-        $order = Order::factory()->delivered()->create();
+        $order = Order::factory()->state(['customer_id' => $this->customer->id])->delivered()->create();
 
         $response = $this->getJson("/api/v1/orders/{$order->uuid}")->assertOk();
 
@@ -100,7 +113,7 @@ class OrderEndpointTest extends TestCase
 
     public function test_show_cancelled_order_has_cancelled_at(): void
     {
-        $order = Order::factory()->cancelled()->create();
+        $order = Order::factory()->state(['customer_id' => $this->customer->id])->cancelled()->create();
 
         $response = $this->getJson("/api/v1/orders/{$order->uuid}")->assertOk();
 
@@ -110,7 +123,7 @@ class OrderEndpointTest extends TestCase
 
     public function test_show_works_for_order_without_prx_id(): void
     {
-        $order = Order::factory()->create(['encounter_id' => null, 'prescribe_rx_order_id' => null]);
+        $order = Order::factory()->state(['customer_id' => $this->customer->id])->create(['encounter_id' => null, 'prescribe_rx_order_id' => null]);
 
         $this->getJson("/api/v1/orders/{$order->uuid}")->assertOk();
     }
@@ -118,7 +131,7 @@ class OrderEndpointTest extends TestCase
     public function test_show_works_for_order_linked_to_encounter(): void
     {
         $encounter = Encounter::factory()->create();
-        $order = Order::factory()->create(['encounter_id' => $encounter->id]);
+        $order = Order::factory()->state(['customer_id' => $this->customer->id])->create(['encounter_id' => $encounter->id]);
 
         $this->getJson("/api/v1/orders/{$order->uuid}")->assertOk();
     }

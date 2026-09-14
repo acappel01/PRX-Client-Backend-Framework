@@ -2,10 +2,12 @@
 
 namespace Tests\Feature\Api\V1\Patient;
 
+use App\Actions\Customers\EnsureCustomerForPortalAccountAction;
 use App\Actions\Patient\ClaimPatientRecordAction;
 use App\Events\Patient\AccountCreated;
 use App\Events\Patient\EmailVerified;
 use App\Events\Patient\RecordClaimed;
+use App\Models\Customer;
 use App\Models\Lead;
 use App\Models\Patient;
 use App\Models\PatientEmailToken;
@@ -15,6 +17,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Validation\ValidationException;
 use Tests\Feature\Api\V1\Patient\Concerns\ClaimFixtures;
 use Tests\TestCase;
 
@@ -75,6 +78,8 @@ class CreateAccountTest extends TestCase
             ->assertJsonStructure(['data' => ['token', 'token_type', 'patient' => ['uuid', 'email']]]);
 
         $patient = Patient::sole();
+        $this->assertSame($patient->id, Customer::sole()->portal_account_id);
+        $this->assertDatabaseCount('customer_provider_links', 0);
         $this->assertSame('buyer@example.test', $patient->email);
         $this->assertNotNull($patient->email_verified_at);
         $this->assertSame(self::CHART, $patient->prx_patient_chart_id);
@@ -92,6 +97,22 @@ class CreateAccountTest extends TestCase
         foreach ([AccountCreated::class, RecordClaimed::class, EmailVerified::class] as $event) {
             Event::assertDispatched($event, fn ($e) => $e->patient->is($patient));
         }
+    }
+
+    public function test_customer_provisioning_failure_rolls_back_account_claim_and_token_consumption(): void
+    {
+        $lead = $this->order();
+        $token = $this->tokenFor($lead);
+        $this->mock(EnsureCustomerForPortalAccountAction::class,
+            fn ($mock) => $mock->shouldReceive('execute')->once()->andThrow(
+                ValidationException::withMessages(['customer' => 'Conflict.'])
+            ));
+        $this->create($token)->assertUnprocessable();
+        $this->assertDatabaseCount('patients', 0);
+        $this->assertDatabaseCount('customers', 0);
+        $this->assertDatabaseCount('personal_access_tokens', 0);
+        $this->assertNull(PatientEmailToken::sole()->consumed_at);
+        $this->assertNull($lead->fresh()->patient_id);
     }
 
     public function test_the_session_it_returns_works(): void
