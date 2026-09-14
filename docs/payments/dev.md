@@ -336,3 +336,13 @@ The passive ledger now also contains `PaymentOutcomeObservationData`,
 `ReportedPaymentOutcome` enum. These append encrypted unverified evidence without
 changing payment state. See [passive ledger](passive-ledger.md#follow-up-outcome-observations-september-14-continuation)
 for replay/account boundaries and the concrete Authorize.Net read-adapter gaps.
+
+
+### Read-only account reporting follow-up
+
+The internal Authorize.Net binding action and scoped transaction reader are
+implemented without callers or activation. See [the account/read contract and
+currency qualification limits](passive-ledger.md#read-only-authorizenet-account-and-transaction-qualification).
+No HTTP routes or OpenAPI changes are introduced. Current merchant currency is
+explicitly not a verified historical transaction currency, and the reader cannot
+resolve ledger uncertainty or project revenue.

@@ -194,3 +194,26 @@ operator screen or action to charge, retry, resolve uncertainty, refund, save a
 card, or mark an order paid. A reported capture/settlement/refund does not establish
 that money moved. Gateway account qualification and authenticated current-state
 reconciliation remain prerequisites; do not treat a report as permission to retry.
+
+
+## Read-only gateway account qualification foundation
+
+Developers can now qualify an explicitly selected Authorize.Net account mapping
+and read bounded transaction details through an internal service. There is no new
+operator button, automatic account scan, payment action or webhook receiver.
+Deployment configuration has not been changed and no real account was queried.
+
+Before a separately authorized qualification, supply the local merchant row,
+environment, real gateway account ID, currency and any explicit external provider
+row mapping. A PRX merchant UUID identifies its database row; it is not the
+Authorize.Net gateway ID. Duplicate local rows can share the same verified remote
+identity, but each credential set must independently match it. Changing mapped
+credentials or configuration later blocks reads until a reviewed rebinding policy
+exists. Do not edit immutable binding records to bypass that protection.
+
+A current transaction read is not a paid order, a resolved uncertain payment, or
+permission to retry. Current account currency does not independently prove an old
+transaction's currency. Signed notification intake, historical currency authority,
+local operation ownership and settlement/refund accounting remain prerequisites
+for activation. No payment collection or marketing sending is enabled by this
+increment.

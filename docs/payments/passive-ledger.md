@@ -244,3 +244,126 @@ Six two-process MySQL races (three identical, three conflicting observation UUID
 writers) retained one row and the expected replay/conflict result with an older
 repeatable-read snapshot established before the winning commit. Fixtures used
 synthetic local customers, orders, accounts and references; no gateway was called.
+
+
+## Read-only Authorize.Net account and transaction qualification
+
+The September 14 follow-up adds `VerifyGatewayAccountBindingAction` and
+`ReadAuthorizeNetTransaction`; neither has a route, job, receiver, schedule or
+checkout caller. Tests use only synthetic `Http::fake` responses. No merchant
+account was contacted, no existing deployment mapping was inserted, and no
+payment, vault, ledger outcome or revenue state is changed.
+
+`GatewayAccountBindingData` requires a selected local merchant ID, explicit
+environment, expected real Authorize.Net gateway ID, expected currency, and an
+exact expected `provider_merchant_profile_id` (including null for local-only).
+The action authenticates `getMerchantDetails` with that row's login and
+transaction key. Returned gateway ID and exactly one supported currency must
+match the supplied facts; account test mode, missing/duplicate fields, unsupported
+currency, inactive rows and custom endpoints fail closed. Signature Key is not
+required for reporting; its configured value is included in the frozen scope but
+is not verified by this read.
+
+The immutable `gateway_account_bindings` row references the existing merchant
+registry and freezes its UUID, environment, real gateway ID, current currency,
+credential/routing fingerprint and encrypted explicit provider-row mapping.
+The canonical key hashes gateway/environment/verified gateway ID. Different local
+rows share that key only after each credential set independently returns the same
+remote identity in the same environment. Different environments remain separate.
+The provider-row mapping is an operator-supplied association, **not proof that the
+PRX row actually belongs to that gateway account**. No deployment-specific mapping
+is a generic default. Account/configuration drift rejects reads and rebinding;
+rotation/rebinding needs a separately reviewed policy. Application-key rotation
+also changes the frozen HMAC continuity contract.
+
+Binding verification performs HTTP outside database transactions, then locks the
+merchant and checks continuity before inserting/replaying the unique local-row
+binding. Concurrent duplicate writers serialize on that existing merchant.
+Both public orchestration entry points reject an existing caller transaction so
+repeatable-read snapshots and transaction retries cannot hide drift or repeat IO.
+Ordinary binding updates/deletes are refused, and the foreign key restricts
+parent deletion; query-builder maintenance can bypass model guards and is not an
+operator workflow.
+
+`GatewayTransactionReadData` requires the selected binding, transaction ID,
+expected transaction type, exact expected original reference (including null),
+expected positive minor-unit amount and currency. The service checks current
+credential/config continuity, rereads account identity/currency, reads transaction
+details, and checks continuity again. ID/type/original/status vocabulary and
+amount must match; refund requires an explicit original. Authorizations,
+capture-pending-settlement, settled, voided, review/error and refund statuses
+remain distinct strings. The returned DTO contains only allowlisted reporting
+fields and a read timestamp. Matching these caller expectations does **not**
+establish local operation ownership, a cumulative refundable balance, finality,
+paid order status or permission to retry a monetary request. Unknown or
+unsupported reporting combinations fail closed.
+
+### Currency qualification limit
+
+Reporting XML retains exact decimal strings until integer conversion, avoiding
+the installed SDK's float amount types. The parser accepts only unsigned ordinary
+decimal amounts with at most two decimal places and at most 999999999999 minor
+units. The initial allowlist is USD/CAD/GBP/DKK/NOK/PLN/SEK/EUR/AUD/NZD, all using
+two minor-unit digits; this is a parser boundary, not merchant processing readiness.
+The account must report exactly the expected one of these currencies.
+
+However, current merchant currency configuration does not prove a historical
+transaction's currency. `TransactionDetailsType` has no currency field. Therefore
+the DTO explicitly returns `currency_authority=current_merchant_configuration`
+and `transaction_currency_verified=false`; its minor-unit values are conversions
+under that declared scope, **not verified historical monetary facts**. An
+independent immutable-account-currency or per-transaction currency contract is
+still required before financial projection. No such contract was assumed here.
+
+### Transport and remaining activation contracts
+
+The XML adapter posts only `getMerchantDetailsRequest` and
+`getTransactionDetailsRequest` to the fixed official environment endpoints.
+It uses escaped XML credentials, TLS, bounded connection/read/overall timeouts,
+no redirects or decompression, identity encoding and a streaming 256 KiB cap.
+Streams close on success/failure. DTD/entity declarations, foreign namespaces,
+ambiguous required fields and malformed/error responses fail closed. Raw XML,
+card/profile/contact fields and credential-bearing errors are neither persisted
+nor logged by these services. Only the transport/parser sees raw provider XML;
+DTOs crossing its boundary contain the explicit allowlist. Future observability
+must continue excluding HTTP bodies and credentials.
+
+No webhook signature helper is shipped: official webhook documentation establishes
+raw-body HMAC-SHA512 but this increment did not independently qualify the key
+encoding and a provider-issued verification vector. A selected-account signed
+receiver, durable inbox/deduplication, local operation/original lineage binding,
+transaction currency authority, settlement/refund accounting and uncertainty
+resolution remain required. NMI and other gateway reads are also unimplemented.
+
+Primary references inspected September 14, 2026:
+- [Authorize.Net account and transaction reporting reference](https://developer.authorize.net/api/reference/index.html#transaction-reporting-get-merchant-details)
+- [Reporting capabilities](https://developer.authorize.net/api/reference/features/transaction-reporting.html)
+- [Official PHP SDK transaction reporting type](https://github.com/AuthorizeNet/sdk-php/blob/master/lib/net/authorize/api/contract/v1/TransactionDetailsType.php)
+- [Official webhook authentication contract](https://developer.authorize.net/api/reference/features/webhooks.html)
+
+The full API-reference page exceeds the browser extraction limit; its merchant
+example and installed SDK XML metadata were checked directly. No sandbox or live
+provider response was represented as qualification evidence.
+
+
+### Account/read qualification results
+
+The focused synthetic SQLite suite passed **13 tests / 131 assertions** covering
+mapping identity/replay, duplicate local account semantics, environment separation,
+credential/config drift before and during reads, explicit provider mapping,
+exact decimal boundaries, status/original/type/amount mismatches, test mode,
+currency ambiguity, DTD/namespace/duplicate XML fields and containers, response
+bounds/compression/redirects, sanitized errors, no caller transactions and no
+financial projections. An independent code review found no payment findings.
+
+The five database-relevant tests also passed on disposable socket-only MySQL
+(**5 tests / 26 assertions**): binding replay, duplicate account identity,
+credential drift, drift during a remote read, and caller-transaction refusal.
+Six two-process MySQL binding races passed: three identical and three conflicting
+remote account identities retained exactly one binding per local merchant, with
+identical requests replaying one ID and conflicts refusing the loser. Their
+barrier ran inside the synthetic HTTP fake before the local write, with no outer
+database transaction. These checks used only `gateway_read_test` on the isolated
+`/tmp/customer-mysql-20260914-uUkDgL/mysql.sock`; no served schema or actual gateway
+was contacted. Parser-only cases were qualified on SQLite, not represented as
+additional MySQL cases.
