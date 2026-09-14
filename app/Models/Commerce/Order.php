@@ -3,6 +3,8 @@
 namespace App\Models\Commerce;
 
 use App\Enums\OrderStatus;
+use App\Models\Customer;
+use App\Models\Patient;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -17,6 +19,8 @@ class Order extends Model
     protected $fillable = [
         'uuid',
         'encounter_id',
+        'customer_id',
+        'patient_id',
         'fulfillment_center_id',
         'prescribe_rx_order_id',
         'prescribe_rx_order_number',
@@ -72,6 +76,17 @@ class Order extends Model
                 $order->uuid = (string) Str::uuid();
             }
         });
+    }
+
+    public function customer(): BelongsTo
+    {
+        return $this->belongsTo(Customer::class);
+    }
+
+    /** Legacy portal-account association; customer ownership is separate. */
+    public function patient(): BelongsTo
+    {
+        return $this->belongsTo(Patient::class);
     }
 
     public function fulfillmentCenter(): BelongsTo
