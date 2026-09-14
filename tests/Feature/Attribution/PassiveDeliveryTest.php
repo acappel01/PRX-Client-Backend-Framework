@@ -94,7 +94,7 @@ class PassiveDeliveryTest extends TestCase
         $other = $action->execute($event->id, $this->destination()->id);
         $this->assertSame($first->canonical_delivery_id, $second->canonical_delivery_id);
         $this->assertNotSame($first->canonical_delivery_id, $other->canonical_delivery_id);
-        $this->assertSame(['suppression_unknown'], $first->reasons);
+        $this->assertSame(['suppression_unknown', 'delivery_disabled'], $first->reasons);
         $this->assertSame('blocked', $first->status);
         $this->assertSame(['event_id' => $event->event_id, 'name' => 'lead.captured',
             'occurred_at' => $event->occurred_at->toISOString(), 'goal_keys' => ['more-energy']], $first->projection);
@@ -119,7 +119,7 @@ class PassiveDeliveryTest extends TestCase
         $this->assertContains('email_consent_missing', $unknown->reasons);
         $this->consent($lead, true);
         $granted = $action->execute($event->id, $instance->id);
-        $this->assertSame(['suppression_unknown'], $granted->reasons);
+        $this->assertSame(['suppression_unknown', 'delivery_disabled'], $granted->reasons);
         $this->consent($lead, false);
         $instance->update(['is_active' => false, 'settings' => []]);
         $this->travel(1)->minute();
@@ -127,7 +127,7 @@ class PassiveDeliveryTest extends TestCase
         $this->assertContains('email_consent_missing', $withdrawn->reasons);
         $this->assertContains('destination_unavailable', $withdrawn->reasons);
         $this->assertContains('destination_policy_missing', $withdrawn->reasons);
-        $this->assertSame(['suppression_unknown'], $granted->fresh()->reasons);
+        $this->assertSame(['suppression_unknown', 'delivery_disabled'], $granted->fresh()->reasons);
         $this->assertNotSame($granted->policy_evidence['configuration_fingerprint'], $withdrawn->policy_evidence['configuration_fingerprint']);
         $this->assertTrue($withdrawn->evaluated_at->greaterThan($granted->evaluated_at));
         $this->assertSame(['more-energy'], $granted->fresh()->projection['goal_keys']);
@@ -161,7 +161,7 @@ class PassiveDeliveryTest extends TestCase
         $settings['canonical_event_preview']['enabled'] = true;
         $instance->update(['settings' => $settings]);
         $evaluation = app(PreviewCanonicalDeliveryAction::class)->execute($event->id, $instance->id);
-        $this->assertSame(['suppression_unknown'], $evaluation->reasons);
+        $this->assertSame(['suppression_unknown', 'delivery_disabled'], $evaluation->reasons);
         $this->assertSame('blocked', $evaluation->status);
         // Simulate a future producer schema: current adapter refuses it, with no partial reservation.
         DB::table('canonical_events')->where('id', $event->id)->update(['schema_version' => 999]);

@@ -12,6 +12,7 @@ use App\Models\Attribution\CanonicalEvent;
 use App\Models\Integrations\IntegrationInstance;
 use App\Models\Lead;
 use App\Services\Attribution\CanonicalEventRegistry;
+use App\Services\Attribution\EmailSuppressionEvidence;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -22,6 +23,7 @@ class PreviewCanonicalDeliveryAction
         private readonly IntegrationRegistry $registry,
         private readonly ConsentResolver $consent,
         private readonly CanonicalEventRegistry $events,
+        private readonly EmailSuppressionEvidence $suppression,
     ) {}
 
     public function execute(int $eventId, int $instanceId): CanonicalDeliveryEvaluation
@@ -57,9 +59,14 @@ class PreviewCanonicalDeliveryAction
             } elseif (! filter_var($lead->email, FILTER_VALIDATE_EMAIL)) {
                 $reasons[] = 'email_identity_missing';
             }
-            // There is no verified vendor suppression ingestion contract yet.
-            // Do not treat absent data, settings or prior previews as permission.
-            $reasons[] = 'suppression_unknown';
+            $observation = $this->suppression->current($lead, $instance, $event->environment);
+            $suppressionStatus = $observation?->status ?? 'unknown';
+            if ($suppressionStatus !== 'clear') {
+                $reasons[] = $suppressionStatus === 'suppressed' ? 'remote_marketing_blocked' : 'suppression_unknown';
+            }
+            // A fresh read qualifies a preview only. No sender is implemented or activated.
+            $policyEligible = $reasons === [];
+            $reasons[] = 'delivery_disabled';
             $payload = $this->events->validate($event->name, $event->schema_version, $event->payload);
             $allowedGoals = is_array($policy) && is_array($policy['goal_keys'] ?? null) ? $policy['goal_keys'] : [];
             $projection = [
@@ -76,7 +83,9 @@ class PreviewCanonicalDeliveryAction
                     'configuration_fingerprint' => hash('sha256', json_encode($policy, JSON_THROW_ON_ERROR)),
                     'destination_active' => ! $instance->trashed() && $instance->is_active,
                     'subject_present' => $lead !== null,
-                    'suppression' => 'unknown',
+                    'suppression' => $suppressionStatus,
+                    'suppression_observation_id' => $observation?->id,
+                    'policy_eligible' => $policyEligible,
                 ],
                 'status' => 'blocked', 'reasons' => $reasons, 'projection' => $projection,
                 'evaluated_at' => now()->utc(),

@@ -2,11 +2,14 @@
 
 namespace App\Integrations\Drivers;
 
+use App\Integrations\Contracts\ReadsEmailSuppression;
 use App\Integrations\Contracts\SyncsContacts;
 use App\Integrations\Contracts\TracksEvents;
 use App\Integrations\Messages\ContactPayload;
+use App\Integrations\Messages\EmailSuppressionRead;
 use App\Integrations\Support\TalksToVendorApi;
 use App\Models\Integrations\IntegrationInstance;
+use Illuminate\Support\Facades\Http;
 use RuntimeException;
 
 /**
@@ -60,7 +63,7 @@ use RuntimeException;
  * envelopes — is built to Klaviyo's documented shapes and has not been exercised
  * against the real service.
  */
-class KlaviyoDriver implements SyncsContacts, TracksEvents
+class KlaviyoDriver implements ReadsEmailSuppression, SyncsContacts, TracksEvents
 {
     use TalksToVendorApi;
 
@@ -72,6 +75,94 @@ class KlaviyoDriver implements SyncsContacts, TracksEvents
      * shapes; do it deliberately, not as housekeeping.
      */
     private const REVISION = '2026-07-15';
+
+    /** Authenticated GETs only; never uses the vendor-error-body reporting path. */
+    public function readEmailSuppression(IntegrationInstance $instance, string $accountId, string $profileId, string $email): EmailSuppressionRead
+    {
+        $result = fn (string $status, string $reason) => new EmailSuppressionRead($status, $reason, self::REVISION);
+        try {
+            $accounts = $this->suppressionJson($instance, '/accounts/', ['fields[account]' => 'id']);
+            if ($accounts === null) {
+                return $result('unknown', 'account_read_failed');
+            }
+            $data = $accounts['data'] ?? null;
+            if (! is_array($data) || ! array_is_list($data) || count($data) !== 1
+                || ($data[0]['type'] ?? null) !== 'account' || ($data[0]['id'] ?? null) !== $accountId
+                || data_get($accounts, 'links.next') !== null) {
+                return $result('unknown', 'account_scope_mismatch');
+            }
+            $profile = $this->suppressionJson($instance, '/profiles/'.rawurlencode($profileId).'/', [
+                'additional-fields[profile]' => 'subscriptions', 'fields[profile]' => 'email,subscriptions',
+            ]);
+            if ($profile === null) {
+                return $result('unknown', 'profile_read_failed');
+            }
+            if (data_get($profile, 'data.type') !== 'profile' || data_get($profile, 'data.id') !== $profileId
+                || data_get($profile, 'data.attributes.email') !== $email) {
+                return $result('unknown', 'profile_identity_mismatch');
+            }
+            $marketing = data_get($profile, 'data.attributes.subscriptions.email.marketing');
+            if (! is_array($marketing) || ! is_bool($marketing['can_receive_email_marketing'] ?? null)
+                || ! in_array($marketing['consent'] ?? null, ['SUBSCRIBED', 'UNSUBSCRIBED', 'NEVER_SUBSCRIBED'], true)
+                || ! is_array($marketing['suppression'] ?? null) || ! array_is_list($marketing['suppression'])
+                || ! is_array($marketing['list_suppressions'] ?? null) || ! array_is_list($marketing['list_suppressions'])) {
+                return $result('unknown', 'subscription_evidence_missing');
+            }
+            // Any list suppression blocks: canonical events have no verified list/flow scope yet.
+            if ($marketing['can_receive_email_marketing'] !== true || $marketing['consent'] !== 'SUBSCRIBED'
+                || $marketing['suppression'] !== [] || $marketing['list_suppressions'] !== []) {
+                return $result('suppressed', 'remote_marketing_blocked');
+            }
+
+            return $result('clear', 'verified_read');
+        } catch (\Throwable) {
+            return $result('unknown', 'read_failed');
+        }
+    }
+
+    /** Bounded in-memory decode; no redirects, content decompression, body logging or persistence. */
+    private function suppressionJson(IntegrationInstance $instance, string $path, array $query): ?array
+    {
+        $key = $this->credential($instance->credentials ?? [], 'private_key', 'Klaviyo private API key');
+        $deadline = hrtime(true) + 15_000_000_000;
+        $response = Http::timeout(15)->connectTimeout(5)->withoutRedirecting()
+            ->withOptions(['stream' => true, 'decode_content' => false, 'read_timeout' => 5])
+            ->withHeaders(['Accept-Encoding' => 'identity', 'Authorization' => 'Klaviyo-API-Key '.$key,
+                'revision' => self::REVISION, 'accept' => 'application/vnd.api+json'])->get(self::BASE.$path, $query);
+        $stream = $response->toPsrResponse()->getBody();
+        try {
+            if ($response->status() !== 200 || ! in_array(strtolower($response->header('Content-Encoding')), ['', 'identity'], true)) {
+                return null;
+            }
+            $body = '';
+            while (! $stream->eof() && strlen($body) <= 65536) {
+                if (hrtime(true) >= $deadline) {
+                    return null;
+                }
+                $chunk = $stream->read(min(8192, 65537 - strlen($body)));
+                if ($chunk === '' && ! $stream->eof()) {
+                    return null;
+                }
+                $body .= $chunk;
+            }
+            if (strlen($body) > 65536 || hrtime(true) >= $deadline) {
+                return null;
+            }
+            $object = json_decode($body, false, 32, JSON_THROW_ON_ERROR);
+            if (str_starts_with($path, '/profiles/')) {
+                $marketing = data_get($object, 'data.attributes.subscriptions.email.marketing');
+                if (! is_object($marketing) || ! is_array($marketing->suppression ?? null)
+                    || ! is_array($marketing->list_suppressions ?? null)) {
+                    return null;
+                }
+            }
+            $json = json_decode($body, true, 32, JSON_THROW_ON_ERROR);
+
+            return is_array($json) ? $json : null;
+        } finally {
+            $stream->close();
+        }
+    }
 
     public function test(IntegrationInstance $instance): void
     {

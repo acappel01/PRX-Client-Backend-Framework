@@ -2,7 +2,7 @@
 
 namespace App\Models\Attribution;
 
-/** Passive audit; even an otherwise eligible preview is blocked pending suppression evidence. */
+/** Passive audit; an otherwise policy-eligible preview still has delivery disabled. */
 class CanonicalDeliveryEvaluation extends AppendOnlyRecord
 {
     protected $hidden = ['canonical_delivery_id', 'projection', 'policy_evidence'];
