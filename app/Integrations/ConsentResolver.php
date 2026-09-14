@@ -46,7 +46,8 @@ use App\Models\LeadConsent;
  */
 class ConsentResolver
 {
-    public function resolve(?object $subject): ConsentState
+    /** Current reads require a caller-owned transaction; ordinary callers retain existing behavior. */
+    public function resolve(?object $subject, bool $currentRead = false): ConsentState
     {
         if (! $subject instanceof Lead || $subject->getKey() === null) {
             return ConsentState::none();
@@ -58,6 +59,7 @@ class ConsentResolver
         // captured in the same second from resolving arbitrarily.
         $latest = LeadConsent::query()
             ->where('lead_id', $subject->getKey())
+            ->when($currentRead, fn ($query) => $query->lockForUpdate())
             ->orderByDesc('consented_at')
             ->orderByDesc('id')
             ->get(['channel', 'granted'])
