@@ -98,7 +98,7 @@ Retrieve an order by UUID using the existing authenticated portal session. The U
 
 **Responses:** `401` without a valid portal identity/session; `403` for missing portal abilities or when the portal requires two-factor setup; `404` for missing or inaccessible orders. Every response has `Cache-Control: no-store` and crawler exclusion headers. The authorized `200` resource shape is unchanged.
 
-**Compatibility:** This intentionally closes the former anonymous UUID lookup. Existing checkout paths still create orders without Customer ownership; these stay inaccessible here until an independently authorized ownership workflow exists. Do not infer ownership from checkout UUID possession. No caller of this detail endpoint was found in the current storefront source; `/api/v1/patient/orders` remains the existing separate clinical portal endpoint.
+**Compatibility:** This intentionally closes the former anonymous UUID lookup. Anonymous orders remain unowned until the existing verified mailbox/chart claim succeeds. The trusted claim writer then binds active local orders through checkout-created Encounter.lead_id evidence. API checkout also binds orders for an already claimed Lead. Unassigned historical/provider-import orders remain inaccessible until an independently authorized reconciliation exists. Do not infer ownership from checkout UUID possession. No caller of this detail endpoint was found in the current storefront source; `/api/v1/patient/orders` remains the existing separate clinical portal endpoint.
 
 **Response `200`:**
 ```json
@@ -160,14 +160,17 @@ codes and handling: [`../webhooks/dev.md`](../webhooks/dev.md).
 ```
 POST /api/v1/checkout
   → SubmitPrescribeRxCheckoutAction
-      → PRX: submitUnifiedIntake()
+      → DB transaction: pending Order + snapshotted OrderItems + CheckoutAttempt
+      → PRX: submitUnifiedIntake() once, outside DB locks
+      → Separate DB transaction: encrypted minimal provider receipt
       → DB transaction:
-          → Encounter::create (prescribe_rx_encounter_id set)
-          → Order::create (encounter_id set, prescribe_rx_order_id = NULL)
-          → OrderItem::create × N (snapshotted from cart)
+          → trusted Encounter::create + attach existing Order
+          → verify claimed Lead/Customer ownership where applicable
           → Lead: status = handed_off
-          → Cart items: deleted
+          → attempt completed with encrypted saved result
+          → clear only unchanged snapshotted cart items
   → returns: order_uuid, checkout_path, PRX encounter data
+  → uncertain outcome: retained pending order/attempt; no automatic resubmission
 ```
 
 The `prescribe_rx_order_id` on the order is blank until the first PRX order webhook arrives. `PrescribeRxWebhookHandler` matches it via `encounter → orders` on that event and backfills the id and number.

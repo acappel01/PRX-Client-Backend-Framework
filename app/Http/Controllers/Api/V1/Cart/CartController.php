@@ -10,9 +10,11 @@ use App\Models\Catalog\Plan;
 use App\Models\Catalog\Product;
 use App\Models\Commerce\Cart;
 use App\Models\Commerce\CartItem;
+use App\Models\Commerce\CheckoutAttempt;
 use App\Settings\BillingSettings;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Cart endpoints — token-identified via X-Cart-Token header.
@@ -27,19 +29,48 @@ use Illuminate\Http\Request;
 class CartController extends ApiController
 {
     /**
-     * Resolve an existing, non-expired cart from the X-Cart-Token header,
-     * or create a fresh one if the token is absent or the cart has expired.
+     * Resolve the locked logical cart, following persisted successors.
+     * Completed carts rotate; expired tokens cannot follow successors.
+     * Uncertain attempts never rotate, and expired uncertain tokens fail closed.
+     * Callers hold a transaction through their cart read or mutation.
      */
     private function resolveCart(Request $request): Cart
     {
         $token = $request->header('X-Cart-Token');
 
         if ($token) {
-            $cart = Cart::where('ulid', $token)
-                ->where(fn ($q) => $q->whereNull('expires_at')->orWhere('expires_at', '>', now()))
-                ->first();
+            $cart = Cart::where('ulid', $token)->lockForUpdate()->first();
+            while ($cart !== null) {
+                $attempt = CheckoutAttempt::where('cart_id', $cart->id)->lockForUpdate()->first();
+                if ($cart->expires_at !== null && ! $cart->expires_at->isFuture()) {
+                    abort_if($attempt !== null && $attempt->status !== 'completed', 409,
+                        'This order is awaiting confirmation. Please contact support.');
+                    // An expired bearer token must never reveal its live successor.
+                    break;
+                }
+                if ($attempt !== null && $attempt->status !== 'completed') {
+                    return $cart;
+                }
+                if ($cart->successor_cart_id !== null) {
+                    $cart = Cart::query()->lockForUpdate()->findOrFail($cart->successor_cart_id);
 
-            if ($cart) {
+                    continue;
+                }
+                if ($attempt?->status === 'completed') {
+                    $successor = Cart::create([
+                        'email' => $cart->email,
+                        'coupon_code' => $cart->coupon_code,
+                        'ip_address' => $request->ip(),
+                        'user_agent' => $request->userAgent(),
+                    ]);
+                    // Finalization preserves edits made during the network call.
+                    // Move those exact rows so old item identifiers remain usable.
+                    $cart->items()->update(['cart_id' => $successor->id]);
+                    $cart->forceFill(['successor_cart_id' => $successor->id])->save();
+
+                    return $successor;
+                }
+
                 return $cart;
             }
         }
@@ -63,10 +94,12 @@ class CartController extends ApiController
      */
     public function show(Request $request): JsonResponse
     {
-        $cart = $this->resolveCart($request);
-        $cart->load(['items.itemable', 'items.plan']);
+        return DB::transaction(function () use ($request): JsonResponse {
+            $cart = $this->resolveCart($request);
+            $cart->load(['items.itemable', 'items.plan']);
 
-        return $this->success((new CartResource($cart))->toArray($request));
+            return $this->success((new CartResource($cart))->toArray($request));
+        });
     }
 
     /**
@@ -84,45 +117,47 @@ class CartController extends ApiController
      */
     public function suggestions(Request $request, BillingSettings $billing): JsonResponse
     {
-        if (! $billing->upsells_enabled) {
-            return $this->success([]);
-        }
+        return DB::transaction(function () use ($request, $billing): JsonResponse {
+            if (! $billing->upsells_enabled) {
+                return $this->success([]);
+            }
 
-        $cart = $this->resolveCart($request);
-        $cart->load('items.itemable');
+            $cart = $this->resolveCart($request);
+            $cart->load('items.itemable');
 
-        $itemables = $cart->items
-            ->map(fn (CartItem $item) => $item->itemable)
-            ->filter();
+            $itemables = $cart->items
+                ->map(fn (CartItem $item) => $item->itemable)
+                ->filter();
 
-        $inCart = $itemables
-            ->map(fn ($itemable) => $itemable::class.':'.$itemable->id)
-            ->all();
+            $inCart = $itemables
+                ->map(fn ($itemable) => $itemable::class.':'.$itemable->id)
+                ->all();
 
-        $suggestions = collect();
+            $suggestions = collect();
 
-        // Pairs-with suggestions first (curated companions), then related
-        // items to fill remaining slots. Dedupe across both passes and
-        // exclude anything already in the cart.
-        foreach (['pairsWithItems', 'relatedItems'] as $method) {
-            foreach ($itemables as $itemable) {
-                foreach ($itemable->{$method}() as $target) {
-                    $key = $target::class.':'.$target->id;
+            // Pairs-with suggestions first (curated companions), then related
+            // items to fill remaining slots. Dedupe across both passes and
+            // exclude anything already in the cart.
+            foreach (['pairsWithItems', 'relatedItems'] as $method) {
+                foreach ($itemables as $itemable) {
+                    foreach ($itemable->{$method}() as $target) {
+                        $key = $target::class.':'.$target->id;
 
-                    if (in_array($key, $inCart, true) || $suggestions->has($key)) {
-                        continue;
+                        if (in_array($key, $inCart, true) || $suggestions->has($key)) {
+                            continue;
+                        }
+
+                        $suggestions->put($key, $target);
                     }
-
-                    $suggestions->put($key, $target);
                 }
             }
-        }
 
-        $suggestions = $suggestions->values()->take($billing->upsells_limit);
+            $suggestions = $suggestions->values()->take($billing->upsells_limit);
 
-        return $this->success(
-            CatalogRelationItemResource::collection($suggestions)->toArray($request)
-        );
+            return $this->success(
+                CatalogRelationItemResource::collection($suggestions)->toArray($request)
+            );
+        });
     }
 
     /**
@@ -140,66 +175,68 @@ class CartController extends ApiController
      */
     public function addItem(Request $request): JsonResponse
     {
-        $validated = $request->validate([
-            'type' => ['required', 'in:product,package'],
-            'id' => ['required', 'integer'],
-            // OPTIONAL FOR PACKAGES TOO. This was
-            // `requiredIf(type === 'package')`, which made a package
-            // purchasable only as a subscription — there was no way to buy the
-            // stack itself. A package IS a product, or a group of them, with its
-            // own price; plans are the separate recurring offer alongside it.
-            //
-            // The buy-once branch below needed no change to suit this: it
-            // already read the item's own `sale_price ?? retail_price`, and was
-            // simply unreachable for packages while this rule stood.
-            'plan_id' => ['nullable', 'integer'],
-            'quantity' => ['sometimes', 'integer', 'min:1', 'max:10'],
-        ]);
-
-        $cart = $this->resolveCart($request);
-
-        $itemableClass = $validated['type'] === 'product'
-            ? Product::class
-            : Package::class;
-
-        $itemable = $itemableClass::findOrFail($validated['id']);
-
-        // Resolve the price snapshot from the plan when one is given (package
-        // plans and product term plans), else from the item's own buy-once
-        // price. A plan must belong to the item it is being added under.
-        $price = $itemable->sale_price ?? $itemable->retail_price;
-
-        if (! empty($validated['plan_id'])) {
-            $plan = Plan::findOrFail($validated['plan_id']);
-            $ownerKey = $validated['type'] === 'package' ? 'package_id' : 'product_id';
-
-            abort_if($plan->{$ownerKey} !== $itemable->id, 422, 'The selected plan does not belong to this item.');
-
-            $price = $plan->sale_price ?? $plan->retail_price;
-        }
-
-        // Increment quantity if the same item+plan combination is already in the cart.
-        $existing = $cart->items()
-            ->where('itemable_type', $itemableClass)
-            ->where('itemable_id', $validated['id'])
-            ->where('plan_id', $validated['plan_id'] ?? null)
-            ->first();
-
-        if ($existing) {
-            $existing->increment('quantity', $validated['quantity'] ?? 1);
-        } else {
-            $cart->items()->create([
-                'itemable_type' => $itemableClass,
-                'itemable_id' => $validated['id'],
-                'plan_id' => $validated['plan_id'] ?? null,
-                'quantity' => $validated['quantity'] ?? 1,
-                'unit_price_snapshot' => $price,
+        return DB::transaction(function () use ($request): JsonResponse {
+            $validated = $request->validate([
+                'type' => ['required', 'in:product,package'],
+                'id' => ['required', 'integer'],
+                // OPTIONAL FOR PACKAGES TOO. This was
+                // `requiredIf(type === 'package')`, which made a package
+                // purchasable only as a subscription — there was no way to buy the
+                // stack itself. A package IS a product, or a group of them, with its
+                // own price; plans are the separate recurring offer alongside it.
+                //
+                // The buy-once branch below needed no change to suit this: it
+                // already read the item's own `sale_price ?? retail_price`, and was
+                // simply unreachable for packages while this rule stood.
+                'plan_id' => ['nullable', 'integer'],
+                'quantity' => ['sometimes', 'integer', 'min:1', 'max:10'],
             ]);
-        }
 
-        $cart->load(['items.itemable', 'items.plan']);
+            $cart = $this->resolveCart($request);
 
-        return $this->success((new CartResource($cart))->toArray($request), status: 201);
+            $itemableClass = $validated['type'] === 'product'
+                ? Product::class
+                : Package::class;
+
+            $itemable = $itemableClass::findOrFail($validated['id']);
+
+            // Resolve the price snapshot from the plan when one is given (package
+            // plans and product term plans), else from the item's own buy-once
+            // price. A plan must belong to the item it is being added under.
+            $price = $itemable->sale_price ?? $itemable->retail_price;
+
+            if (! empty($validated['plan_id'])) {
+                $plan = Plan::findOrFail($validated['plan_id']);
+                $ownerKey = $validated['type'] === 'package' ? 'package_id' : 'product_id';
+
+                abort_if($plan->{$ownerKey} !== $itemable->id, 422, 'The selected plan does not belong to this item.');
+
+                $price = $plan->sale_price ?? $plan->retail_price;
+            }
+
+            // Increment quantity if the same item+plan combination is already in the cart.
+            $existing = $cart->items()
+                ->where('itemable_type', $itemableClass)
+                ->where('itemable_id', $validated['id'])
+                ->where('plan_id', $validated['plan_id'] ?? null)
+                ->first();
+
+            if ($existing) {
+                $existing->increment('quantity', $validated['quantity'] ?? 1);
+            } else {
+                $cart->items()->create([
+                    'itemable_type' => $itemableClass,
+                    'itemable_id' => $validated['id'],
+                    'plan_id' => $validated['plan_id'] ?? null,
+                    'quantity' => $validated['quantity'] ?? 1,
+                    'unit_price_snapshot' => $price,
+                ]);
+            }
+
+            $cart->load(['items.itemable', 'items.plan']);
+
+            return $this->success((new CartResource($cart))->toArray($request), status: 201);
+        });
     }
 
     /**
@@ -214,23 +251,26 @@ class CartController extends ApiController
      */
     public function updateItem(Request $request, CartItem $cartItem): JsonResponse
     {
-        $cart = $this->resolveCart($request);
+        return DB::transaction(function () use ($request, $cartItem): JsonResponse {
+            $cart = $this->resolveCart($request);
 
-        abort_if($cartItem->cart_id !== $cart->id, 403, 'This item does not belong to your cart.');
+            $cartItem->refresh();
+            abort_if($cartItem->cart_id !== $cart->id, 403, 'This item does not belong to your cart.');
 
-        $validated = $request->validate([
-            'quantity' => ['required', 'integer', 'min:0', 'max:10'],
-        ]);
+            $validated = $request->validate([
+                'quantity' => ['required', 'integer', 'min:0', 'max:10'],
+            ]);
 
-        if ($validated['quantity'] === 0) {
-            $cartItem->delete();
-        } else {
-            $cartItem->update(['quantity' => $validated['quantity']]);
-        }
+            if ($validated['quantity'] === 0) {
+                $cartItem->delete();
+            } else {
+                $cartItem->update(['quantity' => $validated['quantity']]);
+            }
 
-        $cart->load(['items.itemable', 'items.plan']);
+            $cart->load(['items.itemable', 'items.plan']);
 
-        return $this->success((new CartResource($cart))->toArray($request));
+            return $this->success((new CartResource($cart))->toArray($request));
+        });
     }
 
     /**
@@ -244,14 +284,17 @@ class CartController extends ApiController
      */
     public function removeItem(Request $request, CartItem $cartItem): JsonResponse
     {
-        $cart = $this->resolveCart($request);
+        return DB::transaction(function () use ($request, $cartItem): JsonResponse {
+            $cart = $this->resolveCart($request);
 
-        abort_if($cartItem->cart_id !== $cart->id, 403, 'This item does not belong to your cart.');
+            $cartItem->refresh();
+            abort_if($cartItem->cart_id !== $cart->id, 403, 'This item does not belong to your cart.');
 
-        $cartItem->delete();
-        $cart->load(['items.itemable', 'items.plan']);
+            $cartItem->delete();
+            $cart->load(['items.itemable', 'items.plan']);
 
-        return $this->success((new CartResource($cart))->toArray($request));
+            return $this->success((new CartResource($cart))->toArray($request));
+        });
     }
 
     /**
@@ -265,10 +308,12 @@ class CartController extends ApiController
      */
     public function clear(Request $request): JsonResponse
     {
-        $cart = $this->resolveCart($request);
-        $cart->items()->delete();
-        $cart->load(['items.itemable', 'items.plan']);
+        return DB::transaction(function () use ($request): JsonResponse {
+            $cart = $this->resolveCart($request);
+            $cart->items()->delete();
+            $cart->load(['items.itemable', 'items.plan']);
 
-        return $this->success((new CartResource($cart))->toArray($request));
+            return $this->success((new CartResource($cart))->toArray($request));
+        });
     }
 }

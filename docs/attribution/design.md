@@ -1,5 +1,7 @@
 # Unified tracking, attribution and conversion contract
 
+Implementation status: [canonical event foundation](dev.md) records internal lead/quiz events. Delivery, verified callback reconciliation and value reporting below remain planned.
+
 2026-09-14. Proposed implementation contract for the generic admin, storefront and portal, based on the existing code at `634e802` and the operator's latest requirements. This document distinguishes current behavior from proposed work. No tracking configuration, vendor account, database, provider or application behavior was changed to prepare it.
 
 ## 1. Product decisions and data boundary

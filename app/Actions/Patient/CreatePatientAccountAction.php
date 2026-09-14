@@ -3,7 +3,7 @@
 namespace App\Actions\Patient;
 
 use App\Actions\Concerns\Transacts;
-use App\Actions\Customers\EnsureCustomerForPortalAccountAction;
+use App\Actions\Customers\LinkCustomerToClaimedLeadAction;
 use App\Data\Patient\RequestContext;
 use App\Enums\Patient\SecurityEventType;
 use App\Events\Patient\AccountCreated;
@@ -114,7 +114,7 @@ class CreatePatientAccountAction
                 ])->save();
 
                 $linked = $this->link->execute($patient, $lead);
-                app(EnsureCustomerForPortalAccountAction::class)->execute($linked);
+                app(LinkCustomerToClaimedLeadAction::class)->execute($linked, $lead);
 
                 PatientEmailToken::query()
                     ->whereKey($token->getKey())

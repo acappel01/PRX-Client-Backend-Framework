@@ -936,7 +936,9 @@ class Client
             ]);
         }
 
-        $request = $this->request();
+        // A timeout may follow a committed intake. The local checkout ledger
+        // owns reconciliation; transport retries must not create a second intake.
+        $request = $this->request()->retry(1, 0, throw: false);
 
         if ($idempotencyKey !== null) {
             $request = $request->withHeaders(['Idempotency-Key' => $idempotencyKey]);

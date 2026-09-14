@@ -3,6 +3,7 @@
 namespace App\Actions\Patient;
 
 use App\Actions\Concerns\Transacts;
+use App\Actions\Customers\LinkCustomerToClaimedLeadAction;
 use App\Data\Patient\RequestContext;
 use App\Enums\Patient\SecurityEventType;
 use App\Events\Patient\EmailVerified;
@@ -121,6 +122,8 @@ class ClaimPatientRecordAction
                 if ($linked->email_verified_at === null) {
                     $linked->forceFill(['email_verified_at' => now()])->save();
                 }
+
+                app(LinkCustomerToClaimedLeadAction::class)->execute($linked, $token->lead);
 
                 return $linked;
             });

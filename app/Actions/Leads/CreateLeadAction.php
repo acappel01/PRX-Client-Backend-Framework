@@ -2,12 +2,14 @@
 
 namespace App\Actions\Leads;
 
+use App\Actions\Attribution\RecordCanonicalEventAction;
 use App\Actions\Concerns\Transacts;
 use App\Actions\Referral\AttributeLeadAction;
 use App\Data\Leads\LeadData;
 use App\Events\Leads\LeadCreated;
 use App\Models\Lead;
 use App\Models\LeadDisposition;
+use App\Services\Attribution\LeadEventPayload;
 use Illuminate\Support\Facades\Log;
 use Spatie\LaravelData\DataCollection;
 use Throwable;
@@ -72,6 +74,7 @@ class CreateLeadAction
             ]);
 
             $this->recordConsents($lead, $data);
+            $this->recordCaptureEvents($lead);
 
             return $lead;
         });
@@ -112,6 +115,25 @@ class CreateLeadAction
         LeadCreated::dispatch($lead);
 
         return $lead;
+    }
+
+    /** Persist source-capture facts with the Lead, before best-effort referral credit. */
+    private function recordCaptureEvents(Lead $lead): void
+    {
+        $payload = app(LeadEventPayload::class)->forLead($lead);
+        $events = app(RecordCanonicalEventAction::class);
+        $events->execute(
+            name: 'lead.captured', source: 'lead.capture', dedupeKey: 'lead:'.$lead->id.':captured',
+            occurredAt: $lead->created_at, payload: $payload, lead: $lead,
+            origin: 'admin', environment: (string) config('app.env', 'local'),
+        );
+        if ($lead->quiz_id !== null) {
+            $events->execute(
+                name: 'quiz.completed', source: 'quiz.capture', dedupeKey: 'lead:'.$lead->id.':quiz-completed',
+                occurredAt: $lead->quiz_completed_at, payload: $payload, lead: $lead,
+                origin: 'admin', environment: (string) config('app.env', 'local'),
+            );
+        }
     }
 
     /**

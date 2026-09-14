@@ -3,16 +3,20 @@
 namespace Tests\Feature\PrescribeRx;
 
 use App\Actions\Checkout\SubmitPrescribeRxCheckoutAction;
+use App\Actions\Exceptions\ActionException;
 use App\Enums\Catalog\IntakeSelectionMode;
 use App\Models\Catalog\Package;
 use App\Models\Catalog\Plan;
 use App\Models\Catalog\Product;
 use App\Models\Catalog\ProductType;
 use App\Models\Commerce\Cart;
-use App\Actions\Exceptions\ActionException;
+use App\Models\Commerce\CheckoutAttempt;
 use App\Models\Lead;
+use App\Services\PrescribeRx\Exceptions\PrescribeRxException;
 use App\Settings\IntegrationSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\Factory;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Tests\TestCase;
@@ -60,6 +64,7 @@ class UnifiedIntakeSelectionTest extends TestCase
     private function lead(): Lead
     {
         return Lead::factory()->create([
+            'cart_ulid' => Cart::latest('id')->firstOrFail()->ulid,
             'first_name' => 'Dana',
             'last_name' => 'Reyes',
             'email' => 'dana.reyes@example.test',
@@ -219,7 +224,7 @@ class UnifiedIntakeSelectionTest extends TestCase
         app(SubmitPrescribeRxCheckoutAction::class)
             ->execute($cart->fresh(), $lead);
 
-        $expected = Str::slug((string) config('app.name')).'-'.$cart->ulid.'-'.$lead->uuid;
+        $expected = CheckoutAttempt::sole()->provider_idempotency_key;
 
         Http::assertSent(fn ($request) => $request->hasHeader('Idempotency-Key', $expected));
     }
@@ -633,5 +638,44 @@ class UnifiedIntakeSelectionTest extends TestCase
 
         app(SubmitPrescribeRxCheckoutAction::class)
             ->execute($cart->fresh(), $this->lead());
+    }
+
+    public function test_unified_intake_transport_does_not_retry_an_uncertain_server_failure(): void
+    {
+        Http::swap(new Factory);
+        Http::preventStrayRequests();
+        Http::fake(['*/telehealth/intake/unified' => Http::response(['message' => 'unknown outcome'], 500)]);
+        $cart = Cart::factory()->create();
+        $product = Product::factory()->create(['provider_product_id' => (string) Str::uuid()]);
+        $cart->items()->create(['itemable_type' => 'product', 'itemable_id' => $product->id, 'quantity' => 1, 'unit_price_snapshot' => 20]);
+        try {
+            app(SubmitPrescribeRxCheckoutAction::class)->execute($cart, $this->lead());
+            $this->fail('Expected upstream exception');
+        } catch (PrescribeRxException) {
+            Http::assertSentCount(1);
+            $this->assertSame('unknown', CheckoutAttempt::sole()->status);
+        }
+    }
+
+    public function test_unified_intake_transport_does_not_retry_a_connection_failure(): void
+    {
+        Http::swap(new Factory);
+        Http::preventStrayRequests();
+        $calls = 0;
+        Http::fake(function () use (&$calls) {
+            $calls++;
+
+            return Http::failedConnection();
+        });
+        $cart = Cart::factory()->create();
+        $product = Product::factory()->create(['provider_product_id' => (string) Str::uuid()]);
+        $cart->items()->create(['itemable_type' => 'product', 'itemable_id' => $product->id, 'quantity' => 1, 'unit_price_snapshot' => 20]);
+        try {
+            app(SubmitPrescribeRxCheckoutAction::class)->execute($cart, $this->lead());
+            $this->fail('Expected connection exception');
+        } catch (ConnectionException) {
+            $this->assertSame(1, $calls);
+            $this->assertSame('unknown', CheckoutAttempt::sole()->status);
+        }
     }
 }

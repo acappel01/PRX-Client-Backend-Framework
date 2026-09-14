@@ -21,6 +21,9 @@ class Lead extends Model
 {
     use HasFactory, SoftDeletes;
 
+    // Commerce ownership is private server-side evidence, never public form input.
+    protected $hidden = ['customer_id'];
+
     protected $fillable = [
         'uuid',
         'cart_ulid',
@@ -135,6 +138,11 @@ class Lead extends Model
     public function fullName(): string
     {
         return trim("{$this->first_name} {$this->last_name}");
+    }
+
+    public function customer(): BelongsTo
+    {
+        return $this->belongsTo(Customer::class);
     }
 
     public function encounters(): HasMany

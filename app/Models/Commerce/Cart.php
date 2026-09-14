@@ -14,6 +14,8 @@ class Cart extends Model
 {
     use HasFactory, Prunable;
 
+    protected $hidden = ['successor_cart_id'];
+
     protected $fillable = [
         'ulid',
         'user_id',
@@ -99,6 +101,14 @@ class Cart extends Model
             ->whereNotExists(fn ($q) => $q
                 ->selectRaw('1')
                 ->from('leads')
-                ->whereColumn('leads.cart_ulid', 'carts.ulid'));
+                ->whereColumn('leads.cart_ulid', 'carts.ulid'))
+            ->whereNotExists(fn ($q) => $q
+                ->selectRaw('1')
+                ->from('checkout_attempts')
+                ->whereColumn('checkout_attempts.cart_id', 'carts.id'))
+            ->whereNotExists(fn ($q) => $q
+                ->selectRaw('1')
+                ->from('carts as predecessors')
+                ->whereColumn('predecessors.successor_cart_id', 'carts.id'));
     }
 }

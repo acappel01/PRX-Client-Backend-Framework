@@ -2,6 +2,7 @@
 
 namespace App\Actions\Checkout;
 
+use App\Actions\Customers\LinkCustomerToClaimedLeadAction;
 use App\Actions\Exceptions\ActionException;
 use App\Data\Checkout\CheckoutResultData;
 use App\Data\PrescribeRx\AddressData;
@@ -18,11 +19,12 @@ use App\Models\Catalog\Plan;
 use App\Models\Catalog\Product;
 use App\Models\Commerce\Cart;
 use App\Models\Commerce\CartItem;
+use App\Models\Commerce\CheckoutAttempt;
 use App\Models\Commerce\Encounter;
 use App\Models\Commerce\Order;
 use App\Models\Lead;
+use App\Models\Patient;
 use App\Services\PrescribeRx\Client;
-use App\Services\PrescribeRx\Exceptions\PrescribeRxException;
 use App\Settings\IntegrationSettings;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
@@ -37,172 +39,247 @@ class SubmitPrescribeRxCheckoutAction
     ) {}
 
     /**
-     * Submit the cart to Prescribe-Rx as a unified intake, then
-     * create the local Encounter + Order shell and mark the lead handed off.
+     * Freeze the local purchase before the provider call. Uncertain attempts are
+     * reconciled by an operator; they are never automatically sent a second time.
+     * No raw medical answers are persisted in the attempt ledger.
      *
      * @param  array<string, mixed>  $intakeAnswers
-     *
-     * @throws ActionException  with a message written to be shown to the customer
-     * @throws PrescribeRxException  never shown verbatim — the provider's text carries its stack
      */
     public function execute(Cart $cart, Lead $lead, array $intakeAnswers = []): CheckoutResultData
     {
-        // `itemable.products` is deliberately gone: we no longer flatten a
-        // package into its members, so loading them was work whose result was
-        // thrown away. A plan line reaches its parent package/product lazily —
-        // a checkout carries a handful of lines, and morphWith constraints for
-        // two relations on one of three morph types costs more than it saves.
-        // `productType` is loaded through morphWith rather than a plain
-        // `itemable.productType`: a nested load on a morphTo is applied to
-        // EVERY morph type, and Package has no such relation, so the plain
-        // form throws "Call to undefined relationship". The old
-        // `itemable.products` had the mirror-image bug for product lines.
-        $items = $cart->items()->with([
-            'itemable' => fn ($morphTo) => $morphTo->morphWith([Product::class => ['productType.productClass']]),
-            'plan',
-        ])->get();
+        [$attempt, $request] = DB::transaction(function () use ($cart, $lead, $intakeAnswers): array {
+            $lead = Lead::query()->lockForUpdate()->findOrFail($lead->id);
+            $cart = Cart::query()->lockForUpdate()->findOrFail($cart->id);
+            if (! filled($lead->cart_ulid) || ! hash_equals($lead->cart_ulid, $cart->ulid)) {
+                throw ActionException::failed('Cart and lead do not belong to the same session.', 403);
+            }
 
-        if ($items->isEmpty()) {
-            throw ActionException::failed('Your cart is empty.');
-        }
-
-        $selections = $this->resolveSelections($items);
-
-        // NOTE: this fires only when the WHOLE cart is unmapped. A cart of
-        // [mapped product, unmapped package] still submits, naming only the
-        // product — each skipped line is logged by the resolver above.
-        if ($selections['products'] === [] && $selections['packages'] === []) {
-            // This sentence was written for an operator and used to be shown to
-            // the customer, who was told to "map the catalog first" and given
-            // the names of our provider id columns. It is a deployment fault,
-            // not something a shopper did or can fix, so it goes to the log and
-            // they get told plainly that we cannot take the order.
-            Log::error('Checkout blocked: no Prescribe-Rx selections on any cart item.', [
-                'cart_id' => $cart->id,
-                'hint' => 'Map the catalog: packages need provider_package_id / provider_package_sku, products need provider_product_id / provider_product_sku.',
+            $attempt = CheckoutAttempt::where('cart_id', $cart->id)->first();
+            if ($attempt !== null && $attempt->lead_id !== $lead->id) {
+                throw ActionException::failed('This cart already has a submitted checkout. Please contact support or start a new cart.', 409);
+            }
+            $items = $this->loadItems($cart);
+            $answerFingerprint = $this->fingerprint($intakeAnswers);
+            if ($attempt) {
+                if (! hash_equals($attempt->answers_fingerprint, $answerFingerprint)) {
+                    throw ActionException::failed('This checkout has already been submitted with different details. Please contact support.', 409);
+                }
+                if ($attempt->status === 'completed' && $items->isEmpty()) {
+                    return [$attempt, null];
+                }
+                if (! hash_equals($attempt->cart_fingerprint, $this->cartFingerprint($cart, $items))) {
+                    throw ActionException::failed('Your cart changed after checkout was submitted. Please contact support.', 409);
+                }
+            }
+            if ($items->isEmpty()) {
+                throw ActionException::failed('Your cart is empty.');
+            }
+            $selections = $this->resolveSelections($items);
+            if (count($selections['products']) + count($selections['packages']) !== $items->count()) {
+                throw ActionException::failed('We cannot take this order right now. Please contact support.', 503);
+            }
+            $contextUuid = $attempt?->uuid ?? (string) Str::uuid();
+            $request = UnifiedIntakeRequestData::from([
+                'patient' => $this->buildPatient($lead),
+                'encounter_type_id' => $this->settings->prescribe_rx_encounter_type_id,
+                'sales_org_id' => $this->settings->prescribe_rx_sales_org_id,
+                'client_id' => $this->settings->prescribe_rx_client_id,
+                'products' => $selections['products'],
+                'packages' => $selections['packages'],
+                'answers' => $intakeAnswers,
+                'is_sandbox' => $this->settings->prescribe_rx_environment === 'sandbox' ? true : null,
+                'metadata' => array_filter([
+                    'checkout_context_uuid' => $contextUuid,
+                    'lead_uuid' => $lead->uuid,
+                    'cart_ulid' => $cart->ulid,
+                    'utm_source' => $lead->utm_source,
+                    'utm_medium' => $lead->utm_medium,
+                    'utm_campaign' => $lead->utm_campaign,
+                ], fn ($v) => $v !== null && $v !== ''),
             ]);
-
-            throw ActionException::failed('We cannot take this order right now. Please contact support.', 503);
-        }
-
-        $isSandbox = $this->settings->prescribe_rx_environment === 'sandbox';
-
-        $request = UnifiedIntakeRequestData::from([
-            'patient' => $this->buildPatient($lead),
-            'encounter_type_id' => $this->settings->prescribe_rx_encounter_type_id,
-            'sales_org_id' => $this->settings->prescribe_rx_sales_org_id,
-            'client_id' => $this->settings->prescribe_rx_client_id,
-            'products' => $selections['products'],
-            'packages' => $selections['packages'],
-            'answers' => $intakeAnswers,
-            // Only ever ASSERTED, never denied. Their server auto-flags
-            // test-looking names as sandbox; sending an explicit `false` in
-            // production could override that heuristic and let a test-named
-            // submission reach real fulfilment and billing. Absent is what
-            // production sent before this change, so absent is what it sends
-            // now — this is deliberately not `(bool) $isSandbox`.
-            'is_sandbox' => $isSandbox ?: null,
-            'metadata' => array_filter([
-                'lead_uuid' => $lead->uuid,
-                'cart_ulid' => $cart->ulid,
-                'utm_source' => $lead->utm_source,
-                'utm_medium' => $lead->utm_medium,
-                'utm_campaign' => $lead->utm_campaign,
-            ], fn ($v) => $v !== null && $v !== ''),
-        ]);
-
-        // PRX API call is intentionally outside the DB transaction.
-        //
-        // The idempotency key is derived from the cart and lead rather than
-        // generated, so a retry of the SAME submission replays their stored
-        // response (24h window) instead of minting a second encounter for one
-        // patient. It must stay stable across retries — do not add a timestamp.
-        //
-        // KNOWN EDGE, accepted: if their call succeeds but the local
-        // transaction below fails, and the visitor then EDITS the cart and
-        // resubmits under the same lead inside 24h, their stored response for
-        // the old selection replays while we snapshot the new items. Hashing
-        // the selection into the key would close it at the cost of making a
-        // genuine retry of an unchanged cart look new.
-        $prxResponse = $this->prx->submitUnifiedIntake(
-            $request,
-            $this->idempotencyKey($cart, $lead),
-        );
-
-        $order = DB::transaction(function () use ($cart, $lead, $items, $prxResponse, $isSandbox): Order {
-            $encounter = Encounter::create([
-                'lead_id' => $lead->id,
-                'prescribe_rx_encounter_id' => $prxResponse->encounter_id,
-                'prescribe_rx_patient_id' => $prxResponse->patient_chart_id,
-                'prescribe_rx_encounter_type_id' => $this->settings->prescribe_rx_encounter_type_id,
-                'status' => EncounterStatus::Submitted,
-                'submitted_at' => now(),
-                'is_sandbox' => $isSandbox,
-                'total_amount' => $cart->subtotal(),
+            $fingerprint = $this->fingerprint([
+                'environment' => $this->settings->prescribe_rx_environment,
+                'request' => $request->toArray(),
             ]);
+            if ($attempt) {
+                if (! hash_equals($attempt->request_fingerprint, $fingerprint)) {
+                    throw ActionException::failed('This checkout has already been submitted with different details. Please contact support.', 409);
+                }
+                if ($attempt->status === 'completed') {
+                    return [$attempt, null];
+                }
+                throw ActionException::failed('This order is awaiting confirmation. Please contact support before trying again.', 409);
+            }
 
+            $customerId = null;
+            if ($lead->patient_id !== null) {
+                $account = Patient::findOrFail($lead->patient_id);
+                $customerId = app(LinkCustomerToClaimedLeadAction::class)->execute($account, $lead)->getKey();
+            } elseif ($lead->customer_id !== null) {
+                throw ActionException::failed('We could not verify the owner of this checkout. Please contact support.', 409);
+            }
+            // Calculate from precisely the rows frozen below, never a second cart query.
+            $subtotal = $items->sum(fn (CartItem $item) => $item->lineTotal());
             $order = Order::create([
-                'encounter_id' => $encounter->id,
+                'customer_id' => $customerId,
                 'status' => OrderStatus::Pending,
-                'subtotal' => $cart->subtotal(),
+                'subtotal' => $subtotal,
                 'tax_amount' => 0,
                 'shipping_amount' => 0,
                 'discount_amount' => 0,
-                'total_amount' => $cart->subtotal(),
+                'total_amount' => $subtotal,
                 'currency' => 'USD',
                 'placed_at' => now(),
             ]);
-
-            // Snapshot order items from cart
             foreach ($items as $item) {
-                $name = $item->itemable?->name ?? 'Unknown item';
-                $price = (float) ($item->unit_price_snapshot ?? 0);
-
                 $order->items()->create([
-                    'name' => $name,
-                    'sku' => $item->itemable?->provider_product_sku ?? null,
+                    'name' => $item->itemable->name,
+                    'sku' => $item->itemable->provider_product_sku ?? $item->itemable->provider_package_sku,
                     'quantity' => $item->quantity,
-                    'unit_price' => $price,
-                    'line_total' => $price * $item->quantity,
+                    'unit_price' => $item->unit_price_snapshot,
+                    'line_total' => $item->lineTotal(),
                 ]);
             }
-
-            $lead->update([
-                'status' => LeadStatus::HandedOff->value,
-                'prescribe_rx_encounter_id' => $prxResponse->encounter_id,
-                'prescribe_rx_patient_id' => $prxResponse->patient_chart_id,
-                'prescribe_rx_response' => $prxResponse->toArray(),
-                'handed_off_at' => now(),
+            $attempt = CheckoutAttempt::create([
+                'uuid' => $contextUuid,
+                'cart_id' => $cart->id,
+                'lead_id' => $lead->id,
+                'order_id' => $order->id,
+                'status' => 'submitting',
+                'provider_idempotency_key' => 'checkout-'.$contextUuid,
+                'request_fingerprint' => $fingerprint,
+                'answers_fingerprint' => $answerFingerprint,
+                'cart_fingerprint' => $this->cartFingerprint($cart, $items),
+                'provider_environment' => $this->settings->prescribe_rx_environment,
+                'provider_encounter_type_id' => $this->settings->prescribe_rx_encounter_type_id,
+                'submitted_at' => now(),
             ]);
 
-            // Clear cart items but keep the cart record for analytics
-            $cart->items()->delete();
-
-            return $order;
+            return [$attempt, $request];
         });
 
-        return CheckoutResultData::from([
-            'order_uuid' => $order->uuid,
-            'checkout_path' => 'prx',
-            'prescribe_rx' => [
-                'encounter_id' => $prxResponse->encounter_id,
-                'encounter_number' => $prxResponse->encounter_number,
-                'patient_id' => $prxResponse->patient_chart_id,
-                'status' => $prxResponse->status,
-            ],
+        if ($request === null) {
+            return CheckoutResultData::from($attempt->result);
+        }
+        try {
+            // A committed attempt already owns this cart/lead pair. No database
+            // locks cross this network boundary, and no retry calls the provider.
+            $response = $this->prx->submitUnifiedIntake($request, $attempt->provider_idempotency_key);
+
+            if (trim($response->encounter_id) === '' || trim($response->patient_chart_id) === '') {
+                throw ActionException::failed('The order is awaiting provider confirmation. Please contact support.', 502);
+            }
+            // Commit the minimal receipt independently of finalization. A later
+            // ownership/write failure must not discard known provider references.
+            DB::transaction(function () use ($attempt, $response): void {
+                $stored = CheckoutAttempt::query()->lockForUpdate()->findOrFail($attempt->id);
+                if ($stored->status !== 'submitting' || $stored->provider_receipt !== null) {
+                    throw ActionException::failed('This order requires confirmation before it can be updated. Please contact support.', 409);
+                }
+                $stored->update(['provider_receipt' => [
+                    'encounter_id' => $response->encounter_id,
+                    'encounter_number' => $response->encounter_number,
+                    'patient_id' => $response->patient_chart_id,
+                    'status' => $response->status,
+                ]]);
+            });
+
+            return DB::transaction(function () use ($attempt, $response): CheckoutResultData {
+                $lead = Lead::query()->lockForUpdate()->findOrFail($attempt->lead_id);
+                $cart = Cart::query()->lockForUpdate()->findOrFail($attempt->cart_id);
+                $attempt = CheckoutAttempt::query()->lockForUpdate()->findOrFail($attempt->id);
+                $order = Order::query()->lockForUpdate()->findOrFail($attempt->order_id);
+                if ($attempt->status !== 'submitting' || $order->encounter_id !== null) {
+                    throw ActionException::failed('This order requires confirmation before it can be updated. Please contact support.', 409);
+                }
+                if ($lead->patient_id === null && $order->customer_id !== null) {
+                    throw ActionException::failed('We could not verify the owner of this checkout. Please contact support.', 409);
+                }
+                $encounter = Encounter::create([
+                    'lead_id' => $lead->id,
+                    'prescribe_rx_encounter_id' => $response->encounter_id,
+                    'prescribe_rx_patient_id' => $response->patient_chart_id,
+                    'prescribe_rx_encounter_type_id' => $attempt->provider_encounter_type_id,
+                    'status' => EncounterStatus::Submitted,
+                    'submitted_at' => now(),
+                    'is_sandbox' => $attempt->provider_environment === 'sandbox',
+                    'total_amount' => $order->total_amount,
+                    'metadata' => ['checkout_context_uuid' => $attempt->uuid],
+                ]);
+                $order->update(['encounter_id' => $encounter->id]);
+                $lead->update([
+                    'status' => LeadStatus::HandedOff->value,
+                    'prescribe_rx_encounter_id' => $response->encounter_id,
+                    'prescribe_rx_patient_id' => $response->patient_chart_id,
+                    'handed_off_at' => now(),
+                ]);
+                if ($lead->patient_id !== null) {
+                    app(LinkCustomerToClaimedLeadAction::class)->execute(Patient::findOrFail($lead->patient_id), $lead);
+                }
+                $result = CheckoutResultData::from([
+                    'order_uuid' => $order->uuid,
+                    'checkout_path' => 'prx',
+                    'prescribe_rx' => [
+                        'encounter_id' => $response->encounter_id,
+                        'encounter_number' => $response->encounter_number,
+                        'patient_id' => $response->patient_chart_id,
+                        'status' => $response->status,
+                    ],
+                ]);
+                $attempt->update(['status' => 'completed', 'result' => $result->toArray(), 'completed_at' => now()]);
+                // Lock all existing rows while comparing so later quantity/price
+                // edits cannot be deleted by a stale snapshot. Delete only IDs
+                // observed here; newly inserted cart rows survive independently.
+                $items = $cart->items()->orderBy('id')->lockForUpdate()->get();
+                if (hash_equals($attempt->cart_fingerprint, $this->cartFingerprint($cart, $items))) {
+                    $cart->items()->whereIn('id', $items->modelKeys())->delete();
+                }
+
+                return $result;
+            });
+        } catch (\Throwable $exception) {
+            CheckoutAttempt::whereKey($attempt->id)->where('status', 'submitting')->update([
+                'status' => 'unknown', 'updated_at' => now(),
+            ]);
+            throw $exception;
+        }
+    }
+
+    private function loadItems(Cart $cart): Collection
+    {
+        return $cart->items()->with([
+            'itemable' => fn ($morphTo) => $morphTo->morphWith([Product::class => ['productType.productClass']]),
+            'plan',
+        ])->orderBy('id')->lockForUpdate()->get();
+    }
+
+    private function cartFingerprint(Cart $cart, Collection $items): string
+    {
+        return $this->fingerprint([
+            'coupon_code' => $cart->coupon_code,
+            'items' => $items->map(fn (CartItem $item) => $item->only([
+                'id', 'itemable_type', 'itemable_id', 'plan_id', 'quantity', 'unit_price_snapshot',
+            ]))->all(),
         ]);
     }
 
-    /**
-     * Namespaced per INSTALL, never per brand — this backend ships as a
-     * generic product and several deployments submit to the same
-     * prescribe-rx tenant, so an unprefixed key could collide across them.
-     * Uses the app name the same way the Redis/Horizon prefixes do; nothing
-     * client-specific may be hardcoded here.
-     */
-    private function idempotencyKey(Cart $cart, Lead $lead): string
+    /** Keyed hashes prevent guessing low-entropy clinical answers from the ledger. */
+    private function fingerprint(array $value): string
     {
-        return Str::slug((string) config('app.name', 'app')).'-'.$cart->ulid.'-'.$lead->uuid;
+        $normalize = function (array $data) use (&$normalize): array {
+            if (! array_is_list($data)) {
+                ksort($data);
+            }
+            foreach ($data as &$entry) {
+                if (is_array($entry)) {
+                    $entry = $normalize($entry);
+                }
+            }
+
+            return $data;
+        };
+
+        return hash_hmac('sha256', json_encode($normalize($value), JSON_THROW_ON_ERROR), (string) config('app.key'));
     }
 
     /**
@@ -218,8 +295,8 @@ class SubmitPrescribeRxCheckoutAction
      * Each line carries EXACTLY ONE identifier, per their contract. The UUID
      * is preferred over the human-readable number because it is stable across
      * a rename on their side; the number is the fallback for items mapped by
-     * SKU alone. An unmapped item contributes nothing and is skipped — the
-     * caller raises if that leaves the whole selection empty.
+     * SKU alone. An unmapped item contributes nothing; the caller rejects the entire
+     * checkout whenever any line cannot be represented.
      *
      * @param  Collection<int, CartItem>  $items
      * @return array{products: list<IntakeProductSelectionData>, packages: list<IntakePackageSelectionData>}
@@ -230,6 +307,9 @@ class SubmitPrescribeRxCheckoutAction
         $packages = [];
 
         foreach ($items as $item) {
+            if ($item->quantity < 1 || $item->unit_price_snapshot === null || (float) $item->unit_price_snapshot < 0) {
+                throw ActionException::failed('We cannot take this order right now. Please contact support.', 503);
+            }
             $itemable = $item->itemable;
 
             if (! $itemable) {
@@ -244,6 +324,9 @@ class SubmitPrescribeRxCheckoutAction
             // it was unreachable; it is absent rather than left as decoration
             // a later reader would trust.
             if ($itemable instanceof Package) {
+                if ($item->quantity !== 1) {
+                    throw ActionException::failed('Please order one of each package at a time.', 422);
+                }
                 $packages[] = $this->packageSelection($itemable, $item->plan);
 
                 continue;
@@ -261,9 +344,8 @@ class SubmitPrescribeRxCheckoutAction
     }
 
     /**
-     * Their `packages[]` carries no quantity, so a package bought more than
-     * once is nominated once on the encounter; the local order rows keep the
-     * real quantity and the money.
+     * Their `packages[]` carries no quantity. The resolver rejects package
+     * quantity greater than one before this method to avoid a partial order.
      */
     private function packageSelection(Package $package, ?Plan $plan): ?IntakePackageSelectionData
     {

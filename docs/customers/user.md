@@ -18,4 +18,4 @@ Provider mappings are maintained through local administrative commands, with an 
 Future attribution reporting is intended to connect lead sources, Customer conversion, purchases and lifetime value across API and embedded checkout. Tracking and marketing delivery are not active in this release.
 
 
-Order details addressed by an order ID now require a valid portal session and an explicitly owned Customer order. An order ID or matching contact email alone does not grant access. Existing unassigned orders require a future trusted linking process before they can appear through this endpoint; there is no automatic ownership backfill.
+Order details addressed by an order ID now require a valid portal session and an explicitly owned Customer order. An order ID or matching contact email alone does not grant access. Orders tied to a trusted local checkout are connected when the existing mailbox and clinical-record claim succeeds; API checkout also connects orders for an already claimed lead. Other unassigned historical orders require separate reconciliation; there is no automatic ownership backfill.

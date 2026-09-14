@@ -5,6 +5,8 @@ namespace App\Actions\Customers;
 use App\Actions\Concerns\Transacts;
 use App\Models\Customer;
 use App\Models\Patient;
+use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 /** Explicit, local-only provisioning. Never resolves a customer by email or grants chart access. */
@@ -22,13 +24,15 @@ class EnsureCustomerForPortalAccountAction
             // All invocations for the same account serialize on its existing primary key.
             $account = Patient::query()->whereKey($account->getKey())->lockForUpdate()->firstOrFail();
             $existing = Customer::withTrashed()->where('portal_account_id', $account->getKey())->first();
+            if ($existing !== null) {
+                // An outer claim transaction may already have a repeatable-read
+                // snapshot. Recheck the known primary key against current state.
+                $existing = Customer::withTrashed()->whereKey($existing->getKey())
+                    ->where('portal_account_id', $account->getKey())->lockForUpdate()->first();
+            }
 
             if ($existing !== null) {
-                if ($existing->trashed()) {
-                    throw ValidationException::withMessages(['customer' => 'Restore the existing customer before linking this account.']);
-                }
-
-                return $existing;
+                return $this->active($existing);
             }
 
             $customer = new Customer([
@@ -44,9 +48,32 @@ class EnsureCustomerForPortalAccountAction
                 'prx_patient_number' => $account->prx_patient_number,
             ]);
             $customer->portalAccount()->associate($account);
-            $customer->save();
+            try {
+                // Do not lock a missing unique-index range. A savepoint lets a
+                // losing insert recover without aborting the outer claim.
+                DB::transaction(fn () => $customer->save());
+            } catch (UniqueConstraintViolationException $exception) {
+                // A concurrent backfill may have committed while we waited for
+                // the account lock, after the outer transaction's snapshot.
+                $existing = Customer::withTrashed()->where('portal_account_id', $account->getKey())
+                    ->lockForUpdate()->first();
+                if ($existing === null) {
+                    throw $exception;
+                }
+
+                return $this->active($existing);
+            }
 
             return $customer;
         });
+    }
+
+    private function active(Customer $customer): Customer
+    {
+        if ($customer->trashed()) {
+            throw ValidationException::withMessages(['customer' => 'Restore the existing customer before linking this account.']);
+        }
+
+        return $customer;
     }
 }

@@ -1,6 +1,6 @@
 # Checkout Module — Developer Guide
 
-**Status:** Complete (PRX embed-handoff path live end-to-end; local gateway path complete server-side, frontend payment UI pending the merchant-accounts milestone)
+**Status:** Existing embed handoff remains in service. The isolated Customer commerce branch adds durable API checkout attempts and verified local ownership; deployment is separate. Local gateway payment wiring, the durable financial ledger and provider reconciliation remain incomplete.
 
 ---
 
@@ -106,7 +106,7 @@ Upsell placements (cart drawer + checkout page) are fed by
 | Stripe | `{ "payment_method_id": "pm_..." }` |
 | Square | `{ "nonce": "..." }` |
 
-**Session pairing check:** If `leads.cart_ulid` is set, it must match `cart_ulid` via `hash_equals()`. Returns `403` on mismatch.
+**Session pairing check:** The PRX action requires a persisted, nonempty `leads.cart_ulid` matching the submitted cart via `hash_equals()`. Missing or mismatching binding returns `403`. The controller also rejects a mismatching binding before either checkout path.
 
 **Response `201` — PRX path:**
 ```json
@@ -139,7 +139,8 @@ Upsell placements (cart drawer + checkout page) are fed by
 
 | Status | Cause |
 |---|---|
-| 403 | Cart/lead session mismatch |
+| 403 | Cart/lead session mismatch or missing PRX session binding |
+| 409 | An existing PRX attempt is awaiting confirmation, or its frozen request/cart differs |
 | 422 | Missing `payment_method`; payment declined; empty cart — i.e. an `ActionException`. Also a provider 422, whose `errors` are forwarded but whose message is not |
 | 502 | The clinical provider failed. Its message is never relayed |
 | 503 | An unhandled exception, or a deployment fault the shopper cannot fix (unmapped catalog, no gateway) |
@@ -381,3 +382,31 @@ app/Http/Middleware/VerifyPrescribeRxSignature.php
 - **`payment_method` is gateway-specific** — the frontend must use the gateway SDK matching `GET /checkout/gateway-config` response to tokenize before submitting. Never send raw card numbers.
 - **`prescribe_rx_encounter_type_id` must be set** in Integration Settings before PRX checkout works.
 - **Local path: gateway is charged before DB writes** — if the transaction fails after a successful charge, the order is missing but the payment exists. Recover by checking the gateway dashboard and manually creating the order.
+
+
+## API-driven PRX checkout: durable local attempt (September 14)
+
+`SubmitPrescribeRxCheckoutAction` commits a pending Order, immutable item/amount snapshots, and a `checkout_attempts` row before making the unified-intake call. Lead and Cart primary-key locks serialize preparation; unique cart and `(cart_id, lead_id)` constraints protect the attempt identity. A different lead cannot bypass an existing cart attempt; any new purchase requires a fresh cart. No database transaction spans the provider request. The provider receives `metadata.checkout_context_uuid` and the stable `checkout-{uuid}` idempotency key. This context supports future verified metadata/webhook correlation; no webhook ingestion or outbound pixel delivery is added here.
+
+Only fully representable carts can be submitted. An unmapped line rejects the whole purchase; invalid quantity/price and package quantity greater than one are also rejected (the provider package selection has no quantity field). Catalog/provider request and cart identity are frozen with keyed SHA-256 fingerprints. Raw intake answers are never stored in the attempt ledger. The small saved result containing provider references is encrypted. A hidden, encrypted `provider_receipt` containing only encounter ID/number, chart ID and status commits in its own transaction immediately after a valid provider response, before finalization. It survives finalization rollback for later local reconciliation; it contains no provider body, workflow, preclusions, or answers. Blank encounter/chart references are rejected as unknown.
+
+`checkout_attempts.status` has three states:
+
+- `submitting`: the local purchase exists and the provider call may be running. A worker crash can leave this state; it is never treated as permission to retry.
+- `unknown`: the call failed, timed out, or local finalization failed. The pending Order and item snapshots survive. Even validation errors are conservatively unknown until reconciled.
+- `completed`: the provider response was bound to the existing Order and a trusted `Encounter.lead_id`. Same-request retries return the saved response, including after the cart was cleared.
+
+Every existing noncompleted attempt refuses a second provider call with 409, including after the provider idempotency TTL. The unified-intake HTTP transport also makes only one attempt; provider read retry behavior is unchanged. Trusted internal tooling can inspect attempt UUID, order ID, state, environment, and timestamps read-only; no attempt-management UI is added in this increment. Reconciliation tooling is a follow-up: never delete/reset an attempt or rerun checkout to resolve an uncertain outcome. There is no automated resubmission path.
+
+For an already claimed Lead, the verified claim linker checks account/chart evidence before assigning the pending Order's Customer. After a canonical provider response, the same linker verifies and links the finalized Order. Anonymous Orders stay unowned until a verified claim. Neither Customer input nor an email match establishes ownership. Portal authentication is unchanged.
+
+Finalization deletes only observed cart item IDs when their fingerprint still matches the frozen purchase. Edits made during the provider call survive and cannot replay as a different purchase. Changed intake answers also receive 409; successful replay never submits them again. A new purchase requires a new cart/session. This only changes API-driven PRX checkout; the embed flow and local payment charging need their own later durable attempt integration.
+
+Validation: `LocalFirstPrescribeRxCheckoutTest` covers pre-network persistence, unchanged replay, uncertain outcomes beyond TTL, nested in-progress submission, changed cart/answers, unmapped lines, and missing session binding. `UnifiedIntakeSelectionTest` keeps provider payload coverage and verifies that an HTTP 500 triggers exactly one transport attempt. All provider traffic is faked.
+
+
+### Repeat purchases and cart token rotation
+
+Normal cart endpoints rotate a completed checkout cart once, persist its `successor_cart_id`, and return the successor token through the existing `data.token` contract. Reusing an older token follows the same successor chain. Retained rows edited during the provider call move with their IDs and quantities intact; route-bound item updates re-read their ownership after rotation. Cart resolution and mutation share a transaction and primary-key locks so a late edit cannot land on a predecessor after its rows moved. Original checkout requests still address the original attempt and can replay its saved result.
+
+Submitting/unknown attempts never rotate automatically; expired uncertain tokens receive 409. Every token in a successor chain must be unexpired before it can expose successor data. Expired completed or unsubmitted tokens receive a fresh independent empty cart, preserving the existing bearer-token lifetime. The successor is a fresh cart and requires its own lead binding for a new purchase. Cart pruning retains carts referenced by durable attempts or predecessor links. Existing bearer-token semantics continue: an old token follows the same logical cart, so a later authorized clear using that token clears the current successor.
