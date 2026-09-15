@@ -6,7 +6,7 @@ Status: preparation only. No merge, deployment, served migration, backfill, perm
 
 | Application | Served baseline verified September 14 | Candidate branch | Required ordering |
 |---|---|---|---|
-| Admin | `9909105` on `main` | `codex/customer-commerce-foundation`, code `90a1283dca90e444b9572876a5053c890d1cf2f0` | Schema/settings, admin code and permissions before dependent portal |
+| Admin | `9909105` on `main` | `codex/customer-commerce-foundation`, code `bfcbbe53c4cf77a7c4a1677ece167d9f34412ae4` | Schema/settings, admin code and permissions before dependent portal |
 | Portal | `116799f` on `main` | `codex/portal-local-commerce-history`, `c583128c7b4e620723b899a98057dbb433962c29` | After owned local history API qualification |
 | Storefront | `dde5f4b` on `main` | `codex/storefront-lead-idempotency`, `323cd0b7780595c6bd2d4ffc9ed4420ace876209` | After backend Lead retry schema and two-header contract qualification |
 
@@ -56,6 +56,8 @@ Apply the complete candidate migration set in chronological order under the appr
 | `2026_09_15_021000_create_payment_operation_references_table` | Immutable operation-reference reservations; no dispatch or payment effect |
 | `2026_09_15_040000_create_payment_dispatch_preparations_table` | Empty durable preparation evidence; not network dispatch or execution permission |
 | `2026_09_15_041000_create_payment_transaction_associations` | Account mutex and immutable reporting associations; conflicts quarantine, no monetary winner |
+| `2026_09_15_060000_create_payment_dispatch_attempts_table` | Empty exclusive invocation attempts and encrypted minimal receipts; no active transport |
+| `2026_09_15_061000_create_payment_operation_effect_associations` | Empty immutable capture/refund/void correlation evidence; no financial effects |
 
 The passive payment tables have no automatic producers or public API. Their presence does not enable collection, vaulting, financial reconciliation or revenue reporting. Add later reviewed candidate migrations to this table before approval. These schema migrations do not import historical accounts or infer historical attempt ownership. Old attempts remain unbound. The idempotency migration can sort before an already-applied later migration on an incremental upgrade; use the migration ledger and apply pending files, never rerun completed migrations. Storefront `323cd0b` adopts the two-header retry contract for quiz/checkout. Verify both headers survive only exact POST `/leads` and that a lost-response retry returns the original Lead before releasing that artifact; old backend code ignores those headers. Other no-header callers remain compatible and still create a new Lead per POST. Spatie settings migrations live under `database/settings` and must be included; checking only `database/migrations` is insufficient.
 
@@ -273,3 +275,49 @@ Final application candidate for this continuation:
 **`a6488cc`**, durable preparation **`d7f209f`**, and association evidence **`90a1283`**.
 The following release-record commit adds module guides and upgrade-test qualification.
 Portal and storefront candidates are unchanged. Nothing deployed or activated.
+
+## Dispatch provenance, linked effects and production currency continuation
+
+This continuation supersedes the earlier preparation-only execution boundary and
+sandbox-only currency scope. See [dispatch and lineage](../payments/dispatch-association.md).
+The new invocation action commits an exclusive attempt before calling an injected trusted
+transport, stores encrypted minimal request/response facts, and never invokes transport
+again on replay. No concrete transport, default binding, public route, worker or checkout
+integration is shipped. Runtime dispatch remains disabled. Local invocation evidence is
+not proof of delivery, provider acceptance or financial effects.
+
+Capture/refund/void correlation requires owned parent and child receipts and internally
+obtained reporting. Shared capture/void entities remain distinct from new refund entities.
+Current conflicts, purpose-specific retained parent eligibility, bounded graphs and refund
+claim limits refuse ambiguous lineage. Root/refund collisions quarantine symmetrically.
+Production currency policy now permits only authenticated singleton documented North
+American processor names with supported USD/CAD credit-card scope; it is explicitly an
+account-policy inference, never a transaction-currency field. Other account/rail/currency
+combinations remain unqualified. No live account has been qualified.
+
+Independent Astra review passed with no remaining findings: **58 tests / 704 assertions**.
+The populated-schema upgrade test passed **1 / 62** and leaves both new tables empty.
+Dispatch MySQL qualification passed **3 / 40** plus **10/10 real-process scenarios** for
+same-preparation and same-intent contention, timeout and crashes before invocation or
+before receipt persistence. All transport and reporting responses were synthetic.
+
+Activation still needs a concrete adapter with current provider fixtures, frozen credential
+validation and approved instrument/quote authorization. Historical SOAP reporting examples
+are labeled deprecated evidence. Financial reconciliation, uncertainty resolution,
+settlement/reversal balances and an order-wide execution policy are separate work.
+Nothing in this candidate authorizes deployment, served migrations, live payments,
+receiver activation or destination sending.
+
+Final integrated SQLite regression passed **1,683 tests / 8,106 assertions**.
+Lineage focused MySQL tests passed **2 / 46**. All tests used isolated synthetic data.
+
+Lineage MySQL qualification passed **2 / 46** plus **15/15 real-process scenarios**:
+owned-receipt replay, parent conflict during reporting, symmetric root/refund collision,
+credential drift during reporting, and a stale repeatable-read snapshot followed by a
+new parent conflict (three each). Harnesses are `lineage-race.php` and
+`run-lineage-races.py` under `/tmp/customer-mysql-20260914-uUkDgL/`, scoped exclusively
+to `lineage_test`. The socket-only server was stopped after both tracks completed.
+Final integrated SQLite regression passed **1,683 tests / 8,106 assertions**. All data,
+reporting and transport responses were synthetic; no live accounts were contacted.
+
+Final application candidate: **`bfcbbe53c4cf77a7c4a1677ece167d9f34412ae4`**. Portal remains `c583128c7b4e620723b899a98057dbb433962c29`; Atlas storefront remains `323cd0b7780595c6bd2d4ffc9ed4420ace876209`. Served baselines rechecked unchanged: admin `9909105` with original untracked portal runbook preserved, portal `116799f`, storefront `dde5f4b`.
