@@ -15,5 +15,6 @@ class GatewayTransactionReadData extends Data
         public string $expected_currency,
         public ?string $expected_merchant_reference = null,
         public ?string $expected_amount_basis = null,
+        public bool $capture_financial_observation = false,
     ) {}
 }

@@ -113,8 +113,9 @@ class AuthorizeNetReportingClient
             default => [],
         };
         if ($id !== $data->transaction_id || $type !== $data->expected_transaction_type
-            || $original !== $data->expected_original_transaction_id || ! in_array($status, $allowed, true)
-            || (($data->expected_amount_basis ?? ($type === 'authOnlyTransaction' ? 'authorization' : 'settlement')) === 'authorization' ? $auth : $settle) !== $data->expected_amount_minor) {
+            || $original !== $data->expected_original_transaction_id
+            || ($data->capture_financial_observation ? ! preg_match('/\A[A-Za-z][A-Za-z0-9]{0,63}\z/', $status) : ! in_array($status, $allowed, true))
+            || (! $data->capture_financial_observation && (($data->expected_amount_basis ?? ($type === 'authOnlyTransaction' ? 'authorization' : 'settlement')) === 'authorization' ? $auth : $settle) !== $data->expected_amount_minor)) {
             $this->reject();
         }
 

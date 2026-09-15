@@ -6,6 +6,7 @@ use App\Contracts\Payments\PaymentDispatchLineageResolver;
 use App\Contracts\Payments\PaymentDispatchTransport;
 use App\Data\Payments\PaymentDispatchRequest;
 use App\Enums\Payments\PaymentOperationState;
+use App\Models\Commerce\Order;
 use App\Models\Payments\GatewayAccountBinding;
 use App\Models\Payments\PaymentDispatchAttempt;
 use App\Models\Payments\PaymentDispatchPreparation;
@@ -42,6 +43,9 @@ class DispatchPreparedPaymentAction
             $identity = PaymentDispatchPreparation::where('uuid', strtolower($preparationUuid))->firstOrFail();
             app(PaymentAssociationLock::class)->acquire($identity->canonical_account_key, $identity->environment);
             $opIdentity = PaymentOperation::findOrFail($identity->payment_operation_id);
+            $intentIdentity = PaymentIntent::findOrFail($opIdentity->payment_intent_id);
+            // Serialize all intents for this commercial order, even across merchant accounts.
+            Order::withTrashed()->whereKey($intentIdentity->order_id)->lockForUpdate()->firstOrFail();
             $intent = PaymentIntent::whereKey($opIdentity->payment_intent_id)->lockForUpdate()->firstOrFail();
             $operation = PaymentOperation::whereKey($opIdentity->id)->lockForUpdate()->firstOrFail();
             $preparation = PaymentDispatchPreparation::whereKey($identity->id)->lockForUpdate()->firstOrFail();
@@ -52,6 +56,13 @@ class DispatchPreparedPaymentAction
                 }
 
                 return [$prior, false];
+            }
+            // No split collection or replacement-intent policy is qualified yet. Any earlier
+            // attempt (including a decline or unknown outcome) blocks a different intent.
+            if (PaymentDispatchAttempt::join('payment_intents as collection_intents', 'collection_intents.id', '=', 'payment_dispatch_attempts.payment_intent_id')
+                ->where('collection_intents.order_id', $intent->order_id)
+                ->where('payment_dispatch_attempts.payment_intent_id', '!=', $intent->id)->lockForUpdate()->exists()) {
+                $this->reject();
             }
             $binding = GatewayAccountBinding::findOrFail($preparation->gateway_account_binding_id);
             $this->scope->assertCurrent($operation, $binding);

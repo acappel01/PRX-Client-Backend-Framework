@@ -77,6 +77,28 @@ class PaymentDispatchBoundaryTest extends TestCase
         Http::preventStrayRequests();
     }
 
+    public function test_second_intent_for_same_order_cannot_bypass_attempt_claim_even_on_another_merchant(): void
+    {
+        $firstIntent = $this->intent;
+        $first = $this->prepare($this->data($this->reference()));
+        config()->set('payments.dispatch_enabled', true);
+        $transport = $this->transport();
+        $action = new DispatchPreparedPaymentAction($transport, app(PaymentOperationReferenceScope::class), app(PaymentLedgerScope::class));
+        $attempt = $action->execute($first->uuid, 'local.checkout');
+        foreach ([false, true] as $differentMerchant) {
+            if ($differentMerchant) {
+                $this->merchant = MerchantAccount::factory()->create();
+                Http::fake(fn () => Http::response('<getMerchantDetailsResponse xmlns="'.AuthorizeNetReportingClient::NS.'"><messages><resultCode>Ok</resultCode></messages><isTestMode>false</isTestMode><gatewayId>456</gatewayId><currencies><currency>USD</currency></currencies></getMerchantDetailsResponse>'));
+                $this->binding = app(VerifyGatewayAccountBindingAction::class)->execute(new GatewayAccountBindingData($this->merchant->id, GatewayEnvironment::Sandbox, '456', 'USD'));
+            }
+            $this->intent = app(PreparePaymentIntentAction::class)->execute(new PaymentIntentData((string) Str::uuid(), $this->order->id, $firstIntent->customer_id, $this->merchant->id, GatewayProvider::AuthorizeNet, GatewayEnvironment::Sandbox, 2500, 'USD', 'local.checkout'));
+            $second = $this->prepare($this->data($this->reference()));
+            $this->invalid(fn () => $action->execute($second->uuid, 'local.checkout'));
+        }
+        $this->assertSame($attempt->id, $action->execute($first->uuid, 'local.checkout')->id);
+        $this->assertDatabaseCount('payment_dispatch_attempts', 1);
+    }
+
     private function reference(PaymentOperationPurpose $purpose = PaymentOperationPurpose::Sale, ?PaymentOperation $original = null): PaymentOperationReference
     {
         $operation = app(PreparePaymentOperationAction::class)->execute(new PaymentOperationData((string) Str::uuid(), $this->intent->uuid, $purpose, 2500, 'local.checkout', $original?->uuid));

@@ -346,6 +346,8 @@ class PaymentOperationLineageTest extends TestCase
         $this->entities[$attempt->receipt['transaction_id']]['rail'] = 'bankAccount';
         $this->assertSame('currency_unqualified', $this->lineage($refund, $attempt)->status);
         $this->assertDatabaseCount('payment_operation_effect_associations', 1);
+        // Independent partial-void scenario needs its own commercial obligation.
+        $this->order = Order::factory()->create(['customer_id' => $this->order->customer_id, 'currency' => 'USD', 'total_amount' => '25.00']);
         $other = $this->rootOwned();
         $void = $this->childPreparation($other, PaymentOperationPurpose::Void, 500);
         $this->invalid(fn () => $this->dispatchOwned($void));
