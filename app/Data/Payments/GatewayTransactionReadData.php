@@ -13,5 +13,6 @@ class GatewayTransactionReadData extends Data
         public ?string $expected_original_transaction_id,
         public int $expected_amount_minor,
         public string $expected_currency,
+        public ?string $expected_merchant_reference = null,
     ) {}
 }

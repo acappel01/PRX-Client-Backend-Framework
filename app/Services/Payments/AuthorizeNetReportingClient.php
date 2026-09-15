@@ -48,10 +48,15 @@ class AuthorizeNetReportingClient
 
     public function transaction(MerchantAccount $merchant, GatewayTransactionReadData $data, string $canonicalAccountKey): AuthorizeNetTransactionRead
     {
-        if (! preg_match('/\A[1-9][0-9]{0,31}\z/', $data->transaction_id)) {
+        if (! preg_match('/\A[1-9][0-9]{0,31}\z/', $data->transaction_id)
+            || ($data->expected_merchant_reference !== null && ! $this->validMerchantReference($data->expected_merchant_reference))) {
             $this->reject();
         }
         $xml = $this->request($merchant, 'getTransactionDetailsRequest', 'getTransactionDetailsResponse', $data->transaction_id);
+        $merchantReference = $this->merchantReference($xml);
+        if ($data->expected_merchant_reference !== null && $merchantReference !== $data->expected_merchant_reference) {
+            $this->reject();
+        }
         $base = '/a:getTransactionDetailsResponse/a:transaction/a:';
         $value = fn (string $field, bool $optional = false) => $this->value($xml, $base.$field, $optional);
         $id = $value('transId');
@@ -72,7 +77,31 @@ class AuthorizeNetReportingClient
             $this->reject();
         }
 
-        return new AuthorizeNetTransactionRead($canonicalAccountKey, $id, $type, $status, $original, $auth, $settle, $data->expected_currency, CarbonImmutable::now());
+        return new AuthorizeNetTransactionRead($canonicalAccountKey, $id, $type, $status, $original, $auth, $settle, $data->expected_currency, CarbonImmutable::now(), merchant_reference: $merchantReference);
+    }
+
+    /** Original merchant refId echoed by reporting, distinct from read refId and transaction refTransId. */
+    private function merchantReference(DOMXPath $xml): ?string
+    {
+        $nodes = $xml->query('/a:getTransactionDetailsResponse/*[local-name()="transrefId"]');
+        if ($nodes->length === 0) {
+            return null;
+        }
+        if ($nodes->length !== 1 || $nodes->item(0)->namespaceURI !== self::NS
+            || $nodes->item(0)->hasAttributes()) {
+            $this->reject();
+        }
+        $reference = $this->value($xml, '/a:getTransactionDetailsResponse/a:transrefId');
+        if (! $this->validMerchantReference($reference)) {
+            $this->reject();
+        }
+
+        return $reference;
+    }
+
+    private function validMerchantReference(string $reference): bool
+    {
+        return preg_match('/\A[A-Za-z0-9._:-]{1,20}\z/', $reference) === 1;
     }
 
     private function value(DOMXPath $xml, string $path, bool $optional = false): ?string

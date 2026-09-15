@@ -20,5 +20,6 @@ class AuthorizeNetTransactionRead extends Data
         public CarbonImmutable $read_at,
         public string $currency_authority = 'current_merchant_configuration',
         public bool $transaction_currency_verified = false,
+        public ?string $merchant_reference = null,
     ) {}
 }

@@ -89,6 +89,86 @@ class AuthorizeNetReportingTest extends TestCase
         }
     }
 
+    public function test_original_merchant_reference_is_exposed_and_exactly_matched_without_conflating_other_references(): void
+    {
+        $this->freshHttp();
+        Http::fake(fn () => Http::response($this->merchantXml()));
+        $binding = $this->bind();
+        $reference = '0123456789abcdef0123';
+        $body = str_replace('</getTransactionDetailsResponse>', '<refId>report-request</refId><transrefId>'.$reference.'</transrefId></getTransactionDetailsResponse>', $this->transactionXml());
+        $this->freshHttp();
+        Http::fakeSequence()->push($this->merchantXml())->push($body);
+        $read = $this->read($binding, ['expected_merchant_reference' => $reference]);
+        $this->assertSame($reference, $read->merchant_reference);
+        $this->assertNull($read->original_transaction_id);
+        $this->assertFalse($read->transaction_currency_verified);
+        $this->assertSame('current_merchant_configuration', $read->currency_authority);
+        Http::assertSent(fn ($request) => str_contains($request->body(), 'getTransactionDetailsRequest')
+            && ! str_contains($request->body(), '<refId>') && ! str_contains($request->body(), $reference));
+
+        $this->freshHttp();
+        Http::fakeSequence()->push($this->merchantXml())->push($body);
+        $this->assertSame($reference, $this->read($binding)->merchant_reference);
+    }
+
+    public function test_absent_reference_remains_null_and_read_request_or_original_transaction_reference_cannot_substitute(): void
+    {
+        $this->freshHttp();
+        Http::fake(fn () => Http::response($this->merchantXml()));
+        $binding = $this->bind();
+        $body = str_replace('</getTransactionDetailsResponse>', '<refId>6000000</refId></getTransactionDetailsResponse>',
+            $this->transactionXml(['transactionType' => 'refundTransaction', 'transactionStatus' => 'refundSettledSuccessfully', 'refTransId' => '6000000', 'transrefId' => 'nested-ignored']));
+        $changes = ['expected_transaction_type' => 'refundTransaction', 'expected_original_transaction_id' => '6000000'];
+        $this->freshHttp();
+        Http::fakeSequence()->push($this->merchantXml())->push($body);
+        $read = $this->read($binding, $changes);
+        $this->assertNull($read->merchant_reference);
+        $this->assertSame('6000000', $read->original_transaction_id);
+        $this->freshHttp();
+        Http::fakeSequence()->push($this->merchantXml())->push($body);
+        $this->invalid(fn () => $this->read($binding, $changes + ['expected_merchant_reference' => '6000000']));
+    }
+
+    public function test_conflicting_malformed_duplicate_or_foreign_namespace_merchant_references_fail_closed(): void
+    {
+        $this->freshHttp();
+        Http::fake(fn () => Http::response($this->merchantXml()));
+        $binding = $this->bind();
+        foreach ([
+            '<transrefId/>',
+            '<transrefId>0123456789abcdef01234</transrefId>',
+            '<transrefId> padded</transrefId>',
+            '<transrefId>non ascii é</transrefId>',
+            '<transrefId>reference&#10;</transrefId>',
+            '<transrefId><value>reference</value></transrefId>',
+            '<transrefId><![CDATA[reference]]></transrefId>',
+            '<transrefId attribute="value">reference</transrefId>',
+            '<transrefId>reference</transrefId><transrefId>reference</transrefId>',
+            '<transrefId xmlns="urn:untrusted">reference</transrefId>',
+            '<transrefId>reference</transrefId><transrefId xmlns="urn:untrusted">reference</transrefId>',
+        ] as $field) {
+            $body = str_replace('</getTransactionDetailsResponse>', $field.'</getTransactionDetailsResponse>', $this->transactionXml());
+            $this->freshHttp();
+            Http::fakeSequence()->push($this->merchantXml())->push($body);
+            $this->invalid(fn () => $this->read($binding));
+        }
+        $body = str_replace('</getTransactionDetailsResponse>', '<transrefId>Reference</transrefId></getTransactionDetailsResponse>', $this->transactionXml());
+        $this->freshHttp();
+        Http::fakeSequence()->push($this->merchantXml())->push($body);
+        $this->invalid(fn () => $this->read($binding, ['expected_merchant_reference' => 'reference']));
+    }
+
+    public function test_invalid_expected_merchant_reference_is_refused_before_transaction_http(): void
+    {
+        $this->freshHttp();
+        Http::fake();
+        foreach (['', 'contains space', str_repeat('a', 21), "reference\n", '<reference>'] as $reference) {
+            $data = new GatewayTransactionReadData(1, '6000001', 'authCaptureTransaction', null, 2501, 'USD', $reference);
+            $this->invalid(fn () => app(AuthorizeNetReportingClient::class)->transaction($this->merchant, $data, 'synthetic-account'));
+        }
+        Http::assertNothingSent();
+    }
+
     public function test_mapping_requires_real_read_and_explicit_identity_and_replays_immutably(): void
     {
         $this->merchant->update(['provider_merchant_profile_id' => 'synthetic-prx-row']);
