@@ -6,7 +6,7 @@ Status: preparation only. No merge, deployment, served migration, backfill, perm
 
 | Application | Served baseline verified September 14 | Candidate branch | Required ordering |
 |---|---|---|---|
-| Admin | `9909105` on `main` | `codex/customer-commerce-foundation`, code `fcecd7544540a854c2ad373edaacb54ec8f96366` | Schema/settings, admin code and permissions before dependent portal |
+| Admin | `9909105` on `main` | `codex/customer-commerce-foundation`, code `d974e3dda791f470709f0181d19fec105c664a0b` | Schema/settings, admin code and permissions before dependent portal |
 | Portal | `116799f` on `main` | `codex/portal-local-commerce-history`, `c583128c7b4e620723b899a98057dbb433962c29` | After owned local history API qualification |
 | Storefront | `dde5f4b` on `main` | `codex/storefront-lead-idempotency`, `323cd0b7780595c6bd2d4ffc9ed4420ace876209` | After backend Lead retry schema and two-header contract qualification |
 
@@ -60,6 +60,9 @@ Apply the complete candidate migration set in chronological order under the appr
 | `2026_09_15_061000_create_payment_operation_effect_associations` | Empty immutable capture/refund/void correlation evidence; no financial effects |
 | `2026_09_15_070000_create_payment_financial_observations` | Empty ordered financial read requests and encrypted reported classifications; no accounting or order-paid mutations |
 | `2026_09_15_071000_create_payment_transport_invocations_table` | Empty unique adapter invocation claims; no activation or automatic consumers |
+| `2026_09_15_080000_create_checkout_token_grants` | Empty immutable authenticated token grants and one-time consumptions; no public checkout binding |
+| `2026_09_15_081000_create_payment_uncertainty_resolutions` | Empty owned-evidence resolution audits; historical uncertainty and dispatch claims remain intact |
+| `2026_09_15_082000_create_payment_accounting_journals` | Empty immutable balanced control journals/lines; no bank or revenue assertion |
 
 The passive payment tables have no automatic producers or public API. Their presence does not enable collection, vaulting, financial reconciliation or revenue reporting. Add later reviewed candidate migrations to this table before approval. These schema migrations do not import historical accounts or infer historical attempt ownership. Old attempts remain unbound. The idempotency migration can sort before an already-applied later migration on an incremental upgrade; use the migration ledger and apply pending files, never rerun completed migrations. Storefront `323cd0b` adopts the two-header retry contract for quiz/checkout. Verify both headers survive only exact POST `/leads` and that a lost-response retry returns the original Lead before releasing that artifact; old backend code ignores those headers. Other no-header callers remain compatible and still create a new Lead per POST. Spatie settings migrations live under `database/settings` and must be included; checking only `database/migrations` is insufficient.
 
@@ -360,3 +363,18 @@ feature candidates were rechecked unchanged. No deployment, served migration/con
 provider mutation, payment, receiver or marketing activation occurred.
 
 Final integrated SQLite regression passed **1,731 tests / 8,724 assertions** on the final test/source tree. An older independent partial-void fixture now uses a separate order to respect the stronger order interlock; its focused lineage suite passed **11 / 189** and the test-only change was reviewed. Final application candidate: **`fcecd7544540a854c2ad373edaacb54ec8f96366`**. Portal `c583128` and storefront `323cd0b` remain unchanged.
+
+
+## September 15 checkout authorization and accounting increment
+
+The [internal implementation guide](../payments/checkout-authorization-accounting.md) describes authenticated Patient/Customer/order token grants, owned post-uncertainty reporting audits and balanced settlement/refund control postings. No public checkout integration, default binding, automatic producer or activation was added. Anonymous cart/Lead matching is not payment ownership. Historical uncertainty and both invocation claims remain intact even when current reporting qualifies an outcome. Accounting results retain currency/environment/account and never claim bank cash or change order status.
+
+Application commit: `d974e3dda791f470709f0181d19fec105c664a0b`.
+
+Final integrated SQLite regression: **1,779 tests / 9,308 assertions**, clean exit. Accounting **5 / 123** and uncertainty **8 / 145** passed focused SQLite. Populated upgrade **1 / 78** preserves legacy data and leaves all five added tables empty. Scoped Pint and patch checks passed.
+
+Private MySQL authorization passed **5 / 62** across the original and session-policy delta runs, uncertainty **2 / 40**, and accounting **2 / 64**. Accounting's initial artisan invocation reported passing assertions with nonzero exit; the direct PHPUnit diagnostic rerun completed cleanly with no emitted issues. All **38/38** process scenarios passed: authorization **14** (grant/token uniqueness, one consumption, committed crash, session revocation and expiry after preload); uncertainty **12** (one audit and newer pending/failure/conflict after a stale snapshot); accounting **12** (one balanced entity journal and newer pending/failure/conflict refusing stale postings). No replay or expiry scenario released a payment claim.
+
+Independent Astra review passed with no remaining findings. Independent successful runs included token/accounting/upgrade **37 / 469** before the final lifetime delta, accounting/uncertainty **13 / 264**, and final lifetime-focused **6 / 65**. These runs overlap and must not be summed. Review fixes included current portal session lifetime, uncertainty alias generation, bounded traversal, accounting currency/environment/account metadata, and meaningful durability/encryption fixtures. The reviewer did not independently verify the separate PRX source audit.
+
+All HTTP and data were synthetic. The private MySQL server was stopped after all three schemas completed; its socket and pid file were verified absent. Served admin/portal/storefront baselines remain unchanged. No deployment, served migration, PRX edit, live account call, payment, receiver or marketing activation occurred.

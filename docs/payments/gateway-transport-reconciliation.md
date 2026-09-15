@@ -1,6 +1,8 @@
 # Gateway transport and financial reconciliation
 
 September 15, 2026 continuation of [dispatch provenance and lineage](dispatch-association.md).
+Follow-up: [authenticated token grants, uncertainty resolution and accounting](checkout-authorization-accounting.md) now supplies inactive internal implementations for those three next steps. The qualification below records the preceding transport increment.
+
 Internal development APIs only. No checkout, route, worker, webhook consumption, default
 transport binding or instrument authorization implementation is enabled by this increment.
 All qualification uses synthetic data and faked HTTP; no merchant account was contacted.
