@@ -48,6 +48,8 @@ class PaymentTransactionAssociationTest extends TestCase
 
     private GatewayAccountBinding $binding;
 
+    private string $processorXml = '';
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -76,12 +78,12 @@ class PaymentTransactionAssociationTest extends TestCase
 
     private function merchantXml(): string
     {
-        return '<getMerchantDetailsResponse xmlns="'.AuthorizeNetReportingClient::NS.'"><messages><resultCode>Ok</resultCode></messages><isTestMode>false</isTestMode><gatewayId>123</gatewayId><currencies><currency>USD</currency></currencies></getMerchantDetailsResponse>';
+        return '<getMerchantDetailsResponse xmlns="'.AuthorizeNetReportingClient::NS.'"><messages><resultCode>Ok</resultCode></messages><isTestMode>false</isTestMode><gatewayId>123</gatewayId><currencies><currency>USD</currency></currencies>'.$this->processorXml.'</getMerchantDetailsResponse>';
     }
 
     private function operation(PaymentOperationPurpose $purpose = PaymentOperationPurpose::Sale): PaymentOperation
     {
-        $intent = app(PreparePaymentIntentAction::class)->execute(new PaymentIntentData((string) Str::uuid(), $this->order->id, $this->order->customer_id, $this->merchant->id, GatewayProvider::AuthorizeNet, GatewayEnvironment::Sandbox, 2500, 'USD', 'local.checkout'));
+        $intent = app(PreparePaymentIntentAction::class)->execute(new PaymentIntentData((string) Str::uuid(), $this->order->id, $this->order->customer_id, $this->merchant->id, GatewayProvider::AuthorizeNet, $this->merchant->environment, 2500, 'USD', 'local.checkout'));
 
         return app(PreparePaymentOperationAction::class)->execute(new PaymentOperationData((string) Str::uuid(), $intent->uuid, $purpose, 2500, 'local.checkout'));
     }
@@ -180,6 +182,28 @@ class PaymentTransactionAssociationTest extends TestCase
         $this->assertSame('conflict_quarantined', $result->status);
         $this->assertCount(3, $result->association_ids);
         $this->assertDatabaseCount('payment_transaction_associations', 3);
+    }
+
+    public function test_production_association_retains_authenticated_currency_policy_without_financial_authority(): void
+    {
+        $this->merchant = MerchantAccount::factory()->create(['environment' => GatewayEnvironment::Production]);
+        $this->processorXml = '<processors><processor><name>Elavon</name><id>5</id></processor></processors>';
+        $this->resetHttp();
+        Http::fake(['*' => Http::response($this->merchantXml())]);
+        $this->binding = app(VerifyGatewayAccountBindingAction::class)->execute(new GatewayAccountBindingData($this->merchant->id, GatewayEnvironment::Production, '123', 'USD', $this->merchant->provider_merchant_profile_id));
+        $preparation = $this->prepare();
+        $this->readFor($preparation);
+        $result = $this->record($preparation);
+        $this->assertSame('associated_only', $result->status);
+        $this->assertFalse($result->financial_effects_verified);
+        $row = PaymentTransactionAssociation::findOrFail($result->association_ids[0]);
+        $this->assertTrue($row->currency_qualified);
+        $this->assertStringContainsString('authorize_net_fixed_north_american_account_currency_v1', json_encode($row->facts));
+        $this->assertStringContainsString('Elavon', json_encode($row->facts));
+        $this->assertStringNotContainsString('Elavon', $row->getRawOriginal('facts'));
+        $this->processorXml = '<processors><processor><name>Unknown</name><id>5</id></processor></processors>';
+        $this->readFor($preparation);
+        $this->assertSame('currency_unqualified', $this->record($preparation)->status);
     }
 
     public function test_unqualified_currency_is_retained_and_blocks_resolution(): void

@@ -431,4 +431,55 @@ class AuthorizeNetReportingTest extends TestCase
         $wrong->currency = 'CAD';
         $this->assertFalse($policy->assess($wrong, $read)['currency_qualified']);
     }
+
+    public function test_production_currency_qualification_uses_authenticated_singleton_processor_scope(): void
+    {
+        $this->merchant->update(['environment' => GatewayEnvironment::Production]);
+        $merchantXml = str_replace('</getMerchantDetailsResponse>', '<processors><processor><name>Elavon</name><id>5</id></processor></processors></getMerchantDetailsResponse>', $this->merchantXml());
+        Http::fakeSequence()->push($merchantXml)->push($merchantXml)->push($this->transactionXml());
+        $binding = $this->bind();
+        $read = $this->read($binding);
+        $policy = app(AuthorizeNetCurrencyAuthority::class);
+        $this->assertSame([['id' => '5', 'name' => 'Elavon']], $read->account_processors);
+        $result = $policy->assess($binding, $read);
+        $this->assertTrue($result['currency_qualified']);
+        $this->assertSame('authorize_net_fixed_north_american_account_currency_v1', $result['authority']);
+        $this->assertFalse($result['transaction_currency_observed']);
+        $this->assertFalse($read->transaction_currency_verified);
+        foreach ([[], [['id' => '5', 'name' => 'Unknown']], [['id' => '5', 'name' => 'elavon']], [['id' => '5', 'name' => 'Elavon'], ['id' => '6', 'name' => 'Elavon']]] as $processors) {
+            $read->account_processors = $processors;
+            $this->assertFalse($policy->assess($binding, $read)['currency_qualified']);
+        }
+        $read->account_processors = [['id' => '5', 'name' => 'Elavon']];
+        foreach (['bank_account', 'token', 'unknown'] as $rail) {
+            $read->payment_rail = $rail;
+            $this->assertFalse($policy->assess($binding, $read)['currency_qualified']);
+        }
+        $read->payment_rail = 'credit_card';
+        $binding->currency = $read->currency = 'CAD';
+        $this->assertTrue($policy->assess($binding, $read)['currency_qualified']);
+        $read->account_processors = [['id' => '5', 'name' => 'Heartland Payment Systems']];
+        $this->assertFalse($policy->assess($binding, $read)['currency_qualified']);
+        $binding->currency = $read->currency = 'EUR';
+        $read->account_processors = [['id' => '5', 'name' => 'Elavon']];
+        $this->assertFalse($policy->assess($binding, $read)['currency_qualified']);
+    }
+
+    public function test_malformed_processor_metadata_is_rejected_without_guessing_identity(): void
+    {
+        foreach ([
+            '<processor><name>Elavon</name><id>5</id><id>6</id></processor>',
+            '<processor><name>Elavon</name><id>5</id></processor><processor><name>Unknown</name><id>5</id></processor>',
+            '<processor><name xmlns="urn:foreign">Elavon</name><id>5</id></processor>',
+            '<processor><name>Elavon</name><id x="y">5</id></processor>',
+            '<processor><name> Elavon</name><id>5</id></processor>',
+            '<processor><name>Elavon</name><id>2147483648</id></processor>',
+            str_repeat('<processor><name>Elavon</name><id>5</id></processor>', 17),
+        ] as $processors) {
+            $this->freshHttp();
+            $xml = str_replace('</getMerchantDetailsResponse>', '<processors>'.$processors.'</processors></getMerchantDetailsResponse>', $this->merchantXml());
+            Http::fakeSequence()->push($xml);
+            $this->invalid(fn () => app(AuthorizeNetReportingClient::class)->merchant($this->merchant));
+        }
+    }
 }

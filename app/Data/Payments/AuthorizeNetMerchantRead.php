@@ -6,5 +6,5 @@ use Spatie\LaravelData\Data;
 
 class AuthorizeNetMerchantRead extends Data
 {
-    public function __construct(public string $gateway_account_id, public string $currency) {}
+    public function __construct(public string $gateway_account_id, public string $currency, public array $processors = []) {}
 }

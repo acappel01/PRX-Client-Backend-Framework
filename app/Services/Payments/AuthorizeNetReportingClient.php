@@ -43,7 +43,48 @@ class AuthorizeNetReportingClient
             $this->reject();
         }
 
-        return new AuthorizeNetMerchantRead($id, $currency);
+        return new AuthorizeNetMerchantRead($id, $currency, $this->processors($xml));
+    }
+
+    /** Only authenticated processor identity; no merchant address or instrument data retained. */
+    private function processors(DOMXPath $xml): array
+    {
+        $base = '/a:getMerchantDetailsResponse';
+        $containers = $xml->query($base.'/*[local-name()="processors"]');
+        if ($containers->length === 0) {
+            return [];
+        }
+        if ($containers->length !== 1 || $containers->item(0)->namespaceURI !== self::NS || $containers->item(0)->hasAttributes()) {
+            $this->reject();
+        }
+        $nodes = $xml->query($base.'/a:processors/*');
+        if ($nodes->length > 16) {
+            $this->reject();
+        }
+        $result = [];
+        $ids = [];
+        foreach ($nodes as $index => $node) {
+            if ($node->namespaceURI !== self::NS || $node->localName !== 'processor' || $node->hasAttributes()) {
+                $this->reject();
+            }
+            $path = $base.'/a:processors/a:processor['.($index + 1).']';
+            foreach (['name', 'id'] as $field) {
+                $fields = $xml->query($path.'/*[local-name()="'.$field.'"]');
+                if ($fields->length !== 1 || $fields->item(0)->namespaceURI !== self::NS || $fields->item(0)->hasAttributes()) {
+                    $this->reject();
+                }
+            }
+            $name = $this->value($xml, $path.'/a:name');
+            $id = $this->value($xml, $path.'/a:id');
+            if (! preg_match('/\A[\x20-\x7e]{1,255}\z/', $name) || trim($name) !== $name
+                || ! preg_match('/\A[1-9][0-9]{0,9}\z/', $id) || (int) $id > 2147483647 || isset($ids[$id])) {
+                $this->reject();
+            }
+            $ids[$id] = true;
+            $result[] = ['id' => $id, 'name' => $name];
+        }
+
+        return $result;
     }
 
     public function transaction(MerchantAccount $merchant, GatewayTransactionReadData $data, string $canonicalAccountKey): AuthorizeNetTransactionRead
@@ -66,14 +107,14 @@ class AuthorizeNetReportingClient
         $auth = $this->minor($value('authAmount'));
         $settle = $this->minor($value('settleAmount'));
         $allowed = match ($type) {
-            'authOnlyTransaction' => ['authorizedPendingCapture', 'expired', 'voided', 'declined', 'couldNotVoid', 'generalError', 'underReview', 'FDSPendingReview', 'FDSAuthorizedPendingReview', 'failedReview'],
+            'authOnlyTransaction' => ['authorizedPendingCapture', 'capturedPendingSettlement', 'settledSuccessfully', 'settlementError', 'expired', 'voided', 'declined', 'couldNotVoid', 'generalError', 'underReview', 'FDSPendingReview', 'FDSAuthorizedPendingReview', 'failedReview'],
             'authCaptureTransaction', 'priorAuthCaptureTransaction' => ['capturedPendingSettlement', 'settledSuccessfully', 'voided', 'declined', 'couldNotVoid', 'settlementError', 'generalError', 'underReview', 'FDSPendingReview', 'FDSAuthorizedPendingReview', 'failedReview'],
             'refundTransaction' => ['refundPendingSettlement', 'refundSettledSuccessfully', 'voided', 'declined', 'settlementError', 'generalError'],
             default => [],
         };
         if ($id !== $data->transaction_id || $type !== $data->expected_transaction_type
             || $original !== $data->expected_original_transaction_id || ! in_array($status, $allowed, true)
-            || ($type === 'authOnlyTransaction' ? $auth : $settle) !== $data->expected_amount_minor) {
+            || (($data->expected_amount_basis ?? ($type === 'authOnlyTransaction' ? 'authorization' : 'settlement')) === 'authorization' ? $auth : $settle) !== $data->expected_amount_minor) {
             $this->reject();
         }
 

@@ -20,6 +20,7 @@ class ReadAuthorizeNetTransaction
         }
         $binding = GatewayAccountBinding::find($data->binding_id);
         if ($binding === null || $data->expected_currency !== $binding->currency
+            || ! in_array($data->expected_amount_basis, [null, 'authorization', 'settlement'], true)
             || $data->expected_amount_minor < 1 || $data->expected_amount_minor > 999999999999
             || ! in_array($data->expected_transaction_type, ['authOnlyTransaction', 'authCaptureTransaction', 'priorAuthCaptureTransaction', 'refundTransaction'], true)
             || ($data->expected_original_transaction_id !== null && ! preg_match('/\A[1-9][0-9]{0,31}\z/', $data->expected_original_transaction_id))
@@ -33,6 +34,7 @@ class ReadAuthorizeNetTransaction
             $this->client->reject();
         }
         $read = $this->client->transaction($merchant, $data, $binding->canonical_account_key);
+        $read->account_processors = $account->processors;
         // DB credentials/config may change while either request is in flight.
         $this->current($binding);
 

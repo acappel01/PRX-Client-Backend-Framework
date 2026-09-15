@@ -4,6 +4,7 @@ namespace App\Services\Payments;
 
 use App\Data\Payments\PaymentAssociationResolution;
 use App\Models\Payments\PaymentDispatchPreparation;
+use App\Models\Payments\PaymentOperationEffectAssociation;
 use App\Models\Payments\PaymentTransactionAssociation;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -58,6 +59,10 @@ class ResolvePaymentTransactionAssociation
         $status = $component->isEmpty() ? 'missing' : 'associated_only';
         if ($component->contains(fn ($row) => ! $row->currency_qualified)) {
             $status = 'currency_unqualified';
+        }
+        if (PaymentOperationEffectAssociation::where('payment_association_scope_id', $scopeId)
+            ->where('effect_kind', 'refund')->whereIn('transaction_key', array_keys($transactions))->lockForUpdate()->exists()) {
+            $status = 'conflict_quarantined';
         }
         if (count($operations) > 1 || count($transactions) > 1) {
             $status = 'conflict_quarantined';

@@ -23,5 +23,6 @@ class AuthorizeNetTransactionRead extends Data
         public ?string $merchant_reference = null,
         public ?CarbonImmutable $submitted_at = null,
         public string $payment_rail = 'unknown',
+        public array $account_processors = [],
     ) {}
 }
