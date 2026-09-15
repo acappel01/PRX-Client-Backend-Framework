@@ -6,7 +6,7 @@ Status: preparation only. No merge, deployment, served migration, backfill, perm
 
 | Application | Served baseline verified September 14 | Candidate branch | Required ordering |
 |---|---|---|---|
-| Admin | `9909105` on `main` | `codex/customer-commerce-foundation`, code `d2803ecd66f81d6a1e0a0d5efc79e56350eb2c94` | Schema/settings, admin code and permissions before dependent portal |
+| Admin | `9909105` on `main` | `codex/customer-commerce-foundation`, code `2adeb1c87b42014f13291a27a83b2c9b330b1c9f` | Schema/settings, admin code and permissions before dependent portal |
 | Portal | `116799f` on `main` | `codex/portal-local-commerce-history`, `c583128c7b4e620723b899a98057dbb433962c29` | After owned local history API qualification |
 | Storefront | `dde5f4b` on `main` | `codex/storefront-lead-idempotency`, `323cd0b7780595c6bd2d4ffc9ed4420ace876209` | After backend Lead retry schema and two-header contract qualification |
 
@@ -52,6 +52,8 @@ Apply the complete candidate migration set in chronological order under the appr
 | `2026_09_14_230000_create_attribution_delivery_previews` | Capture touchpoints, passive delivery identities and immutable policy evaluations; no sending |
 | `2026_09_14_231100_create_gateway_account_bindings_table` | Read-verified local gateway account bindings; no automatic mapping or payment execution |
 | `2026_09_14_231000_create_email_suppression_observations` | Scoped read-only suppression evidence; no subscriptions or destination sending |
+| `2026_09_15_020000_create_gateway_notification_inbox` | Empty inactive receivers, minimal notification inbox and conflict evidence; no endpoint/worker |
+| `2026_09_15_021000_create_payment_operation_references_table` | Immutable operation-reference reservations; no dispatch or payment effect |
 
 The passive payment tables have no automatic producers or public API. Their presence does not enable collection, vaulting, financial reconciliation or revenue reporting. Add later reviewed candidate migrations to this table before approval. These schema migrations do not import historical accounts or infer historical attempt ownership. Old attempts remain unbound. The idempotency migration can sort before an already-applied later migration on an incremental upgrade; use the migration ledger and apply pending files, never rerun completed migrations. Storefront `323cd0b` adopts the two-header retry contract for quiz/checkout. Verify both headers survive only exact POST `/leads` and that a lost-response retry returns the original Lead before releasing that artifact; old backend code ignores those headers. Other no-header callers remain compatible and still create a new Lead per POST. Spatie settings migrations live under `database/settings` and must be included; checking only `database/migrations` is insufficient.
 
@@ -199,3 +201,39 @@ including suppression **`2e22802`** and gateway reads **`d2803ec`**. The followi
 release-record commit adds only this evidence and the two-table upgrade assertions.
 This candidate supersedes earlier admin application IDs; portal and storefront remain
 at the qualified IDs in the table above. Nothing deployed.
+
+## September 15 inactive notification and reference continuation
+
+The [inactive receiver guide](../payments/inactive-receiver.md) defines the new internal
+APIs. Migrations create four empty tables, included in the populated-schema additive
+upgrade rehearsal. No account/receiver/reference is backfilled. Reporting now exposes
+root original-request correlation; sale/authorization comparison remains
+`reference_matched_only`, not verified currency, operation execution or monetary state.
+
+This continuation does not expose an endpoint, enroll a webhook, schedule processing,
+wire checkout, perform a payment or activate delivery. Public receiver qualification
+requires a current provider signature fixture and approved account/endpoint controls.
+Financial projection requires additional dispatch/transaction/lineage/currency evidence.
+Existing artifact/configuration/real-data restore and deployment approval requirements
+above still apply. Portal and storefront candidates remain unchanged.
+
+Qualification: full SQLite **1,634 / 7,522** before the final storage-failure test;
+independent Astra final **38 / 610**, including that test, **PASS with no remaining
+findings**. New registry **11 / 83**, reporting **17 / 176**, inbox **10 / 351**;
+upgrade **1 / 52**. Synthetic raw-body/signature fixtures and faked HTTP only.
+Served baselines rechecked unchanged: admin `9909105` with pre-existing untracked
+portal runbook preserved, portal `116799f`, storefront `dde5f4b`.
+
+Final deltas after the integrated run: a MySQL foreign-key name shortened to meet the
+identifier limit, and strict JSON decoding retains numeric types so oversized unquoted
+IDs cannot pass string-only validation. Independent Astra approved both and reran the
+final inbox suite (**10 / 351**, included in **38 / 610** above); the upgrade test
+passed again (**1 / 52**). No whole-suite rerun is claimed for these focused deltas.
+
+Final application candidate: **`2adeb1c87b42014f13291a27a83b2c9b330b1c9f`**,
+including operation references/reporting **`eecc4f7`** and inactive inbox **`2adeb1c`**.
+Disposable MySQL registry qualification passed **3 / 27 + 8/8 process races**; inbox
+passed **2 / 47 + 15/15 process races**. Both selected suites were rerun successfully
+after the foreign-key name correction. The private socket-only database was stopped.
+The following documentation/upgrade-test commit records this prepared candidate;
+portal/storefront IDs remain unchanged. No public receiver or deployment is activated.

@@ -217,3 +217,7 @@ transaction's currency. Signed notification intake, historical currency authorit
 local operation ownership and settlement/refund accounting remain prerequisites
 for activation. No payment collection or marketing sending is enabled by this
 increment.
+
+## Notification and payment-reference preparation
+
+An inactive internal inbox and operation-reference registry are available for future integrations. There is no new receiving URL, background processing or operator activation control. Reference matches are not confirmed payments, and a signed notification does not mark an order paid. Account/key changes require an explicit continuity plan. See [implementation and activation boundaries](inactive-receiver.md).

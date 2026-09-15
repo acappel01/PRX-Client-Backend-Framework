@@ -346,3 +346,7 @@ currency qualification limits](passive-ledger.md#read-only-authorizenet-account-
 No HTTP routes or OpenAPI changes are introduced. Current merchant currency is
 explicitly not a verified historical transaction currency, and the reader cannot
 resolve ledger uncertainty or project revenue.
+
+## Inactive notification and reference foundation
+
+See [inactive receiver and operation references](inactive-receiver.md) for the trusted internal APIs, strict signature/inbox boundaries, immutable reference allocation and explicit reporting comparison. This increment adds no public receiver or payment execution.

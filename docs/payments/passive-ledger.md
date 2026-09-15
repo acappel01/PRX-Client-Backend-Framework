@@ -379,3 +379,7 @@ historical observational evidence. Existing DTO flags and application behavior r
 unchanged. The next bounded implementation is an inactive account-scoped inbox/reference
 registry and reporting correlation extension; public activation, operation resolution,
 financial projection and payment execution are not qualified by this investigation.
+
+## Inactive receiver/reference implementation
+
+The [inactive receiver guide](inactive-receiver.md) describes the implemented internal notification inbox, immutable operation-reference registry and reporting correlation. It supersedes the investigation's proposed-only status for those pieces. No public receiver, payment executor or verified financial projection is added.
