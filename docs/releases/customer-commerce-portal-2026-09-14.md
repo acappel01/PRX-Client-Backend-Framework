@@ -6,7 +6,7 @@ Status: preparation only. No merge, deployment, served migration, backfill, perm
 
 | Application | Served baseline verified September 14 | Candidate branch | Required ordering |
 |---|---|---|---|
-| Admin | `9909105` on `main` | `codex/customer-commerce-foundation`, code `bfcbbe53c4cf77a7c4a1677ece167d9f34412ae4` | Schema/settings, admin code and permissions before dependent portal |
+| Admin | `9909105` on `main` | `codex/customer-commerce-foundation`, code `fcecd7544540a854c2ad373edaacb54ec8f96366` | Schema/settings, admin code and permissions before dependent portal |
 | Portal | `116799f` on `main` | `codex/portal-local-commerce-history`, `c583128c7b4e620723b899a98057dbb433962c29` | After owned local history API qualification |
 | Storefront | `dde5f4b` on `main` | `codex/storefront-lead-idempotency`, `323cd0b7780595c6bd2d4ffc9ed4420ace876209` | After backend Lead retry schema and two-header contract qualification |
 
@@ -58,6 +58,8 @@ Apply the complete candidate migration set in chronological order under the appr
 | `2026_09_15_041000_create_payment_transaction_associations` | Account mutex and immutable reporting associations; conflicts quarantine, no monetary winner |
 | `2026_09_15_060000_create_payment_dispatch_attempts_table` | Empty exclusive invocation attempts and encrypted minimal receipts; no active transport |
 | `2026_09_15_061000_create_payment_operation_effect_associations` | Empty immutable capture/refund/void correlation evidence; no financial effects |
+| `2026_09_15_070000_create_payment_financial_observations` | Empty ordered financial read requests and encrypted reported classifications; no accounting or order-paid mutations |
+| `2026_09_15_071000_create_payment_transport_invocations_table` | Empty unique adapter invocation claims; no activation or automatic consumers |
 
 The passive payment tables have no automatic producers or public API. Their presence does not enable collection, vaulting, financial reconciliation or revenue reporting. Add later reviewed candidate migrations to this table before approval. These schema migrations do not import historical accounts or infer historical attempt ownership. Old attempts remain unbound. The idempotency migration can sort before an already-applied later migration on an incremental upgrade; use the migration ledger and apply pending files, never rerun completed migrations. Storefront `323cd0b` adopts the two-header retry contract for quiz/checkout. Verify both headers survive only exact POST `/leads` and that a lost-response retry returns the original Lead before releasing that artifact; old backend code ignores those headers. Other no-header callers remain compatible and still create a new Lead per POST. Spatie settings migrations live under `database/settings` and must be included; checking only `database/migrations` is insufficient.
 
@@ -321,3 +323,40 @@ Final integrated SQLite regression passed **1,683 tests / 8,106 assertions**. Al
 reporting and transport responses were synthetic; no live accounts were contacted.
 
 Final application candidate: **`bfcbbe53c4cf77a7c4a1677ece167d9f34412ae4`**. Portal remains `c583128c7b4e620723b899a98057dbb433962c29`; Atlas storefront remains `323cd0b7780595c6bd2d4ffc9ed4420ace876209`. Served baselines rechecked unchanged: admin `9909105` with original untracked portal runbook preserved, portal `116799f`, storefront `dde5f4b`.
+
+## Concrete gateway transport and reported financial reconciliation
+
+This continuation supersedes the prior no-concrete-transport and no-order-level-reported
+amounts boundaries. See [gateway transport and reconciliation](../payments/gateway-transport-reconciliation.md).
+The inactive Authorize.net adapter supports sale/authorization with an explicitly injected
+short-lived token authorization, original capture/void and linked refunds with transient
+masked-card extraction. It has no default binding or checkout/route/job consumer. Both
+execution flags remain false by default. A second unique committed adapter claim prevents
+direct-call replay; XML networking is private, bounded and uses an isolated HTTP factory.
+Frozen credentials, descendant lineage, gates and token expiry are rechecked before send.
+
+Ordered immutable financial read requests and encrypted observations classify fresh
+provider-reported authorization/capture/settlement/refund/void amounts. Pending, failed,
+stale, contradictory, unqualified-currency or uncovered-dispatch evidence blocks older
+amounts. Shared capture/void entities count once; refunds remain distinct. Order-level
+assessment keeps account/environment explicit, exposes no totals when unqualified, and
+never marks orders paid, clears operation uncertainty, emits events or claims bank cash.
+The order dispatch lock blocks attempts under another intent across merchant accounts;
+split collection, replacement, recurring and additional sibling-refund policies remain
+unqualified. Current provider fixtures and customer/quote/token authorization integration
+remain activation prerequisites.
+
+Independent Astra review passed with no remaining findings: **84 tests / 1,017 assertions**.
+Concrete XML through association, financial reads and order aggregation passed **1 / 27**.
+Populated-schema upgrade passed **1 / 68**, preserving legacy rows and leaving all three
+new tables empty. MySQL transport **2 / 26 +8 process scenarios**, financial **2 / 43
++12 scenarios**, order guard/aggregation **2 / 43 +6 scenarios** all passed. Runtime code
+was unchanged after final review/races. A final test-only invocation counter strengthened
+nine negative refund fixtures; the affected subset passed **9 / 81**.
+
+All tests used synthetic data and fake HTTP. The private Unix-socket MySQL server was
+stopped after qualification. Served admin/portal/storefront baselines and portal/storefront
+feature candidates were rechecked unchanged. No deployment, served migration/config change,
+provider mutation, payment, receiver or marketing activation occurred.
+
+Final integrated SQLite regression passed **1,731 tests / 8,724 assertions** on the final test/source tree. An older independent partial-void fixture now uses a separate order to respect the stronger order interlock; its focused lineage suite passed **11 / 189** and the test-only change was reviewed. Final application candidate: **`fcecd7544540a854c2ad373edaacb54ec8f96366`**. Portal `c583128` and storefront `323cd0b` remain unchanged.

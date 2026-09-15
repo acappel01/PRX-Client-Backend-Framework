@@ -1,6 +1,8 @@
 # Dispatch provenance and operation lineage
 
 September 15, 2026 continuation of the [inactive receiver](inactive-receiver.md).
+The current [gateway transport and financial reconciliation](gateway-transport-reconciliation.md)
+continuation extends this foundation; historical qualification below retains its original scope.
 These are internal development APIs. No gateway mutation, public endpoint, worker,
 automatic inbox consumption, checkout integration or monetary projection is activated.
 Callers must establish authorization before invoking local actions. Synthetic tests and
@@ -120,9 +122,10 @@ A refund entity claimed as a root is quarantined symmetrically on both sides.
 
 `DispatchPreparedPaymentAction` takes preparation UUID and executor key. It is disabled
 unless `payments.dispatch_enabled` is explicitly true and an internal caller supplies a
-trusted `PaymentDispatchTransport`. There is no shipped transport implementation,
-default binding, route, job or checkout integration. Setting a flag alone cannot send a
-payment. The synthetic transport proves boundary behavior, not actual provider delivery.
+trusted `PaymentDispatchTransport`. The concrete inactive Authorize.net transport is now available, with a second disabled
+gate and no default binding, route, job or checkout integration. Sale/authorization also
+require a trusted ephemeral instrument resolver. Synthetic tests prove boundary behavior,
+not live provider delivery; see the current transport guide.
 
 The action locks the canonical account and intent, checks current frozen scope, derives
 an allowlisted request, and commits one exclusive attempt per preparation **before**
@@ -134,16 +137,18 @@ evidence. Retained parent status and amount must permit the requested purpose: a
 uncaptured authorization for capture, settled capture/sale for refund, and a supported
 pre-settlement state for void. This is a check against stored evidence, not a fresh remote
 read or a guarantee that the provider still permits the action.
-This interlock is intent-scoped; it is not a complete order-wide collection policy.
+The original intent interlock is now supplemented by an order-wide lock: another intent
+with any attempt blocks dispatch across accounts/environments. It remains a conservative
+single-intent policy, without split collection, replacement or recurring rules.
 
 Attempt states distinguish `claimed`, `response_observed` and `outcome_unknown`.
 A crash before or during transport can leave a durable claim with no outcome; a timeout,
 invalid response or failed receipt persistence cannot authorize replay. Request scope
 and minimal response facts are encrypted; no instruments, request bodies or exception
 payloads are retained. A recorded invocation or response does not prove bytes reached
-the provider, provider acceptance, settlement or money movement. A future concrete
-adapter must verify the frozen credential fingerprint before remote I/O and qualify its
-request/response contract and ambiguous-outcome handling before activation.
+the provider, provider acceptance, settlement or money movement. The concrete adapter verifies the frozen credential fingerprint before remote I/O and
+owns a second durable invocation claim. Current provider/account fixture qualification
+and instrument authorization integration remain required before activation.
 
 ## Capture, refund and void evidence
 
@@ -181,8 +186,9 @@ No uncertainty, order payment state, accounting balance or canonical event is ch
 
 No preparation or association changes operation uncertainty, paid order state, revenue,
 refund availability, canonical events, marketing attribution or vault readiness. Future
-financial reconciliation still needs a qualified concrete transport, settlement/reversal
-accounting, current conflict policy and concurrency-qualified balance rules. Production
+financial reconciliation now exposes qualified provider-reported amounts and order-level
+entity totals, without bank-cash or order-paid verification. Audited settlement/reversal
+postings, uncertainty resolution and further execution/balance rules remain outstanding. Production
 currency support beyond the narrow policy above needs further provider evidence. Captured and settled states remain distinct.
 
 Public receiver activation still needs a current provider signature fixture, explicitly
