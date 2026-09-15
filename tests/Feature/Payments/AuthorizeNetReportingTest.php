@@ -8,6 +8,7 @@ use App\Data\Payments\GatewayTransactionReadData;
 use App\Enums\Payments\GatewayEnvironment;
 use App\Models\Payments\GatewayAccountBinding;
 use App\Models\Payments\MerchantAccount;
+use App\Services\Payments\AuthorizeNetCurrencyAuthority;
 use App\Services\Payments\AuthorizeNetReportingClient;
 use App\Services\Payments\ReadAuthorizeNetTransaction;
 use Illuminate\Foundation\Testing\RefreshDatabaseState;
@@ -355,5 +356,79 @@ class AuthorizeNetReportingTest extends TestCase
         foreach (['1e2', '+1', '-1', '01.00', '1.001', '10000000000', ' 1', 'NaN'] as $value) {
             $this->invalid(fn () => $client->minor($value));
         }
+    }
+
+    public function test_submission_time_and_payment_rail_are_allowlisted_without_instrument_details(): void
+    {
+        Http::fakeSequence()->push($this->merchantXml())->push($this->merchantXml())
+            ->push($this->transactionXml(['submitTimeUTC' => '2026-09-15T01:02:03.123456Z']));
+        $binding = $this->bind();
+        $read = $this->read($binding);
+        $this->assertSame('2026-09-15T01:02:03.123456Z', $read->submitted_at->format('Y-m-d\\TH:i:s.u\\Z'));
+        $this->assertSame('credit_card', $read->payment_rail);
+        $this->assertStringNotContainsString('XXXX1234', json_encode($read->toArray()));
+        $this->assertFalse($read->transaction_currency_verified);
+    }
+
+    public function test_reporting_time_rejects_normalized_invalid_ambiguous_and_excess_precision_values(): void
+    {
+        foreach (['2026-02-30T00:00:00Z', '2026-09-15T25:00:00Z', '2026-09-15T00:00:00.1234567Z',
+            '2026-09-15T00:00:00+01:00', '2026-09-15', '2026-09-15T00:00:00Z</submitTimeUTC><submitTimeUTC>2026-09-15T00:00:00Z',
+            '</submitTimeUTC><x:submitTimeUTC xmlns:x="urn:foreign">2026-09-15T00:00:00Z</x:submitTimeUTC><submitTimeUTC>2026-09-15T00:00:00Z'] as $date) {
+            $this->freshHttp();
+            Http::fakeSequence()->push($this->merchantXml())->push($this->merchantXml())
+                ->push($this->transactionXml(['submitTimeUTC' => $date]));
+            $binding = $this->bind();
+            $this->invalid(fn () => $this->read($binding));
+        }
+    }
+
+    public function test_missing_time_and_unsupported_rails_do_not_gain_currency_authority(): void
+    {
+        foreach (['<bankAccount><accountNumber>XXXX1234</accountNumber></bankAccount>' => 'bank_account',
+            '<tokenInformation><tokenNumber>synthetic</tokenNumber></tokenInformation>' => 'token',
+            '<payPal/>' => 'unknown'] as $payment => $rail) {
+            $this->freshHttp();
+            $body = str_replace('<creditCard><cardNumber>XXXX1234</cardNumber></creditCard>', $payment, $this->transactionXml());
+            Http::fakeSequence()->push($this->merchantXml())->push($this->merchantXml())->push($body);
+            $binding = $this->bind();
+            $read = $this->read($binding);
+            $this->assertNull($read->submitted_at);
+            $this->assertSame($rail, $read->payment_rail);
+            $this->assertFalse(app(AuthorizeNetCurrencyAuthority::class)->assess($binding, $read)['currency_qualified']);
+        }
+    }
+
+    public function test_ambiguous_or_foreign_payment_containers_are_not_credit_card_authority(): void
+    {
+        foreach (['<creditCard/><bankAccount/>', '<x:creditCard xmlns:x="urn:foreign"/>', '<creditCard/><creditCard/>'] as $payment) {
+            $this->freshHttp();
+            $body = str_replace('<creditCard><cardNumber>XXXX1234</cardNumber></creditCard>', $payment, $this->transactionXml());
+            Http::fakeSequence()->push($this->merchantXml())->push($this->merchantXml())->push($body);
+            $binding = $this->bind();
+            $this->invalid(fn () => $this->read($binding));
+        }
+    }
+
+    public function test_currency_policy_is_explicit_sandbox_inference_and_never_a_production_or_observed_currency_claim(): void
+    {
+        Http::fakeSequence()->push($this->merchantXml())->push($this->merchantXml())->push($this->transactionXml());
+        $binding = $this->bind();
+        $read = $this->read($binding);
+        $policy = app(AuthorizeNetCurrencyAuthority::class);
+        $result = $policy->assess($binding, $read);
+        $this->assertTrue($result['currency_qualified']);
+        $this->assertFalse($result['transaction_currency_observed']);
+        $this->assertSame('authorize_net_fixed_sandbox_currency_v1', $result['authority']);
+        $this->assertFalse($read->transaction_currency_verified);
+        $production = clone $binding;
+        $production->environment = 'production';
+        $this->assertSame('production_policy_scope_unqualified', $policy->assess($production, $read)['reason']);
+        $wrong = clone $binding;
+        $wrong->canonical_account_key = str_repeat('a', 64);
+        $this->assertSame('account_scope_mismatch', $policy->assess($wrong, $read)['reason']);
+        $wrong->canonical_account_key = $binding->canonical_account_key;
+        $wrong->currency = 'CAD';
+        $this->assertFalse($policy->assess($wrong, $read)['currency_qualified']);
     }
 }

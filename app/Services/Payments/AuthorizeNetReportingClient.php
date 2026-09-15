@@ -77,7 +77,49 @@ class AuthorizeNetReportingClient
             $this->reject();
         }
 
-        return new AuthorizeNetTransactionRead($canonicalAccountKey, $id, $type, $status, $original, $auth, $settle, $data->expected_currency, CarbonImmutable::now(), merchant_reference: $merchantReference);
+        return new AuthorizeNetTransactionRead($canonicalAccountKey, $id, $type, $status, $original, $auth, $settle, $data->expected_currency, CarbonImmutable::now(), merchant_reference: $merchantReference,
+            submitted_at: $this->submissionTime($xml), payment_rail: $this->paymentRail($xml));
+    }
+
+    /** Strict optional UTC reporting time; unsupported precision refuses instead of rounding. */
+    private function submissionTime(DOMXPath $xml): ?CarbonImmutable
+    {
+        $base = '/a:getTransactionDetailsResponse/a:transaction';
+        $nodes = $xml->query($base.'/*[local-name()="submitTimeUTC"]');
+        if ($nodes->length === 0) {
+            return null;
+        }
+        if ($nodes->length !== 1 || $nodes->item(0)->namespaceURI !== self::NS || $nodes->item(0)->hasAttributes()) {
+            $this->reject();
+        }
+        $text = $this->value($xml, $base.'/a:submitTimeUTC');
+        if (! preg_match('/\A([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{2}):([0-9]{2})(?:\.([0-9]{1,6}))?Z\z/', $text, $m)
+            || ! checkdate((int) $m[2], (int) $m[3], (int) $m[1]) || (int) $m[4] > 23 || (int) $m[5] > 59 || (int) $m[6] > 59) {
+            $this->reject();
+        }
+
+        return CarbonImmutable::createFromFormat('!Y-m-d\\TH:i:s.u\\Z', substr($text, 0, 19).'.'.str_pad($m[7] ?? '', 6, '0').'Z', 'UTC');
+    }
+
+    /** Classification only; no instrument values cross the XML boundary. */
+    private function paymentRail(DOMXPath $xml): string
+    {
+        $base = '/a:getTransactionDetailsResponse/a:transaction';
+        $nodes = $xml->query($base.'/*[local-name()="payment"]');
+        if ($nodes->length === 0) {
+            return 'unknown';
+        }
+        if ($nodes->length !== 1 || $nodes->item(0)->namespaceURI !== self::NS || $nodes->item(0)->hasAttributes()) {
+            $this->reject();
+        }
+        $children = $xml->query($base.'/a:payment/*');
+        if ($children->length !== 1 || $children->item(0)->namespaceURI !== self::NS || $children->item(0)->hasAttributes()) {
+            $this->reject();
+        }
+
+        return match ($children->item(0)->localName) {
+            'creditCard' => 'credit_card', 'bankAccount' => 'bank_account', 'tokenInformation' => 'token', default => 'unknown',
+        };
     }
 
     /** Original merchant refId echoed by reporting, distinct from read refId and transaction refTransId. */

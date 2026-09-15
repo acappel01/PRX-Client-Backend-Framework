@@ -21,5 +21,7 @@ class AuthorizeNetTransactionRead extends Data
         public string $currency_authority = 'current_merchant_configuration',
         public bool $transaction_currency_verified = false,
         public ?string $merchant_reference = null,
+        public ?CarbonImmutable $submitted_at = null,
+        public string $payment_rail = 'unknown',
     ) {}
 }
