@@ -221,3 +221,7 @@ increment.
 ## Notification and payment-reference preparation
 
 An inactive internal inbox and operation-reference registry are available for future integrations. There is no new receiving URL, background processing or operator activation control. Reference matches are not confirmed payments, and a signed notification does not mark an order paid. Account/key changes require an explicit continuity plan. See [implementation and activation boundaries](inactive-receiver.md).
+
+## Dispatch preparation and association continuation
+
+See [dispatch preparation and transaction association](dispatch-association.md) for durable local preparation, exact reporting evidence and conflict quarantine. This extends the inactive reference foundation without activating calls, consuming notifications, resolving payment uncertainty or projecting money.

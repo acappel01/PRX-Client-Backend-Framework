@@ -6,7 +6,7 @@ Status: preparation only. No merge, deployment, served migration, backfill, perm
 
 | Application | Served baseline verified September 14 | Candidate branch | Required ordering |
 |---|---|---|---|
-| Admin | `9909105` on `main` | `codex/customer-commerce-foundation`, code `2adeb1c87b42014f13291a27a83b2c9b330b1c9f` | Schema/settings, admin code and permissions before dependent portal |
+| Admin | `9909105` on `main` | `codex/customer-commerce-foundation`, code `90a1283dca90e444b9572876a5053c890d1cf2f0` | Schema/settings, admin code and permissions before dependent portal |
 | Portal | `116799f` on `main` | `codex/portal-local-commerce-history`, `c583128c7b4e620723b899a98057dbb433962c29` | After owned local history API qualification |
 | Storefront | `dde5f4b` on `main` | `codex/storefront-lead-idempotency`, `323cd0b7780595c6bd2d4ffc9ed4420ace876209` | After backend Lead retry schema and two-header contract qualification |
 
@@ -54,6 +54,8 @@ Apply the complete candidate migration set in chronological order under the appr
 | `2026_09_14_231000_create_email_suppression_observations` | Scoped read-only suppression evidence; no subscriptions or destination sending |
 | `2026_09_15_020000_create_gateway_notification_inbox` | Empty inactive receivers, minimal notification inbox and conflict evidence; no endpoint/worker |
 | `2026_09_15_021000_create_payment_operation_references_table` | Immutable operation-reference reservations; no dispatch or payment effect |
+| `2026_09_15_040000_create_payment_dispatch_preparations_table` | Empty durable preparation evidence; not network dispatch or execution permission |
+| `2026_09_15_041000_create_payment_transaction_associations` | Account mutex and immutable reporting associations; conflicts quarantine, no monetary winner |
 
 The passive payment tables have no automatic producers or public API. Their presence does not enable collection, vaulting, financial reconciliation or revenue reporting. Add later reviewed candidate migrations to this table before approval. These schema migrations do not import historical accounts or infer historical attempt ownership. Old attempts remain unbound. The idempotency migration can sort before an already-applied later migration on an incremental upgrade; use the migration ledger and apply pending files, never rerun completed migrations. Storefront `323cd0b` adopts the two-header retry contract for quiz/checkout. Verify both headers survive only exact POST `/leads` and that a lost-response retry returns the original Lead before releasing that artifact; old backend code ignores those headers. Other no-header callers remain compatible and still create a new Lead per POST. Spatie settings migrations live under `database/settings` and must be included; checking only `database/migrations` is insufficient.
 
@@ -237,3 +239,37 @@ passed **2 / 47 + 15/15 process races**. Both selected suites were rerun success
 after the foreign-key name correction. The private socket-only database was stopped.
 The following documentation/upgrade-test commit records this prepared candidate;
 portal/storefront IDs remain unchanged. No public receiver or deployment is activated.
+
+## September 15 dispatch preparation and association continuation
+
+The [dispatch/association guide](../payments/dispatch-association.md) records the new
+internal contract. A preparation is a committed local snapshot, not a sent request.
+Authenticated sale/authorization reporting candidates require exact account/reference,
+amount, current local scope and submission strictly after preparation. A bounded current
+conflict graph quarantines ambiguous candidates rather than choosing a financial winner.
+Sandbox credit-card currency can receive explicitly policy-derived qualification;
+production/other rails remain unqualified. Capture/refund/void associations refuse.
+
+No route, job, receiver activation, payment call, uncertainty resolution, vault operation,
+Order payment update or revenue event is added. All three new tables start empty and
+are covered by the populated-schema upgrade rehearsal. Actual artifact/configuration,
+restore and deployment authorization requirements above remain outstanding.
+
+Final SQLite regression for dispatch/association passed **1,658 / 7,772**. Independent
+Astra approved the final source and docs after timestamp precision, strict precedence
+and short-FK corrections, with **40 / 397** focused tests independently passed.
+Upgrade rehearsal **1 / 58** covers all three empty new tables. No live provider
+fixture, served data or actual payment was used.
+
+MySQL final qualification: preparation **3 / 45 + 12/12 process races**, association
+**2 / 13 + 15/15 process races**. Three selected dispatch tests were restarted after
+the association FK-name correction; only the successful corrected run is counted.
+The private socket-only test server was stopped. Served baselines were rechecked:
+admin `9909105` with original untracked portal runbook preserved, portal `116799f`,
+storefront `dde5f4b`. No served source/configuration/database changes occurred.
+
+Final application candidate for this continuation:
+**`90a1283dca90e444b9572876a5053c890d1cf2f0`**, including reporting/currency policy
+**`a6488cc`**, durable preparation **`d7f209f`**, and association evidence **`90a1283`**.
+The following release-record commit adds module guides and upgrade-test qualification.
+Portal and storefront candidates are unchanged. Nothing deployed or activated.

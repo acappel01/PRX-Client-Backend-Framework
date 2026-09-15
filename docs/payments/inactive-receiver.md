@@ -141,3 +141,7 @@ Temporary guarded harnesses are under `/tmp/customer-mysql-20260914-uUkDgL/`:
 `registry-race.php`, `run-registry-races.py`, `inbox-race.php`, `run-inbox-races.py`.
 They are session evidence, not shipped tooling. Only `registry_test` and `inbox_test`
 on the socket-only disposable server were used; the server was stopped afterward.
+
+## Dispatch preparation and association continuation
+
+See [dispatch preparation and transaction association](dispatch-association.md) for durable local preparation, exact reporting evidence and conflict quarantine. This extends the inactive reference foundation without activating calls, consuming notifications, resolving payment uncertainty or projecting money.

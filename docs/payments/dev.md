@@ -350,3 +350,7 @@ resolve ledger uncertainty or project revenue.
 ## Inactive notification and reference foundation
 
 See [inactive receiver and operation references](inactive-receiver.md) for the trusted internal APIs, strict signature/inbox boundaries, immutable reference allocation and explicit reporting comparison. This increment adds no public receiver or payment execution.
+
+## Dispatch preparation and association continuation
+
+See [dispatch preparation and transaction association](dispatch-association.md) for durable local preparation, exact reporting evidence and conflict quarantine. This extends the inactive reference foundation without activating calls, consuming notifications, resolving payment uncertainty or projecting money.

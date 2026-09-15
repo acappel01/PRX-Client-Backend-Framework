@@ -383,3 +383,7 @@ financial projection and payment execution are not qualified by this investigati
 ## Inactive receiver/reference implementation
 
 The [inactive receiver guide](inactive-receiver.md) describes the implemented internal notification inbox, immutable operation-reference registry and reporting correlation. It supersedes the investigation's proposed-only status for those pieces. No public receiver, payment executor or verified financial projection is added.
+
+## Dispatch preparation and association continuation
+
+See [dispatch preparation and transaction association](dispatch-association.md) for durable local preparation, exact reporting evidence and conflict quarantine. This extends the inactive reference foundation without activating calls, consuming notifications, resolving payment uncertainty or projecting money.
