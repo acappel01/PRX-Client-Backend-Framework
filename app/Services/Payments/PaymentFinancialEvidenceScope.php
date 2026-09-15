@@ -5,6 +5,7 @@ namespace App\Services\Payments;
 use App\Data\Payments\GatewayTransactionReadData;
 use App\Models\Payments\PaymentDispatchAttempt;
 use App\Models\Payments\PaymentDispatchPreparation;
+use App\Models\Payments\PaymentOperation;
 use App\Models\Payments\PaymentOperationEffectAssociation;
 use App\Models\Payments\PaymentTransactionAssociation;
 
@@ -37,7 +38,8 @@ class PaymentFinancialEvidenceScope
             if (! in_array($cr['status'], ['associated_only', 'effect_correlated_only'], true)) {
                 $this->scope->reject();
             }
-            $generation[] = [$candidate->id, $candidate->status, $candidate->request_fingerprint, $candidate->completed_at->format('Y-m-d H:i:s.u'), $cr['fingerprint']];
+            $candidateOperation = PaymentOperation::whereKey($candidate->payment_operation_id)->lockForUpdate()->firstOrFail();
+            $generation[] = [$candidateOperation->state->value, $candidateOperation->uncertainty_fingerprint, $candidate->id, $candidate->status, $candidate->request_fingerprint, $candidate->completed_at->format('Y-m-d H:i:s.u'), $cr['fingerprint']];
         }
         $key = $this->ledger->fingerprint(['association_transaction_v1' => $entity['transaction_id']]);
         $effects = PaymentOperationEffectAssociation::where('payment_association_scope_id', $scopeId)->where('transaction_key', $key)->orderBy('id')->limit(257)->lockForUpdate()->get();

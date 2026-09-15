@@ -77,7 +77,8 @@ class CustomerCommerceUpgradeTest extends TestCase
                 'authorize_net_receivers', 'gateway_notification_inboxes', 'gateway_notification_conflicts',
                 'payment_dispatch_preparations', 'payment_association_scopes', 'payment_transaction_associations',
                 'payment_dispatch_attempts', 'payment_operation_effect_associations',
-                'payment_financial_read_requests', 'payment_financial_observations', 'payment_transport_invocations'] as $table) {
+                'checkout_token_grants', 'checkout_token_consumptions', 'payment_uncertainty_resolutions',
+                'payment_accounting_journals', 'payment_accounting_lines', 'payment_financial_read_requests', 'payment_financial_observations', 'payment_transport_invocations'] as $table) {
                 $this->assertTrue(Schema::hasTable($table), $table);
                 $this->assertSame(0, DB::table($table)->count(), "Migration must not import or produce {$table}");
             }
