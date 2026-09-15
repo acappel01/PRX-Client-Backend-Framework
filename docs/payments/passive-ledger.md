@@ -367,3 +367,15 @@ database transaction. These checks used only `gateway_read_test` on the isolated
 `/tmp/customer-mysql-20260914-uUkDgL/mysql.sock`; no served schema or actual gateway
 was contacted. Parser-only cases were qualified on SQLite, not represented as
 additional MySQL cases.
+
+## September 15 investigation update
+
+The [receiver contract investigation](receiver-contract-investigation-2026-09-15.md)
+supersedes the earlier statements that no fixed-account currency policy or reproducible
+webhook signature encoding evidence had been found. It also establishes the original
+request reference at reporting-response root `transrefId`, which the current parser
+does not consume. Currency policy is scoped and inferred; the webhook vector is
+historical observational evidence. Existing DTO flags and application behavior remain
+unchanged. The next bounded implementation is an inactive account-scoped inbox/reference
+registry and reporting correlation extension; public activation, operation resolution,
+financial projection and payment execution are not qualified by this investigation.
