@@ -30,6 +30,10 @@ Each canonical account/environment transaction entity has at most one journal, i
 
 `ResolvePaymentAccounting` returns journal IDs and qualified reported totals with currency, environment and canonical account. Missing new postings return `posting_required`. Loss of current support returns `current_evidence_quarantined` without usable totals and preserves prior entries. No automatic reversal or destructive correction is invented for contradictory evidence. `bank_cash_verified` and `execution_released` remain false; Orders, provider state and canonical marketing events are unchanged.
 
+## September 20 contract recheck
+
+The updated PRX commerce candidate was found at `b8bd214b6` on `portal-commerce/fable-remediation-20260916`, separate from served/remote develop `378128a7c`. Its authenticated quotes cover existing provider-added item approvals; they do not establish initial-cart ownership, handoff or missing-intake receipt recovery. See the [current contract verification](../checkout/provider-recovery-contract.md#september-20-verification--candidate-approval-contract-is-not-initial-checkout). The local token/uncertainty/accounting foundations remain unchanged and inactive while the initial-checkout contract location or local handoff design is resolved.
+
 ## Release and remaining contracts
 
 Additive migrations `080000`, `081000` and `082000` create empty grant/consumption, uncertainty-resolution and accounting journal/line tables. There are no automatic imports or producers. Preserve immutable claims/audits and encryption/HMAC keys; deleting a claim is not a retry procedure. See the [coordinated release checklist](../releases/customer-commerce-portal-2026-09-14.md).
