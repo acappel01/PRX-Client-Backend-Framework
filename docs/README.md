@@ -25,6 +25,7 @@ Per-module documentation: `user.md` = admin operator guide, `dev.md` = architect
 | Payments | Gateway abstraction, merchant accounts (NMI / Authorize.net / Stripe / Square) | [`payments/dev.md`](payments/dev.md) · [`payments/user.md`](payments/user.md) |
 | Intake | Intake schema API, wizard strategy | [`intake/dev.md`](intake/dev.md) · [`intake/user.md`](intake/user.md) |
 | prescribe-rx | Clinical API integration, partner guide | [`prescribe-rx/dev.md`](prescribe-rx/dev.md) · [`prescribe-rx/user.md`](prescribe-rx/user.md) · [`prescribe-rx/partner-implementation-guide.md`](prescribe-rx/partner-implementation-guide.md) |
+| Enhancement requests | What brand builds need from prx-backend, with status | [`prx-enhancements.md`](prx-enhancements.md) |
 | API spec | Exported OpenAPI document (live version at `/api/docs`) | [`api/openapi.json`](api/openapi.json) |
 
 Convention: every shipped module has both `user.md` and `dev.md`; a module isn't "done" without them. Document as you build.
