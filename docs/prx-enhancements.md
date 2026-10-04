@@ -72,23 +72,48 @@ resolved **by goal into catalog products/packages** (`GoalRecommendationResolver
 recommended articles and tools. Detailed scoring rules will come from the client's education
 materials.
 
-**Proposal (generic, reusable by any brand):**
+**Proposal: extend health goals instead of building a parallel system.** Decided with Andrew
+on 2026-10-04 to build this in the framework rather than locally in the brand repo.
 
-- Add per-option `score` values (and optional per-question weights) to quiz options, plus an
-  optional `domain` tag on each question so one assessment can produce several sub-scores
-  (for example sleep, mood, metabolic).
-- Add an `AssessmentScorer` service (DTO in, DTO out) that computes total and per-domain
-  scores. It should be pure and unit-testable, and called from the existing quiz submit action
-  rather than from a controller.
-- Add result **bands** per domain (min/max score → label, rich-text summary), all authored in
-  admin.
-- Add a recommendation map from band to content (blog posts, KB compounds, CMS pages, tools)
-  and optionally to products. Reuse the existing `{type, slug}` entity-link vocabulary so the
-  frontend owns the routes.
-- Expose the result on the existing plan endpoint (`GET /leads/{uuid}/plan`) as an additive
-  `assessment` block, so the BCH frontend and plan email read one shape.
-- The PHI rules stay as they are: answers travel only in POST bodies, results are never
-  cached, and the plan page is `noindex`.
+Health goals are already the hinge of recommendations. `HealthGoal` has a hierarchy
+(`parent_id`), weighted `ingredients()` that resolve to products, and `compounds()` for
+education. A scored assessment should **derive** a visitor's goals from their answers rather
+than ask them to pick goals. Everything downstream (`GoalRecommendationResolver`, eligibility
+gating, `ProtocolPresenter`, the plan page and email) then works unchanged.
+
+1. **Answer → goal points.** New pivot `quiz_option_goal_scores`
+   (`quiz_question_option_id`, `health_goal_id`, `points`). One answer can feed several goals
+   (for example "waking at 3am" scores both Sleep and Stress). Edited as a repeater on the
+   option in the quiz builder.
+2. **Scoring mode on the quiz.** `quizzes.scoring_mode`: `none` (today's behaviour, the
+   default) or `scored`. A scored quiz needs no `health_goals` question, because its goals
+   come from the scores.
+3. **Bands per quiz and goal.** `quiz_goal_bands` (`quiz_id`, `health_goal_id`, `min`, `max`,
+   `label`, `summary` rich text, `position`, `flags_care` bool). They are scoped to the quiz
+   because the score range depends on that quiz's questions. `flags_care` marks a band that
+   should push the visitor toward a clinician or membership rather than only to content.
+4. **Goal → content.** A morph pivot `health_goal_resources` (`health_goal_id`,
+   `resourceable_type/id` over blog posts, CMS pages, KB compounds and products, optional
+   `quiz_goal_band_id`, `position`). It is the "guide management" piece: an article can be
+   attached to a goal for everyone or only to one band (for example a "severe" band links to
+   the care page). It reuses the existing `{type, slug}` link vocabulary so the frontend owns
+   routes.
+5. **Service.** `AssessmentScorer` (QuizProfile/answers DTO in, `AssessmentResultData` out:
+   per-goal score, max, band, ordered resources). It is pure, unit-tested and runs
+   server-side, called from the existing quiz-submit action. `QuizProfile` takes its goals
+   from the scorer when the quiz is scored (goals at or above a configurable band, ranked by
+   score).
+6. **API.** An additive `assessment` block on `GET /leads/{uuid}/plan` (and on
+   `POST /protocol/preview` for an instant result before lead capture). One presenter feeds
+   both, the same way as today.
+
+Scoring stays server-side on purpose. Answers are health data, the PHI rules already
+established for the quiz apply (POST bodies only, no caching, `noindex` plan page), and
+computing scores in a brand frontend would duplicate the rules in every brand.
+
+**Why not a local or brand-only version:** it would need its own copy of goals, its own
+results page and its own email, so it would duplicate the recommendation pipeline the
+framework already has, and the next brand would rebuild it.
 
 ## 4. Hero: self-hosted looping background video
 
