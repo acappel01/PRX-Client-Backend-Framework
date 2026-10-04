@@ -14,6 +14,10 @@ PR; the brand team then removes its workaround.
 | 3 | [Scored assessments (BCH Health Map)](#3-scored-assessments-bch-health-map) | Bell Curve | High | open |
 | 4 | [Hero: self-hosted looping background video](#4-hero-self-hosted-looping-background-video) | Bell Curve | Medium | open |
 | 5 | [API-path intake wizard (bypass the embed)](#5-api-path-intake-wizard-bypass-the-embed) | Future, all brands | Low for now | open |
+| 6 | [Blog posts in sections (resolver op)](#6-blog-posts-in-sections-resolver-op) | Bell Curve, all brands | High (homepage) | open |
+| 7 | [Service live-state settings (live / waitlist / coming soon)](#7-service-live-state-settings) | Bell Curve, all brands | High (client hard rule) | open |
+| 8 | [Waitlist capture](#8-waitlist-capture) | Bell Curve | High (pairs with #7) | open |
+| 9 | [Membership billing and founding rate](#9-membership-billing-and-founding-rate) | Bell Curve | Medium (decision first) | open: needs decision |
 
 ---
 
@@ -71,6 +75,11 @@ resolved **by goal into catalog products/packages** (`GoalRecommendationResolver
 **Need.** Bell Curve's free Health Map is nine questions with scoring, and its results link to
 recommended articles and tools. Detailed scoring rules will come from the client's education
 materials.
+
+**Open dependency:** the client's locked Health Map spec (9 questions, H/M/E/A/L/G scoring
+categories) is not in any of the uploads we have. Andrew is getting it from the client. The
+data model below is designed to fit any category set, but the bands and points can't be
+seeded until that spec arrives.
 
 **Proposal: extend health goals instead of building a parallel system.** Decided with Andrew
 on 2026-10-04 to build this in the framework rather than locally in the brand repo.
@@ -142,3 +151,74 @@ without the iframe.
 **Not needed for launch.** Bell Curve launches on the embed and handoff page, like Atlas. This
 entry is here so the design of #1 and #2 doesn't paint us into a corner. It should get its own
 design doc when it's picked up.
+
+## 6. Blog posts in sections (resolver op)
+
+**Today.** `App\Services\Cms\SectionResolverOps` can inline products, packages and categories
+(`inline_*`, `*_by_mode`, `categories`), but not `BlogPost`s. So no section, code or
+flexible, can render an article row without the frontend making a second fetch.
+
+**Need.** Bell Curve's homepage has a "What women are asking now" row, and the pathway pages
+have related reading. Any brand with a blog wants the same thing.
+
+**Proposal.** Add `inline_posts` (hand-picked ids, admin order kept) and `posts_by_mode`
+(`manual | latest | category | tag`, with a `limit`), following the slider mode convention
+already used by `products_by_mode`. Add a `posts` field kind for the picker. Emit the same card
+shape as the blog listing endpoint (title, slug, excerpt, hero image, category, published
+date), published posts only. Add `blog` cache tags so a publish refreshes the section. A
+section whose query returns nothing reports `has_content: false`, as product sliders already
+do, so the row hides itself until articles are published.
+
+## 7. Service live-state settings
+
+**Need.** The client treats this as a hard rule: Care and Membership can each be **live**,
+**waitlist** or **coming soon**. Every CTA site-wide has to flip from one switch, never from a
+page edit.
+
+**Proposal.** A `ServiceAvailabilitySettings` group (or a small `services` table if brands
+need more than a fixed set) with one row per service: `key`, `state`
+(`live|waitlist|coming_soon`), and per-state `cta_label`, `cta_target` (an entity link),
+`notice` (rich text) and `waitlist_copy`. Edited under Settings → Services and served in
+`/config` as `services: {care: {...}, membership: {...}}`. CTA fields (`CtaFields`) gain an
+optional `service` key, so a CTA bound to a service resolves its label and target from the
+current state server-side. Frontends then never branch on state. Make it generic (a keyed
+list) so any brand can gate any offering.
+
+## 8. Waitlist capture
+
+**Need.** First name, email, state (US), optional interest, and a separate marketing consent.
+**No health data.**
+
+**Proposal.** Reuse `EmailSubscriber` rather than `Lead`. It already has `first_name`,
+`email`, `source`, `email_consent`, `consent_given_at` and UTM fields, and it sits outside the
+clinical lead pipeline (no cart, no handoff, no quiz answers). Add `state` (2-letter code) and
+`interest` (a `service` key from #7, or free choice from a configured list), and record
+`source = waitlist:{service}`. Validate that no free-text field is offered, so nothing clinical
+can land there. Expose it as `POST /waitlist` (or `POST /subscribe` with a `waitlist` block),
+throttled, through `SubscribeEmailAction`. A `WaitlistJoined` event lets workflows email a
+confirmation and notify the team, and later bulk-invite everyone when the service flips to
+`live`.
+
+Using `POST /leads` was considered and rejected: a lead is the start of a clinical funnel and
+carries health-adjacent fields and PRX handoff semantics a waitlist must not have.
+
+## 9. Membership billing and founding rate
+
+**Need.** Membership is $129/mo or $1,199/yr. There is also a **founding-50** rate of $99/mo,
+capped at the first 50 members, and the rate is lost if the membership lapses. Membership is
+non-clinical.
+
+**Decision needed first:** is membership a **PRX plan** (billed through the embed like care) or
+a **local-gateway subscription** (`checkout_path = local`, Stripe or similar)? This decides:
+
+- who enforces the 50-seat cap and the "rate lost on lapse" rule (PRX would need to support
+  both, or we track them locally);
+- whether a member account lives in PRX, here, or both;
+- whether a non-clinical purchase should go through a clinical intake embed at all.
+
+**Leaning:** local subscription for membership and the embed for care. That fits only if the
+framework supports a mixed checkout path per item (today `checkout_path` is install-wide).
+If so, add a per-package or per-plan `checkout_path` override, a `seat_cap` and seats-taken
+counter on the plan, and a `rate_lock_policy` (`lost_on_lapse`) that the rebill logic
+enforces.
+
