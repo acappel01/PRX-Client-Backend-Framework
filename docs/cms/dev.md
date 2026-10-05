@@ -388,7 +388,7 @@ Config lives in `config/cms.php` under `frontend`. The secret must match the fro
 1. Add a new case to `App\Enums\SectionType`.
 2. Create `App\Cms\Sections\YourSection` extending `SectionBlueprint`. Implement `type()`, `label()`, `defaults()`, `formSchema()`. Optionally override `icon()`, `component()`, `description()`.
 3. Map the case in `SectionType::blueprint()`'s match statement.
-4. Create `resources/views/components/sections/your-type.blade.php` reading `$data` with `data_get()` fallbacks.
+4. Declare `fieldKinds()` for any image/product/svg keys, then build the matching component in each consuming frontend, keyed by `type`. The public site is a separate app, so there is no Blade view here (see `docs/frontend/dev.md` §4).
 5. Restart the server (or `php artisan filament:cache-components`) and pick the new type from the section dropdown.
 
 ### Where a section may be added — `contexts()` (2026-08-30)
