@@ -81,6 +81,17 @@ categories) is not in any of the uploads we have. Andrew is getting it from the 
 data model below is designed to fit any category set, but the bands and points can't be
 seeded until that spec arrives.
 
+**Partial reference (2026-10-05):** a capture of the previous developer's prototype gives the
+intro copy, Q1 ("What feels most different in your body right now?", choose up to 3, 11
+options) and Q7 ("How would you describe where you are in figuring all of this out?", choose
+one, 6 options). It holds no scoring or results. Two things in it confirm the model needs
+care:
+- **Multi-select questions with a per-question limit.** `MultiSelect` exists today, but the
+  limit has to be checked in `QuizAnswerValidator`.
+- **"Journey stage" questions (Q7)** that steer content rather than score a symptom domain.
+  Points to a goal won't fit those, so an option should also be able to carry a content tag
+  that `health_goal_resources` can match.
+
 **Proposal: extend health goals instead of building a parallel system.** Decided with Andrew
 on 2026-10-04 to build this in the framework rather than locally in the brand repo.
 
