@@ -18,6 +18,7 @@ PR; the brand team then removes its workaround.
 | 7 | [Service live-state settings (live / waitlist / coming soon)](#7-service-live-state-settings) | Bell Curve, all brands | High (client hard rule) | open |
 | 8 | [Waitlist capture](#8-waitlist-capture) | Bell Curve | High (pairs with #7) | open |
 | 9 | [Membership billing and founding rate](#9-membership-billing-and-founding-rate) | Bell Curve | Medium (decision first) | open: needs decision |
+| 10 | [Homepage blueprint fields and BCH flexible types](#10-homepage-blueprint-fields-and-bch-flexible-types) | Bell Curve | High (after Amy approves layout) | open |
 
 ---
 
@@ -233,4 +234,39 @@ framework supports a mixed checkout path per item (today `checkout_path` is inst
 If so, add a per-package or per-plan `checkout_path` override, a `seat_cap` and seats-taken
 counter on the plan, and a `rate_lock_policy` (`lost_on_lapse`) that the rebill logic
 enforces.
+
+## 10. Homepage blueprint fields and BCH flexible types
+
+**Source.** The Bell Curve homepage proof (acappel01/bell-curve PR #1) found these while
+mapping the approved layout onto the framework. All the blueprint changes are **additive**:
+new optional fields, null by default, so existing installs serve the same payloads.
+
+**Blueprint fields**
+
+| Blueprint | New field | Kind | Why |
+|---|---|---|---|
+| `hero` | `background_image_mobile` | image | A separate mobile crop of the poster, so faces and headlines aren't cut off |
+| `hero` | `background_video` `{url, type}` | media | Self-hosted muted loop (supersedes the media-field proposal in #4; keep `background_video_url` for embeds) |
+| `hero` | `microcopy_link_label`, `microcopy_link_url` | text, link | The "Not sure where to begin? Start your free Health Map" line under the buttons |
+| `image-text-split` | `image_shape` | select: `none`, `organic`, `arch` | Curved image masks are a core part of the BCH look. Other brands get them too |
+| `image-text-split` | `side_note` | textarea (inline HTML) | A short aside next to the main copy |
+| `cta-banner` | `emphasis` | text (inline) | The rose-emphasis phrase in the headline |
+
+For each one: add the field to the blueprint's `formSchema()` and `defaults()`, add image keys
+to `fieldKinds()`, mirror it in the shadow seed (`SectionTypeSeeder`), and keep
+`SectionTypeSeedParityTest` green. None of them is a `style_*` knob, so `LayoutFieldCollisionTest`
+is unaffected. `image_shape` is presentation, so it belongs in the blueprint's presentation
+keys and must not count toward `has_content`.
+
+**Six flexible types** (no backend code needed): `bch-trust-strip`, `bch-health-map-teaser`,
+`bch-statement`, `bch-paths`, `bch-article-row` and `bch-founder`. They are already written in
+`FlexibleSectionType` format in `acappel01/bell-curve` → `fixtures/bch/section-types.json`.
+Once Amy approves the layout, they become input to a BCH install seeder (creating them as
+active flexible types, then seeding the home page sections and theme palette).
+
+Two dependencies:
+- `bch-article-row` needs #6 (blog posts in sections) for its posts to inline.
+  Until then it renders nothing (`has_content: false`).
+- The seeder should create the types through `CreateFlexibleSectionTypeAction`, so slug
+  reservation and schema validation run exactly as they do in the admin.
 
