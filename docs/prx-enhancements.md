@@ -18,7 +18,7 @@ PR; the brand team then removes its workaround.
 | 7 | [Service live-state settings (live / waitlist / coming soon)](#7-service-live-state-settings) | Bell Curve, all brands | High (client hard rule) | open |
 | 8 | [Waitlist capture](#8-waitlist-capture) | Bell Curve | High (pairs with #7) | open |
 | 9 | [Membership billing and founding rate](#9-membership-billing-and-founding-rate) | Bell Curve | Medium (decision first) | open: needs decision |
-| 10 | [Homepage blueprint fields and BCH flexible types](#10-homepage-blueprint-fields-and-bch-flexible-types) | Bell Curve | High (after Amy approves layout) | open |
+| 10 | [Blueprint fields and BCH flexible types](#10-blueprint-fields-and-bch-flexible-types) | Bell Curve | High (after Amy approves the layout) | open |
 
 ---
 
@@ -184,36 +184,69 @@ do, so the row hides itself until articles are published.
 
 ## 7. Service live-state settings
 
-**Need.** The client treats this as a hard rule: Care and Membership can each be **live**,
-**waitlist** or **coming soon**. Every CTA site-wide has to flip from one switch, never from a
-page edit.
+**Need.** The client treats this as a hard rule: Care, Shop and Membership can each be
+**live**, **waitlist** or **coming soon**. Every CTA site-wide has to flip from one switch,
+never from a page edit.
 
-**Proposal.** A `ServiceAvailabilitySettings` group (or a small `services` table if brands
-need more than a fixed set) with one row per service: `key`, `state`
-(`live|waitlist|coming_soon`), and per-state `cta_label`, `cta_target` (an entity link),
-`notice` (rich text) and `waitlist_copy`. Edited under Settings → Services and served in
-`/config` as `services: {care: {...}, membership: {...}}`. CTA fields (`CtaFields`) gain an
-optional `service` key, so a CTA bound to a service resolves its label and target from the
-current state server-side. Frontends then never branch on state. Make it generic (a keyed
-list) so any brand can gate any offering.
+**Contract (agreed with the Bell Curve frontend, `fixtures/bch/section-types.json` →
+`config_additions`).** `/config` gains:
+
+```json
+"services": {
+  "care":       { "state": "waitlist", "actions": {
+                    "live":        { "label": "…", "url": "/clinical-care" },
+                    "waitlist":    { "label": "…", "url": "/clinical-care#waitlist", "status": "…" },
+                    "coming_soon": { "label": "…", "url": "…", "status": "…" } } },
+  "shop":       { … },
+  "membership": { … }
+}
+```
+
+`state` is the current one. `actions` holds the CTA for **every** state, so the frontend
+renders `actions[state]` and never composes copy. `status` is an optional line shown beside the
+CTA (for example "Coming soon in your state").
+
+**Proposal.** A `ServiceAvailabilitySettings` group holding a keyed list (`key`, `state`, and a
+`{label, url, status}` per state), edited under Settings → Services through a DTO and an
+`UpdateServiceAvailabilityAction`, served by `ConfigController`, and clearing the config cache
+on save. Keys are a list, not fixed properties, so any brand can gate any offering. Blueprints
+that carry a CTA gain an optional `service` select (see #10). When it's set, the frontend takes
+the CTA from `services[service]` and ignores the section's own label and URL.
 
 ## 8. Waitlist capture
 
 **Need.** First name, email, state (US), optional interest, and a separate marketing consent.
 **No health data.**
 
-**Proposal.** Reuse `EmailSubscriber` rather than `Lead`. It already has `first_name`,
-`email`, `source`, `email_consent`, `consent_given_at` and UTM fields, and it sits outside the
-clinical lead pipeline (no cart, no handoff, no quiz answers). Add `state` (2-letter code) and
-`interest` (a `service` key from #7, or free choice from a configured list), and record
-`source = waitlist:{service}`. Validate that no free-text field is offered, so nothing clinical
-can land there. Expose it as `POST /waitlist` (or `POST /subscribe` with a `waitlist` block),
-throttled, through `SubscribeEmailAction`. A `WaitlistJoined` event lets workflows email a
-confirmation and notify the team, and later bulk-invite everyone when the service flips to
-`live`.
+**Contract (agreed with the Bell Curve frontend, used by the `bch-waitlist` type):**
 
-Using `POST /leads` was considered and rejected: a lead is the start of a clinical funnel and
-carries health-adjacent fields and PRX handoff semantics a waitlist must not have.
+```
+POST /api/v1/waitlist
+{ service: care|shop|membership, first_name, email, state?, interest?, marketing_consent }
+→ 201 { data: { joined: true } }
+```
+
+`POST /leads` was rejected for this: it requires full name and address, starts the clinical
+funnel and carries PRX handoff semantics.
+
+**Storage: a `waitlist_entries` table linked to `EmailSubscriber`.** This reconciles the
+frontend's endpoint with the earlier "reuse email subscribers" proposal. The person is
+upserted through `SubscribeEmailAction` (`source = waitlist`), and each signup is its own row:
+`waitlist_entries` (`email_subscriber_id`, `service`, `state`, `interest`, `notified_at`,
+timestamps), unique on (`email_subscriber_id`, `service`). A separate table is needed because
+`EmailSubscriber` holds one row per email with a first-touch `source`, so a woman joining both
+the Care and Membership waitlists can't be represented on it alone.
+
+Wiring: `JoinWaitlistRequest` → `JoinWaitlistData` → `JoinWaitlistAction` (transaction:
+subscriber upsert, then entry upsert) → `WaitlistJoined` event, which workflows can use to send
+a confirmation, notify the team, and invite everyone on a list when #7 flips that service to
+`live`. Throttle it like other anonymous writes. `service` is validated against the #7 keys.
+
+Two traps in the existing subscriber code to handle here:
+- `SubscribeData::$email_consent` **defaults to `true`**. The waitlist must pass
+  `marketing_consent` explicitly so joining a waitlist never opts someone into marketing.
+- `SubscribeEmailAction` sets `consent_given_at` even when consent is false. Only set it when
+  consent is actually given.
 
 ## 9. Membership billing and founding rate
 
@@ -235,9 +268,10 @@ If so, add a per-package or per-plan `checkout_path` override, a `seat_cap` and 
 counter on the plan, and a `rate_lock_policy` (`lost_on_lapse`) that the rebill logic
 enforces.
 
-## 10. Homepage blueprint fields and BCH flexible types
+## 10. Blueprint fields and BCH flexible types
 
-**Source.** The Bell Curve homepage proof (acappel01/bell-curve PR #1) found these while
+**Source.** The Bell Curve homepage proof (acappel01/bell-curve PR #1) and interior pages
+(branch `claude/project-thread-yehma6`, `fixtures/bch/section-types.json`) found these while
 mapping the approved layout onto the framework. All the blueprint changes are **additive**:
 new optional fields, null by default, so existing installs serve the same payloads.
 
@@ -251,6 +285,26 @@ new optional fields, null by default, so existing installs serve the same payloa
 | `image-text-split` | `image_shape` | select: `none`, `organic`, `arch` | Curved image masks are a core part of the BCH look. Other brands get them too |
 | `image-text-split` | `side_note` | textarea (inline HTML) | A short aside next to the main copy |
 | `cta-banner` | `emphasis` | text (inline) | The rose-emphasis phrase in the headline |
+| `hero` | `layout` option `split` | select value | Contained image beside the copy; type-led when there is no image (interior page heroes) |
+| `hero` | `image_shape` | select: `corner`, `arch`, `organic` | Curved masks on the split layout |
+| `hero` | `service` | select (#7 keys) | Primary CTA and status line come from `/config` services |
+| `cta-banner` | `service` | select (#7 keys) | Same as above |
+| `how-it-works` | `image` | image | Optional image beside the steps |
+| `how-it-works` | `theme` | select: `white`, `ivory` | Band colour |
+| `features-grid` | `emphasis` | text (inline) | Rose-emphasis phrase |
+| `features-grid` | `theme` | select: `white`, `ivory`, `blush` | Band colour |
+| `features-grid` | `features[].eyebrow`, `features[].cta_label`, `features[].cta_url` | text, link | Per-card eyebrow and CTA |
+| `features-grid` | `cta_label`, `cta_url` | text, link | Section CTA |
+| `text-block` | `emphasis` | text (inline) | Rose-emphasis phrase |
+| `text-block` | `link_label`, `link_url` | text, link | Trailing text link |
+| `pricing-tiers` | `heading`, `emphasis`, `lead` | text, text, richtext | Section intro (membership page) |
+| `pricing-tiers` | `service` | select (#7 keys) | Card CTA when a card has none of its own |
+| `pricing-tiers` | `footnote` | richtext | Terms line under the cards |
+
+`faq` and `testimonials` need no change. Where a `theme` select already exists (it does on
+`image-text-split` and `cta-banner`), extend its options rather than adding a second key.
+These colour selects predate the palette-named `style_background_color` knob. Consider
+whether BCH should use the knob instead, to avoid adding more hardcoded theme vocabularies.
 
 For each one: add the field to the blueprint's `formSchema()` and `defaults()`, add image keys
 to `fieldKinds()`, mirror it in the shadow seed (`SectionTypeSeeder`), and keep
@@ -258,14 +312,17 @@ to `fieldKinds()`, mirror it in the shadow seed (`SectionTypeSeeder`), and keep
 is unaffected. `image_shape` is presentation, so it belongs in the blueprint's presentation
 keys and must not count toward `has_content`.
 
-**Six flexible types** (no backend code needed): `bch-trust-strip`, `bch-health-map-teaser`,
-`bch-statement`, `bch-paths`, `bch-article-row` and `bch-founder`. They are already written in
+**Seven flexible types** (no backend code needed): `bch-trust-strip` (now with a `heading`),
+`bch-health-map-teaser`, `bch-statement`, `bch-paths`, `bch-article-row`, `bch-founder`
+and `bch-waitlist` (posts to #8). They are already written in
 `FlexibleSectionType` format in `acappel01/bell-curve` → `fixtures/bch/section-types.json`.
 Once Amy approves the layout, they become input to a BCH install seeder (creating them as
 active flexible types, then seeding the home page sections and theme palette).
 
 Two dependencies:
-- `bch-article-row` needs #6 (blog posts in sections) for its posts to inline.
+- `bch-article-row` needs #6 (blog posts in sections) for its posts to inline. Articles are
+  published through the admin blog (confirmed by Andrew).
+- `bch-waitlist` needs #8, and blueprints with a `service` select need #7.
   Until then it renders nothing (`has_content: false`).
 - The seeder should create the types through `CreateFlexibleSectionTypeAction`, so slug
   reservation and schema validation run exactly as they do in the admin.
