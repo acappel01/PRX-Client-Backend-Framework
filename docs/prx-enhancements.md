@@ -87,7 +87,8 @@ options) and Q7 ("How would you describe where you are in figuring all of this o
 one, 6 options). It holds no scoring or results. Two things in it confirm the model needs
 care:
 - **Multi-select questions with a per-question limit.** `MultiSelect` exists today, but the
-  limit has to be checked in `QuizAnswerValidator`.
+  `QuizAnswerValidator` has no selection limit today, so add a `max_selections` config on
+  the question and enforce it there.
 - **"Journey stage" questions (Q7)** that steer content rather than score a symptom domain.
   Points to a goal won't fit those, so an option should also be able to carry a content tag
   that `health_goal_resources` can match.
